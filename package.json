@@ -1,0 +1,19 @@
+{
+  "name": "rally-badminton",
+  "version": "1.0.0",
+  "description": "Rally — 2D Badminton with online multiplayer",
+  "private": true,
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "node server/index.js",
+    "build": "echo 'No build step required'",
+    "start": "node server/index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "//": "Scopes shared/*.js to CommonJS so the Node server can require() them. The root project is type:module (Vite), but these UMD files must load under Node's require and the browser's <script> alike. The browser ignores this file.",
+  "name": "rally-shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs"
+}
