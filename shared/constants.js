@@ -168,7 +168,21 @@
     { id: 'priya', name: 'Priya', skin: '#a8714a', hair: '#161513', hairStyle: 'long', shirt: '#e0562d', shirt2: '#2b3a67', shorts: '#5c2413', shoe: '#f2ede1',
       stats: { speed: 5, power: 4, control: 2 }, tagline: 'Blazing and heavy-handed — and reckless with it.' },
     { id: 'liam', name: 'Liam', skin: '#f0d5b8', hair: '#a5471f', hairStyle: 'short', shirt: '#5c6770', shirt2: '#3f7cff', shorts: '#2c333a', shoe: '#f2ede1',
-      stats: { speed: 3, power: 4, control: 5 }, tagline: 'Well-rounded, with real punch behind it.' }
+      stats: { speed: 3, power: 4, control: 5 }, tagline: 'Well-rounded, with real punch behind it.' },
+    { id: 'sherman', name: 'Sherman', skin: '#f4e3cd', hair: '#1b1b1b', hairStyle: 'short', shirt: '#d32f2f', shirt2: '#ffeb3b', shorts: '#111111', shoe: '#ffffff',
+      stats: { speed: 4, power: 4, control: 4 }, tagline: 'Balanced at everything, lacking nothing.' },
+    { id: 'rodrigo', name: 'Rodrigo', skin: '#e8b892', hair: '#161513', hairStyle: 'short', shirt: '#75aadb', shirt2: '#ffffff', shorts: '#000000', shoe: '#ffffff',
+      stats: { speed: 4, power: 3, control: 5 }, tagline: 'Exceptional control with Argentinian flair.' },
+    { id: 'mateo', name: 'Mateo', skin: '#d99a66', hair: '#20140d', hairStyle: 'spiky', shirt: '#0038a8', shirt2: '#fcd116', shorts: '#ce1126', shoe: '#ffffff',
+      stats: { speed: 1, power: 5, control: 4 }, tagline: 'Powerful but lacks foot speed.' },
+    { id: 'lindan', name: 'Lin Dan', skin: '#f4e3cd', hair: '#1b1b1b', hairStyle: 'short', shirt: '#ff0000', shirt2: '#ffff00', shorts: '#ff0000', shoe: '#ffffff',
+      stats: { speed: 5, power: 3, control: 4 }, tagline: 'Legendary speed on the court.' },
+    { id: 'elijah', name: 'Elijah', skin: '#d99a66', hair: '#161513', hairStyle: 'short', shirt: '#0038a8', shirt2: '#ce1126', shorts: '#000000', shoe: '#ffffff', racketType: 'fish',
+      stats: { speed: 4, power: 2, control: 3 }, tagline: 'Slaps shuttles with a wet fish.' },
+    { id: 'benjamin', name: 'Benjamin', skin: '#f4d9c6', hair: '#ffffff', hairStyle: 'short', shirt: '#0038b8', shirt2: '#ffffff', shorts: '#ffffff', shoe: '#0038b8', racketType: 'cross', longNose: true,
+      stats: { speed: 3, power: 3, control: 3 }, tagline: 'Brings his own wooden plank.' },
+    { id: 'cristiano', name: 'Cristiano', skin: '#f0c9a0', hair: '#1b1b1b', hairStyle: 'slick', shirt: '#ff0000', shirt2: '#006600', shorts: '#ff0000', shoe: '#ff0000',
+      stats: { speed: 2, power: 5, control: 3 }, tagline: 'SIUUUU! All red, full power.' }
   ];
 
   return C;

@@ -1729,7 +1729,7 @@
   
   .tekken-grid {
     display: grid;
-    grid-template-columns: repeat(9, 1fr);
+    grid-template-columns: repeat(8, 1fr);
     gap: 8px;
     width: 100%;
     margin: 8px 0;
@@ -2167,7 +2167,7 @@
                     <span>CHOOSE FIGHTER</span>
                     <span id="selectedCharLabel" style="color: var(--accent); font-weight: bold;">MAYA</span>
                   </div>
-                  <div class="onlineCharGrid" id="onlineCharGrid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
+                  <div class="onlineCharGrid" id="onlineCharGrid" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;">
                     <!-- Filled dynamically -->
                   </div>
                   <!-- Stats of the currently-selected fighter -->
@@ -2834,7 +2834,21 @@
     {id:'priya',  name:'Priya',  skin:'#a8714a', hair:'#161513', hairStyle:'long',     shirt:'#e0562d', shirt2:'#2b3a67', shorts:'#5c2413', shoe:'#f2ede1',
       stats:{speed:5, power:4, control:2}, tagline:'Blazing and heavy-handed — and reckless with it.'},
     {id:'liam',   name:'Liam',   skin:'#f0d5b8', hair:'#a5471f', hairStyle:'short',    shirt:'#5c6770', shirt2:'#3f7cff', shorts:'#2c333a', shoe:'#f2ede1',
-      stats:{speed:3, power:4, control:5}, tagline:'Well-rounded, with real punch behind it.'}
+      stats:{speed:3, power:4, control:5}, tagline:'Well-rounded, with real punch behind it.'},
+    { id: 'sherman', name: 'Sherman', skin: '#f4e3cd', hair: '#1b1b1b', hairStyle: 'short', shirt: '#d32f2f', shirt2: '#ffeb3b', shorts: '#111111', shoe: '#ffffff',
+      stats: { speed: 4, power: 4, control: 4 }, tagline: 'Balanced at everything, lacking nothing.' },
+    { id: 'rodrigo', name: 'Rodrigo', skin: '#e8b892', hair: '#161513', hairStyle: 'short', shirt: '#75aadb', shirt2: '#ffffff', shorts: '#000000', shoe: '#ffffff',
+      stats: { speed: 4, power: 3, control: 5 }, tagline: 'Exceptional control with Argentinian flair.' },
+    { id: 'mateo', name: 'Mateo', skin: '#d99a66', hair: '#20140d', hairStyle: 'spiky', shirt: '#0038a8', shirt2: '#fcd116', shorts: '#ce1126', shoe: '#ffffff',
+      stats: { speed: 1, power: 5, control: 4 }, tagline: 'Powerful but lacks foot speed.' },
+    { id: 'lindan', name: 'Lin Dan', skin: '#f4e3cd', hair: '#1b1b1b', hairStyle: 'short', shirt: '#ff0000', shirt2: '#ffff00', shorts: '#ff0000', shoe: '#ffffff',
+      stats: { speed: 5, power: 3, control: 4 }, tagline: 'Legendary speed on the court.' },
+    { id: 'elijah', name: 'Elijah', skin: '#d99a66', hair: '#161513', hairStyle: 'short', shirt: '#0038a8', shirt2: '#ce1126', shorts: '#000000', shoe: '#ffffff', racketType: 'fish',
+      stats: { speed: 4, power: 2, control: 3 }, tagline: 'Slaps shuttles with a wet fish.' },
+    { id: 'benjamin', name: 'Benjamin', skin: '#f4d9c6', hair: '#ffffff', hairStyle: 'short', shirt: '#0038b8', shirt2: '#ffffff', shorts: '#ffffff', shoe: '#0038b8', racketType: 'cross', longNose: true,
+      stats: { speed: 3, power: 3, control: 3 }, tagline: 'Brings his own wooden plank.' },
+    { id: 'cristiano', name: 'Cristiano', skin: '#f0c9a0', hair: '#1b1b1b', hairStyle: 'slick', shirt: '#ff0000', shirt2: '#006600', shorts: '#ff0000', shoe: '#ff0000',
+      stats: { speed: 2, power: 5, control: 3 }, tagline: 'SIUUUU! All red, full power.' }
   ];
 
   // small tuning helpers so a character's stats actually change how they play —
@@ -7104,6 +7118,10 @@
         c.fillRect(-r*1.15, headCY-r*0.1, r*0.4, r*2.0);
         c.fillRect(r*0.75, headCY-r*0.1, r*0.4, r*2.0);
         break;
+      case 'slick':
+        c.beginPath(); c.ellipse(r*0.2, headCY-r*0.3, r*1.1, r*0.7, -0.1, Math.PI, Math.PI*2); c.fill();
+        c.beginPath(); c.ellipse(-r*0.3, headCY-r*0.8, r*0.8, r*0.5, 0.4, 0, Math.PI*2); c.fill();
+        break;
       default: // 'short'
         c.beginPath(); c.ellipse(0, headCY-r*0.35, r*1.05, r*0.85, 0, Math.PI, Math.PI*2); c.fill();
     }
@@ -7348,6 +7366,11 @@
         ctx.moveTo(-hr, hcy); ctx.lineTo(0, hcy - 7); ctx.lineTo(hr, hcy); ctx.lineTo(0, hcy - hr);
         ctx.closePath(); ctx.fill();
         break;
+
+      case 'slick':
+        ctx.beginPath(); ctx.ellipse(0, hcy, hr * 1.1, hr * 0.8, -0.1, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(-hr * 0.3, hcy - hr * 0.8, hr * 0.8, hr * 0.5, 0.4, 0, Math.PI*2); ctx.fill();
+        break;
         
       default: // 'short'
         ctx.beginPath(); ctx.ellipse(0, hcy + 2, hr * 1.08, hr * 0.95, 0, 0, Math.PI*2); ctx.fill();
@@ -7371,7 +7394,6 @@
     c.save();
     c.translate(cx, groundY);
     c.scale(facing*scale, scale);
-
     const hipY = -LEG_LEN;
     const shoulderY = hipY - TORSO_LEN;
     const headCY = shoulderY - HEAD_R - 2;
@@ -7393,6 +7415,13 @@
     // head + hair
     c.fillStyle = ch.skin;
     c.beginPath(); c.arc(0, headCY, HEAD_R, 0, Math.PI*2); c.fill();
+    if (ch.longNose) {
+      c.beginPath();
+      c.moveTo(HEAD_R * 0.8, headCY - 2);
+      c.lineTo(HEAD_R * 0.8 + 7, headCY + 1);
+      c.lineTo(HEAD_R * 0.8 + 2, headCY + 5);
+      c.fill();
+    }
     drawHair(c, ch, headCY, HEAD_R);
 
     // front (racket) arm — drawn last so it's on top
@@ -7403,52 +7432,75 @@
     c.fillRect(-3, 0, 6, ARM_LEN);
     c.translate(0, ARM_LEN);
 
-    // grip + shaft
-    c.strokeStyle = '#2b2b2b';
-    c.lineWidth = 3;
-    c.lineCap = 'round';
-    c.beginPath(); c.moveTo(0,0); c.lineTo(0, RACKET_SHAFT); c.stroke();
-    c.strokeStyle = '#8a5a2f';
-    c.lineWidth = 2.2;
-    c.beginPath(); c.moveTo(0, RACKET_SHAFT*0.55); c.lineTo(0, RACKET_SHAFT*0.95); c.stroke();
-
-    const rHeadCX = 0, rHeadCY = RACKET_SHAFT+RACKET_HEAD_R*0.9;
-    const rHeadRX = RACKET_HEAD_R*0.68, rHeadRY = RACKET_HEAD_R;
-
-    // crosshatch string bed, clipped to the racket head oval
-    c.save();
-    c.beginPath();
-    c.ellipse(rHeadCX, rHeadCY, rHeadRX, rHeadRY, 0, 0, Math.PI*2);
-    c.clip();
-    c.strokeStyle = 'rgba(233,228,216,0.55)';
-    c.lineWidth = 0.7;
-    for(let i=-3;i<=3;i++){
+    if (ch.racketType === 'fish') {
+      // fish racket
+      c.fillStyle = '#6ab8cd'; // blueish fish
       c.beginPath();
-      c.moveTo(rHeadCX+i*(rHeadRX/3.3), rHeadCY-rHeadRY);
-      c.lineTo(rHeadCX+i*(rHeadRX/3.3), rHeadCY+rHeadRY);
+      c.ellipse(0, 16, 6, 12, 0, 0, Math.PI*2);
+      c.fill();
+      // tail
+      c.beginPath();
+      c.moveTo(0, 2);
+      c.lineTo(-6, -4);
+      c.lineTo(6, -4);
+      c.fill();
+      // eye
+      c.fillStyle = '#000';
+      c.beginPath(); c.arc(2, 22, 1.5, 0, Math.PI*2); c.fill();
+    } else if (ch.racketType === 'cross') {
+      // cross wooden plank racket
+      c.fillStyle = '#8b5a2b';
+      c.fillRect(-2, 0, 4, 28);
+      c.fillRect(-10, 12, 20, 4);
+    } else {
+      // grip + shaft
+      c.strokeStyle = '#2b2b2b';
+      c.lineWidth = 3;
+      c.lineCap = 'round';
+      c.beginPath(); c.moveTo(0,0); c.lineTo(0, RACKET_SHAFT); c.stroke();
+
+      c.strokeStyle = '#8a5a2f';
+      c.lineWidth = 2.2;
+      c.beginPath(); c.moveTo(0, RACKET_SHAFT*0.55); c.lineTo(0, RACKET_SHAFT*0.95); c.stroke();
+
+      const rHeadCX = 0, rHeadCY = RACKET_SHAFT+RACKET_HEAD_R*0.9;
+      const rHeadRX = RACKET_HEAD_R*0.68, rHeadRY = RACKET_HEAD_R;
+
+      // crosshatch string bed, clipped to the racket head oval
+      c.save();
+      c.beginPath();
+      c.ellipse(rHeadCX, rHeadCY, rHeadRX, rHeadRY, 0, 0, Math.PI*2);
+      c.clip();
+      c.strokeStyle = 'rgba(233,228,216,0.55)';
+      c.lineWidth = 0.7;
+      for(let i=-3;i<=3;i++){
+        c.beginPath();
+        c.moveTo(rHeadCX+i*(rHeadRX/3.3), rHeadCY-rHeadRY);
+        c.lineTo(rHeadCX+i*(rHeadRX/3.3), rHeadCY+rHeadRY);
+        c.stroke();
+      }
+      for(let j=-3;j<=3;j++){
+        c.beginPath();
+        c.moveTo(rHeadCX-rHeadRX, rHeadCY+j*(rHeadRY/3.3));
+        c.lineTo(rHeadCX+rHeadRX, rHeadCY+j*(rHeadRY/3.3));
+        c.stroke();
+      }
+      c.restore();
+
+      // racket frame — dark inner ring + a colored accent outline
+      c.beginPath();
+      c.ellipse(rHeadCX, rHeadCY, rHeadRX, rHeadRY, 0, 0, Math.PI*2);
+      c.strokeStyle = '#1c1c1c';
+      c.lineWidth = 2.6;
+      c.stroke();
+      c.beginPath();
+      c.ellipse(rHeadCX, rHeadCY, rHeadRX*0.9, rHeadRY*0.93, 0, 0, Math.PI*2);
+      c.strokeStyle = ch.shirt;
+      c.lineWidth = 1;
       c.stroke();
     }
-    for(let j=-3;j<=3;j++){
-      c.beginPath();
-      c.moveTo(rHeadCX-rHeadRX, rHeadCY+j*(rHeadRY/3.3));
-      c.lineTo(rHeadCX+rHeadRX, rHeadCY+j*(rHeadRY/3.3));
-      c.stroke();
-    }
-    c.restore();
 
-    // racket frame — dark inner ring + a colored accent outline
-    c.beginPath();
-    c.ellipse(rHeadCX, rHeadCY, rHeadRX, rHeadRY, 0, 0, Math.PI*2);
-    c.strokeStyle = '#1c1c1c';
-    c.lineWidth = 2.6;
-    c.stroke();
-    c.beginPath();
-    c.ellipse(rHeadCX, rHeadCY, rHeadRX*0.9, rHeadRY*0.93, 0, 0, Math.PI*2);
-    c.strokeStyle = ch.shirt;
-    c.lineWidth = 1;
-    c.stroke();
     c.restore();
-
     c.restore();
   }
 
