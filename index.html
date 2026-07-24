@@ -5024,6 +5024,11 @@
     const distFromNetTap = Math.abs(headX - NET_X);
     const isNetDink = distFromNetTap <= NET_DINK_DISTANCE && chargeFrac <= NET_DINK_TAP_MAX_CHARGE;
 
+    // whether the ball we're returning was a smash — captured before shuttle.kind is
+    // reassigned below, so the smash-return power floor (in the float branch) can borrow
+    // the smash's pace and guarantee the return clears the net (see there).
+    const incomingWasSmash = shuttle.kind === 'smash';
+
     // on the ground it's always an underhand-style return; in the air, a charge of
     // 50% or more turns it into a smash — below that it's a softer underhand return
     let kind = isNetDink ? 'dink' : ((!p.onGround && chargeFrac >= 0.5) ? 'smash' : 'float');
@@ -5182,6 +5187,19 @@
         const curFrac = (power - MIN_POWER_MULT) / (MAX_POWER_MULT - MIN_POWER_MULT);
         if(maxFrac > 0.06 && curFrac > maxFrac){
           power = MIN_POWER_MULT + (MAX_POWER_MULT - MIN_POWER_MULT) * maxFrac;
+        }
+      }
+      // Smash-return power FLOOR: a block/lift off an incoming smash borrows the smash's
+      // pace, so it always clears the net to a safe reset depth even from the back court
+      // with a rushed, near-zero charge — the fix for low-power characters (and any late,
+      // weak block) dying short. Position-aware (needs more from deeper) and a FLOOR only:
+      // a well-charged return still goes deeper, so nothing overshoots that wasn't already.
+      if(incomingWasSmash){
+        const distNetR = Math.abs(headX - NET_X);
+        const floorFrac = (240 - 380 + 0.97*distNetR) / (640 * powerMultForRegular(p.character));
+        if(floorFrac > 0){
+          const floorPower = MIN_POWER_MULT + (MAX_POWER_MULT - MIN_POWER_MULT) * Math.min(0.95, floorFrac);
+          power = Math.max(power, floorPower);
         }
       }
       const speed = FLOAT_BASE_SPEED * power * powerMultForRegular(p.character);
