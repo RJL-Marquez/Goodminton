@@ -4348,9 +4348,18 @@
     const smashHeightMargin = (100 - 28*diff.jumpChance) * (combo ? 0.6 : 1);
     const highBall = shuttle.y < p.y - smashHeightMargin;
 
-    // Incoming smash → defensive block: a short, reliable underhand touch (never a jump).
+    // Incoming smash → defensive return (never a jump). Near the net, a soft quick block
+    // drops it back over. But from deeper in the court a fixed short tap has NO power to
+    // clear the net — the shuttle dies short on our own side (the reported bug). From
+    // there, solve a real defensive LIFT to a safe depth so the return actually gets back
+    // over, and let it charge as long as it needs (see the smash-defense pre-charge and
+    // the no-under-hit exemption in runAI). Better players lift a touch deeper for margin.
     if(shuttle.kind === 'smash'){
-      return {type:'block', windupEarly:true, fixedHold:diff.smashChargeDuration, jump:false};
+      if(myDistNet <= NET_DINK_DISTANCE*1.1){
+        return {type:'block', windupEarly:true, fixedHold:diff.smashChargeDuration, jump:false};
+      }
+      const liftDepth = 300 + 140*diff.placementSkill; // ~333 (easy) .. 440 (expert): deep, safe reset
+      return {type:'block', windupEarly:true, targetDepth:liftDepth, jump:false};
     }
 
     // Jump smash — the offensive kill. High-power characters actively hunt for this;
@@ -4820,7 +4829,14 @@
       // their whole identity is a sub-0.14-charge touch — winding up early would let the
       // charge climb past the dink threshold and turn it into a weak float.
       const windupGate = plan.windupEarly ? (ai.focused || nearReach) : (inReach && canReachHeight);
-      if(ai.willAttempt && !ai.hasSwung && windupGate && shuttleOnMySide &&
+      // Smash-defense anticipation: a defensive block/lift against an incoming smash may
+      // begin winding up BEFORE the shuttle crosses to our side — a real player loads the
+      // return as the smash comes at them, not after it has already arrived. This buys the
+      // charge time a deep defensive lift needs to actually clear the net. Release still
+      // requires inReach/canReachHeight below, so it never reaches across the net.
+      const smashDefense = shuttle.kind === 'smash' && plan.type === 'block';
+      const chargeGate = shuttleOnMySide || (smashDefense && towardMe);
+      if(ai.willAttempt && !ai.hasSwung && windupGate && chargeGate &&
          !p.charging && now - p.lastHitTime >= HIT_COOLDOWN){
         startCharge(p, now);
         let holdDur;
@@ -4845,8 +4861,10 @@
           }
           // depthAwareness models the classic unforced error: less skilled play sometimes
           // fails to add the power a deep hit needs. Now scaled by the character's Control
-          // (Part 2), so a precision player misjudges depth far less often.
-          if(Math.random() >= effectiveDepthAwareness(diff, p.character)){
+          // (Part 2), so a precision player misjudges depth far less often. A defensive
+          // block/lift is EXEMPT — a smash return must reliably clear the net, so it never
+          // takes the under-hit roll (this is the "dies short" fix, for all difficulties).
+          if(plan.type !== 'block' && Math.random() >= effectiveDepthAwareness(diff, p.character)){
             frac *= 0.55 + Math.random()*0.3; // under-hit — may not survive the trip
           }
           holdDur = frac * chargeTimeFor(p.character);
