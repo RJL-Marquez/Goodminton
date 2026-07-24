@@ -3401,6 +3401,7 @@
       chargeStart:0,
       swingTimer:0,
       swingPowerFrac:1,
+      stamina:100, // MOMENTUM_SPEC Part 5 — fifth axis
       character:null,
       minX: onLeft ? COURT_LEFT-12 : NET_X + NET_WIDTH/2 + 8,
       maxX: onLeft ? NET_X - NET_WIDTH/2 - 8 - PLAYER_W : COURT_RIGHT+12-PLAYER_W,
@@ -3499,13 +3500,14 @@
   let hitFreezeFrames = 0;
   let ultCinematic = null; // {timer, dur, side, name, artName, color}
   function prettyArtName(id){ return id ? id.replace(/_/g, ' ') : 'RAGE ART'; }
-  function triggerUltCinematic(p){
+  function triggerUltCinematic(p, artIdOverride){
     const mech = Simulation.mechFor(p.character);
+    const artId = artIdOverride || (mech && mech.art && mech.art.id);
     ultCinematic = {
       timer: 0.9, dur: 0.9,
       side: p.side,
       name: ((p.character && p.character.name) || '').toUpperCase(),
-      artName: prettyArtName(mech && mech.art && mech.art.id).toUpperCase(),
+      artName: prettyArtName(artId).toUpperCase(),
       color: p.side === 'left' ? '#3b82f6' : '#ec4899',
       accent: (p.character && p.character.shirt) || '#ff3b3b'
     };
@@ -3555,7 +3557,7 @@
   // Kind/power the result should take BEFORE the normal velocity branch runs,
   // so the right trajectory type is produced, then re-shaped by ultDrive/ArtEffect.
   function ultKindPower(p, spend, baseKind){
-    const id = p.character && p.character.id;
+    const id = effectiveUltId(p); // sherman resolves to the opponent's ult
     if(spend === 'drive'){
       switch(id){
         case 'jordan': case 'lindan': case 'cristiano': return { kind: 'smash', power: 1.2 };
@@ -3572,7 +3574,7 @@
   }
 
   function ultDriveEffect(p){
-    const id = p.character && p.character.id;
+    const id = effectiveUltId(p); // sherman copies the opponent's Rage Drive
     const dir = p.side === 'left' ? 1 : -1;
     switch(id){
       case 'maya':  ultLaunchToward(ultDeepCornerX(p), 150); break;        // auto-perfect deep corner
@@ -3584,7 +3586,7 @@
   }
 
   function ultArtEffect(p){
-    const id = p.character && p.character.id;
+    const id = effectiveUltId(p); // sherman copies the opponent's Rage Art
     const opp = ultOpponent(p);
     const dir = p.side === 'left' ? 1 : -1;
     switch(id){
@@ -3617,7 +3619,179 @@
       case 'jordan': case 'cristiano':           // heavy finisher (generic smash already set)
         shuttle.hitByMaxPower = true;
         break;
-      default: break; // transformations (kenji/priya/liam/mateo/elijah/benjamin): generic finisher for now
+      default: break; // transformations flip on a timed state via activateTransform (below)
+    }
+  }
+
+  // ==== Transformation ultimates (MOMENTUM_SPEC Part 6) =====================
+  // Six Arts are timed physics-state changes rather than one-shot cinematics.
+  // Activation clones the character with modified stats so the existing
+  // speedMultFor/powerMultFor/reachFor helpers pick the change up automatically,
+  // and records p.transform. tickTransform() expires it and restores the base
+  // character. Behavioural rules that can't be expressed as a stat (movement
+  // lock, forced shot kind, dash-cooldown waiver, reach wall) are read off
+  // p.transform at the relevant sim sites. Duration alone bounds these for now;
+  // Phase 5 stamina will make the aggressive ones self-limit (spec Part 5.3).
+  const TRANSFORM_CONFIG = {
+    // kenji Split Step — dash freely (no cooldown); handled via p.transform flag.
+    SPLIT_STEP:        { dur: 5.0, stats: null,                              label: 'SPLIT STEP' },
+    // priya Redline — speed/power maxed, control gutted. The self-lit bomb.
+    REDLINE:           { dur: 5.0, stats: { speed: 5, power: 5, control: 1 }, label: 'REDLINE' },
+    // liam Rally Lock — perfect-hit forgiveness (max control + reach bonus).
+    RALLY_LOCK:        { dur: 6.0, stats: { control: 5 },                     label: 'RALLY LOCK' },
+    // mateo Anchor — rooted, every shot a smash, reach covers most of his half.
+    ANCHOR:            { dur: 6.0, stats: { power: 5, control: 5 },           label: 'ANCHOR' },
+    // elijah Fursona Unleashed — power up, speed down (spec: 2→5 / 4→2).
+    FURSONA_UNLEASHED: { dur: 8.0, stats: { power: 5, speed: 2, control: 4 }, label: 'FURSONA' },
+    // benjamin Blockade — a wall: massive reach, every return a flat dead drop, no offense.
+    BLOCKADE:          { dur: 5.0, stats: { control: 5, power: 1 },           label: 'BLOCKADE' }
+  };
+  function activateTransform(p, type, now){
+    const cfg = TRANSFORM_CONFIG[type];
+    if(!cfg) return;
+    if(!p.baseCharacter) p.baseCharacter = p.character;
+    const base = p.baseCharacter;
+    // clone with modified stats (same id, so momentum mechanics still resolve)
+    p.character = cfg.stats
+      ? Object.assign({}, base, { stats: Object.assign({}, base.stats, cfg.stats) })
+      : base;
+    p.transform = { type: type, expiry: now + cfg.dur, dur: cfg.dur, label: cfg.label };
+  }
+  function tickTransform(p, now){
+    if(p.transform && now >= p.transform.expiry){
+      p.character = p.baseCharacter || p.character;
+      p.baseCharacter = null;
+      p.transform = null;
+    }
+  }
+  // Extra reach granted while a "wall"-type transform is active, added to reachFor()
+  // at the contact gate so these forms can actually cover the ground they promise.
+  function transformReachBonus(p){
+    if(!p.transform) return 0;
+    switch(p.transform.type){
+      case 'ANCHOR':    return 110; // rooted but covers most of his half
+      case 'BLOCKADE':  return 80;  // a defensive wall
+      case 'RALLY_LOCK':return 26;  // hit forgiveness
+      default: return 0;
+    }
+  }
+  // Forced shot kind while a transform dictates one (subsequent hits after the
+  // activation swing). Anchor smashes everything; Blockade dead-drops everything.
+  function transformForcedKind(p){
+    if(!p.transform) return null;
+    if(p.transform.type === 'ANCHOR') return 'smash';
+    if(p.transform.type === 'BLOCKADE') return 'dink';
+    return null;
+  }
+
+  // Sherman ADAPT (spec Part 6 "inherited"): resolve ult behaviour as the OPPONENT's
+  // character. Returning the opponent's id lets ultKindPower / ultDriveEffect /
+  // ultArtEffect run the copied ultimate verbatim (Amara's marker still references
+  // the true opponent, which is correct). Mirror-match falls back to Sherman himself.
+  function effectiveUltId(p){
+    if(p.character && p.character.id === 'sherman'){
+      const opp = ultOpponent(p);
+      const oppId = opp && opp.character && opp.character.id;
+      return (oppId && oppId !== 'sherman') ? oppId : 'liam'; // Liam's flat baseline if no table to copy
+    }
+    return p.character && p.character.id;
+  }
+
+  // ==== Passives (MOMENTUM_SPEC Part 3) — always on, no input, no meter =======
+  // Every passive read goes through passiveIdFor(p) so Sherman's Mimicry (adopts
+  // the opponent's passive after rally one) is handled in one place. The local sim
+  // models no mishits, knockback, landing-recovery lag, or shuttle spin, so the
+  // passives that depend on those (Diego Reckless Swing, Liam Consistency, Sofia
+  // Light Feet, Elijah Slippery, and the "never mishits" half of Flat Face) are
+  // wired but inert until those mechanics exist — flagged individually below.
+  const SPOTLIGHT_TRICKLE_PER_SEC = 3; // cristiano fills ~100 over ~33s while behind
+  function passiveIdFor(p){
+    const mech = Simulation.mechFor(p.character);
+    const id = mech && mech.passive;
+    if(id === 'MIMICRY'){ // Sherman adopts the opponent's passive once rally one is done
+      if(ralliesPlayed >= 1){
+        const opp = p.side === 'left' ? right : left;
+        const om = Simulation.mechFor(opp.character);
+        if(om && om.passive && om.passive !== 'MIMICRY') return om.passive;
+      }
+      return null; // rally one: no passive yet
+    }
+    return id;
+  }
+  function passiveIsBehind(p){ const opp = p.side==='left'?right:left; return p.score < opp.score; }
+
+  // Movement-speed multiplier contributed by passives (applied in updatePlayer).
+  function passiveSpeedMult(p){
+    let m = 1;
+    const id = passiveIdFor(p);
+    if(id === 'ADRENALINE' && passiveIsBehind(p)) m *= 1.12;          // Priya: +1-speed feel while behind
+    if(id === 'FLAIR') m *= 1 + Math.min(3, p.flairStacks||0)*0.03;   // Rodrigo: varied shots stack a small buff
+    return m;
+  }
+  // Extra reach from a passive (Mateo Root: planted-stance hits reach further).
+  function passiveReachBonus(p){
+    if(passiveIdFor(p) === 'ROOT' && Math.abs(p.vx||0) < 1 && p.dashTimer <= 0) return 22;
+    return 0;
+  }
+  // Passive Momentum trickle while behind (Cristiano Spotlight). Bypasses the gain
+  // engine on purpose — it's a slow drip, not a per-contact weight.
+  function applyPassiveMomentumTrickle(p, dt){
+    if(passiveIdFor(p) === 'SPOTLIGHT' && passiveIsBehind(p) && p.momentum != null){
+      p.momentum = Math.min(GameConstants.MOMENTUM.MAX, p.momentum + SPOTLIGHT_TRICKLE_PER_SEC*dt);
+      p.momentumTier = Simulation.momentumTierOf(p.momentum);
+    }
+  }
+  // Post-contact passive bookkeeping — called from releaseHit after a clean hit.
+  function updatePassivesOnHit(p, kind, now){
+    const id = passiveIdFor(p);
+    // Rodrigo Flair: consecutive DIFFERENT shot types stack; a repeat resets.
+    if(id === 'FLAIR'){
+      if(p.lastShotKind && p.lastShotKind !== kind) p.flairStacks = Math.min(3,(p.flairStacks||0)+1);
+      else p.flairStacks = 0;
+    }
+    // Jordan Follow-Through: a smash opens/refreshes a 2s +power window that chains.
+    if(id === 'FOLLOW_THROUGH' && kind === 'smash') p.followThroughUntil = now + 2.0;
+    // Kenji Second Wind: a dash that led to this hit refunds half the dash cooldown.
+    if(id === 'SECOND_WIND' && (now - p.lastDashTime) <= DASH_WINDOW) p.lastDashTime -= DASH_COOLDOWN*0.5;
+    p.lastShotKind = kind;
+  }
+
+  // ==== Height (MOMENTUM_SPEC Part 4) — the fourth axis ======================
+  // Height (cm, from CHARACTER_MECHANICS) is orthogonal to speed/power/control:
+  // tall = wider contact reach, higher jump apex, steeper smashes and a higher
+  // overhead window; short = a lower window for floor retrieves. Implemented via
+  // the low-risk touchpoints (reach gate, jump velocity, smash angle, hit window)
+  // plus a cosmetic body-scale. The PLAYER_H *hurtbox* is left uniform on purpose:
+  // varying collision height ripples through positioning/rendering and is the
+  // spec's flagged "do this only once everything else is stable" risk (Part 4.4 /
+  // Part 9), so it's deferred rather than rushed without playtest.
+  const HEIGHT_NOMINAL = 175;
+  function heightOf(ch){ const m = Simulation.mechFor(ch); return (m && m.height) || HEIGHT_NOMINAL; }
+  function heightDelta(ch){ return heightOf(ch) - HEIGHT_NOMINAL; }        // + tall, - short
+  function heightReachBonus(ch){ return heightDelta(ch) * 0.7; }            // tall reaches wider
+  function heightJumpMult(ch){ return 1 + heightDelta(ch)/HEIGHT_NOMINAL * 0.6; } // taller jumps higher
+  function heightVisualScale(ch){ return 1 + heightDelta(ch)/HEIGHT_NOMINAL * 1.2; } // cosmetic only
+  function heightTopExtend(ch){ return Math.max(0,  heightDelta(ch)) * 1.2; } // tall: higher overhead reach
+  function heightLowExtend(ch){ return Math.max(0, -heightDelta(ch)) * 1.6; } // short: lower floor reach
+  function heightSmashSteepen(ch){ return Math.max(0, heightDelta(ch)) * 0.2; } // tall: steeper smash angle
+
+  // ==== Stamina (MOMENTUM_SPEC Part 5) — the fifth axis (Endurance) ==========
+  // Actions cost stamina; it regenerates while grounded and idle and refills fully
+  // between points. Endurance (1–5, from CHARACTER_MECHANICS) scales regen, so
+  // aggressive low-endurance characters must close early while defensive ones
+  // outlast them (spec Part 5.3). Below 25% the dash locks and power drops 20%.
+  // This is the spec's highest-risk / last layer (Part 8/9) and the first thing to
+  // cut or retune after playtest — kept faithful to the appendix numbers for now.
+  function enduranceOf(ch){ const m = Simulation.mechFor(ch); return (m && m.endurance) || 3; }
+  function staminaRegenFor(ch){ return GameConstants.STAMINA.REGEN_PER_SEC * (0.5 + 0.17*enduranceOf(ch)); }
+  function staminaLow(p){ return (p.stamina||0) < GameConstants.STAMINA.MAX * GameConstants.STAMINA.LOW_THRESHOLD; }
+  function staminaHas(p, amt){ return (p.stamina||0) >= amt; }
+  function spendStamina(p, amt){ p.stamina = Math.max(0, (p.stamina==null?GameConstants.STAMINA.MAX:p.stamina) - amt); }
+  function refillStamina(p){ p.stamina = GameConstants.STAMINA.MAX; }
+  function regenStamina(p, dt){
+    if(p.stamina == null) p.stamina = GameConstants.STAMINA.MAX;
+    if(p.onGround && !p.charging){
+      p.stamina = Math.min(GameConstants.STAMINA.MAX, p.stamina + staminaRegenFor(p.character)*dt);
     }
   }
 
@@ -4007,7 +4181,12 @@
 
   function tryJump(p, now){
     if(state !== 'rally' && state !== 'serve') return;
-    if(p.onGround){ p.vy = JUMP_VELOCITY; p.onGround = false; }
+    if(p.transform && p.transform.type === 'ANCHOR') return; // rooted (Part 6)
+    if(p.onGround){
+      p.vy = JUMP_VELOCITY * heightJumpMult(p.character); // taller = higher apex (Part 4)
+      p.onGround = false;
+      spendStamina(p, GameConstants.STAMINA.COST.jump); // Part 5.1 — jump costs but is not locked
+    }
   }
 
   // Per-side movement flags the AI drives — stored in the same `keys` map a human's
@@ -4271,7 +4450,9 @@
     // higher difficulties) reset quicker. This is what makes PLACEMENT win points: a
     // defender pulled to the net by a drop genuinely can't instantly sprint down the
     // follow-up clear. Purely a self-imposed input pause — no physics are altered.
-    const recovering = now - p.lastHitTime < diff.recoverTime * (1.2 - 0.4*persona.mobility);
+    // Lindan Court Sense (Part 3): quicker automatic recovery to a ready stance.
+    const recoverMult = passiveIdFor(p) === 'COURT_SENSE' ? 0.6 : 1;
+    const recovering = now - p.lastHitTime < diff.recoverTime * recoverMult * (1.2 - 0.4*persona.mobility);
 
     const centerX = p.x + PLAYER_W/2;
     if(!recovering){
@@ -4286,27 +4467,32 @@
     // actually chasing — no point burning a dash drifting back to the recovery stance.
     const dashAllowed = diff.dashUse === 'always' ||
                         (diff.dashUse === 'fast-chars' && persona.mobility >= 0.75);
-    if(ai.focused && !recovering && dashAllowed && p.onGround && p.dashTimer <= 0 && canDash(p.character)){
+    if(ai.focused && !recovering && dashAllowed && p.onGround && p.dashTimer <= 0 && canDash(p.character) && !staminaLow(p)){
       const travelDist = Math.abs(ai.targetX - centerX);
       const triggerDist = AI_DASH_TRIGGER_DIST * (1.35 - 0.7*persona.mobility);
-      if(travelDist > triggerDist && now - p.lastDashTime >= DASH_COOLDOWN){
+      const aiDashCd = (p.transform && p.transform.type === 'SPLIT_STEP') ? 0 : DASH_COOLDOWN; // Split Step waives cooldown
+      if(travelDist > triggerDist && now - p.lastDashTime >= aiDashCd && staminaHas(p, GameConstants.STAMINA.COST.dash)){
         p.dashDir = ai.targetX > centerX ? 1 : -1;
         p.dashTimer = DASH_DURATION;
         p.lastDashTime = now;
+        spendStamina(p, GameConstants.STAMINA.COST.dash); // Part 5.1
       }
     }
 
     const dx = Math.abs(shuttle.x - centerX);
     const dy = shuttle.y;
-    const aiReach = reachFor(p.character);
+    // Height (Part 4): mirror the contact reach/window the AI actually has, so it
+    // doesn't plan swings it can't make (or ignore ones it can). Passive Root reach
+    // is included too, since a planted Mateo really can reach further.
+    const aiReach = reachFor(p.character) + heightReachBonus(p.character) + transformReachBonus(p) + passiveReachBonus(p);
     const nearReach = dx <= aiReach + 40;   // loose window: start planning
     const inReach = dx <= aiReach;          // tight window: actually allowed to swing
     // never reach across the net for a shuttle still on the opponent's side — if it
     // hasn't crossed over, the smart move is to leave it alone and let it fall (which
     // scores the point automatically), not chase it
     const shuttleOnMySide = p.side === 'right' ? shuttle.x >= NET_X : shuttle.x <= NET_X;
-    const smashTop = p.y - 90;
-    const smashBottom = p.y + 220;
+    const smashTop = p.y - 90 - heightTopExtend(p.character);
+    const smashBottom = p.y + 220 + heightLowExtend(p.character);
     const canReachHeight = dy >= smashTop && dy <= smashBottom;
 
     const opportunityReady = nearReach && lastHitBy !== p.side && now - p.lastHitTime >= HIT_COOLDOWN;
@@ -4472,12 +4658,17 @@
   function tryDash(p, dir, tag, now){
     if(state !== 'rally' && state !== 'serve') return;
     if(!canDash(p.character)) return; // kept as a guard in case dash eligibility is ever regated
+    if(p.transform && p.transform.type === 'ANCHOR') return; // rooted (Part 6)
+    if(staminaLow(p)) return; // below 25% stamina the dash is locked (Part 5.1)
     const last = p.lastTapTime[tag];
     p.lastTapTime[tag] = now;
-    if(now - last <= DASH_WINDOW && now - p.lastDashTime >= DASH_COOLDOWN){
+    // Split Step (kenji): dash freely — the cooldown gate is waived (Part 6)
+    const dashCd = (p.transform && p.transform.type === 'SPLIT_STEP') ? 0 : DASH_COOLDOWN;
+    if(now - last <= DASH_WINDOW && now - p.lastDashTime >= dashCd && staminaHas(p, GameConstants.STAMINA.COST.dash)){
       p.dashTimer = DASH_DURATION;
       p.dashDir = dir;
       p.lastDashTime = now;
+      spendStamina(p, GameConstants.STAMINA.COST.dash); // Part 5.1
     }
   }
 
@@ -4529,15 +4720,21 @@
       } else {
         spend = p.aiUltIntent || null;
       }
+      // Stamina cost gate (Part 1.3 / Part 5.1): Rage Drive needs 20, Rage Art 30.
+      // Without the stamina the ultimate can't fire — the meter is kept for later.
+      if(spend === 'drive' && !staminaHas(p, GameConstants.STAMINA.COST.drive)) spend = null;
+      if(spend === 'art' && !staminaHas(p, GameConstants.STAMINA.COST.ultimate)) spend = null;
     }
 
     const headX = p.x + PLAYER_W/2;
     const headY = p.y;
     const dx = Math.abs(shuttle.x - headX);
-    if(dx > reachFor(p.character)){ Simulation.applyMomentumWhiff(p, {maxCharge: moMaxCharge, now: now}); if(spend==='art') rageArtWhiff(p, now); return false; }
+    // Anchor/Blockade/Rally-Lock transforms (Part 6) + Mateo Root passive (Part 3) extend reach
+    if(dx > reachFor(p.character) + transformReachBonus(p) + passiveReachBonus(p) + heightReachBonus(p.character)){ Simulation.applyMomentumWhiff(p, {maxCharge: moMaxCharge, now: now}); if(spend==='art') rageArtWhiff(p, now); return false; }
 
-    const smashTop = headY - 90;
-    const smashBottom = headY + 220;
+    // Height (Part 4): tall players reach higher overhead, short players dig lower.
+    const smashTop = headY - 90 - heightTopExtend(p.character);
+    const smashBottom = headY + 220 + heightLowExtend(p.character);
 
     const dy = shuttle.y;
     if(dy < smashTop || dy > smashBottom){ Simulation.applyMomentumWhiff(p, {maxCharge: moMaxCharge, now: now}); if(spend==='art') rageArtWhiff(p, now); return false; } // out of reach
@@ -4572,6 +4769,25 @@
     if(spend){
       const kp = ultKindPower(p, spend, kind);
       kind = kp.kind; power = kp.power;
+    } else {
+      // While a transform dictates a shot type, every follow-up swing takes it:
+      // Anchor smashes everything, Blockade flat-drops everything (Part 6).
+      const forced = transformForcedKind(p);
+      if(forced === 'smash'){ kind = 'smash'; power = Math.max(power, 1.0); }
+      else if(forced === 'dink'){ kind = 'dink'; }
+    }
+
+    // ---- Passive shot adjustments (MOMENTUM_SPEC Part 3) ----
+    const passiveId = passiveIdFor(p);
+    if(passiveId === 'FLAT_FACE' && kind === 'smash') kind = 'float';                 // Benjamin can never smash
+    if(passiveId === 'FOLLOW_THROUGH' && now < (p.followThroughUntil||0)) power *= 1.18; // Jordan chain power
+
+    // ---- Stamina effects on this swing (MOMENTUM_SPEC Part 5) ----
+    // Ult swings pay their own (drive/ultimate) cost below and are exempt from the
+    // low-power penalty (they can't fire below 25% anyway — an ult needs 30 stamina).
+    if(!spend){
+      if(staminaLow(p)) power *= GameConstants.STAMINA.LOW_POWER_MULT;                 // -20% below 25%
+      if(kind === 'smash') spendStamina(p, GameConstants.STAMINA.COST.smash);          // smash costs 15
     }
 
     p.lastHitTime = now;
@@ -4608,7 +4824,8 @@
       // the net (within NET_CLOSE_RANGE) — anywhere further back than that, smashes keep
       // their normal flatter angle regardless of how far from the net they were
       const netCloseFrac = Math.max(0, Math.min(1, 1 - distFromNet / NET_CLOSE_RANGE));
-      const angleDeg = SMASH_BACK_ANGLE + (SMASH_NET_STEEP_ANGLE - SMASH_BACK_ANGLE) * netCloseFrac;
+      // Height (Part 4): taller players get a steeper downward smash angle.
+      const angleDeg = SMASH_BACK_ANGLE + (SMASH_NET_STEEP_ANGLE - SMASH_BACK_ANGLE) * netCloseFrac + heightSmashSteepen(p.character);
       // manual attack angle only ever applies to human players with Advanced Controls on —
       // AI keeps the default angleDeg untouched. Positive angle flattens/lifts the smash
       // (subtracted from the downward angle); negative steepens it.
@@ -4648,7 +4865,9 @@
       // random spread around it; lower Control pushes the mean spot deeper and widens
       // the spread — see the tuning comment above DINK_LANDING_BASE_DIST for the numbers
       const meanDist = DINK_LANDING_BASE_DIST / dinkAccuracyMult;
-      const varianceRange = DINK_LANDING_VARIANCE_BASE / dinkAccuracyMult;
+      let varianceRange = DINK_LANDING_VARIANCE_BASE / dinkAccuracyMult;
+      // Maya Muscle Memory (Part 3): repeating the same shot type tightens placement.
+      if(passiveIdFor(p) === 'MUSCLE_MEMORY' && p.lastShotKind === 'dink') varianceRange *= 0.55;
       const jitter = (Math.random()*2 - 1) * varianceRange;
       const targetDist = Math.max(DINK_LANDING_MIN_DIST, meanDist + jitter);
 
@@ -4710,15 +4929,34 @@
       clean: true
     });
 
+    // ---- Passive post-contact bookkeeping (MOMENTUM_SPEC Part 3) ----
+    updatePassivesOnHit(p, kind, now);
+
     // ---- Ultimate spend: per-character effect, consume meter, fire juice ----
     if(spend){
       const col = p.side === 'left' ? '#3b82f6' : '#ec4899';
+      // Resolve the Art's flavour BEFORE the effect runs (activation may swap
+      // p.character to a stat clone). For Sherman (ADAPT/inherited) copy the
+      // opponent's Art — including whether it's a transformation to flip on.
+      const mech = Simulation.mechFor(p.character);
+      let artType = mech && mech.art && mech.art.type;
+      let bannerId = mech && mech.art && mech.art.id;
+      let xformType = (spend === 'art' && artType === 'transformation') ? mech.art.id : null;
+      if(spend === 'art' && artType === 'inherited'){
+        const oppMech = Simulation.mechFor(ultOpponent(p).character);
+        if(oppMech && oppMech.art){
+          bannerId = oppMech.art.id;
+          if(oppMech.art.type === 'transformation') xformType = oppMech.art.id;
+        }
+      }
       if(spend === 'art') ultArtEffect(p); else ultDriveEffect(p);
       Simulation.spendMomentum(p); // zeroes the meter (gain above is absorbed)
+      spendStamina(p, spend === 'art' ? GameConstants.STAMINA.COST.ultimate : GameConstants.STAMINA.COST.drive); // Part 5.1
       p.aiUltIntent = null;
       if(spend === 'art'){
-        triggerUltCinematic(p);        // screen desaturate + portrait slam (Part 7)
-        hitFreezeFrames = 4;           // 4-frame hit-freeze on contact (Part 7)
+        if(xformType) activateTransform(p, xformType, now); // timed physics state (Part 6)
+        triggerUltCinematic(p, bannerId); // screen desaturate + portrait slam (Part 7)
+        hitFreezeFrames = 4;              // 4-frame hit-freeze on contact (Part 7)
         triggerShake(15, 0.4);
         playSound('smash');
         spawnHitParticles(shuttle.x, shuttle.y, 30, true, col);
@@ -4812,6 +5050,7 @@
     right.charging = false;
     left.swingTimer = 0;
     right.swingTimer = 0;
+    refillStamina(left); refillStamina(right); // full stamina refill between points (Part 5.1)
     isServeFlight = false;
     state = 'serve';
     rallyHitCount = 0;
@@ -4925,6 +5164,13 @@
     Simulation.resetMomentum(left);
     Simulation.resetMomentum(right);
     left.moPeakLogged = false; right.moPeakLogged = false;
+    // Clear any lingering transformation ultimate state (Part 6).
+    left.transform = null; left.baseCharacter = null;
+    right.transform = null; right.baseCharacter = null;
+    // Reset passive bookkeeping (Part 3).
+    left.flairStacks = 0; left.followThroughUntil = 0; left.lastShotKind = null;
+    right.flairStacks = 0; right.followThroughUntil = 0; right.lastShotKind = null;
+    refillStamina(left); refillStamina(right); // Stamina full at game start (Part 5)
     momentumRunStart = performance.now()/1000; // instrumentation: game clock origin
     setupServe();
   }
@@ -4944,6 +5190,13 @@
     Simulation.resetMomentum(left);
     Simulation.resetMomentum(right);
     left.moPeakLogged = false; right.moPeakLogged = false;
+    // Clear any lingering transformation ultimate state (Part 6).
+    left.transform = null; left.baseCharacter = null;
+    right.transform = null; right.baseCharacter = null;
+    // Reset passive bookkeeping (Part 3).
+    left.flairStacks = 0; left.followThroughUntil = 0; left.lastShotKind = null;
+    right.flairStacks = 0; right.followThroughUntil = 0; right.lastShotKind = null;
+    refillStamina(left); refillStamina(right); // Stamina full at game start (Part 5)
     momentumRunStart = performance.now()/1000; // instrumentation: game clock origin
     setupServe();
   }
@@ -6944,7 +7197,18 @@
   // ---------- update ----------
   function updatePlayer(p, dt, leftKey, rightKey){
     let vx = 0;
-    const spMult = speedMultFor(p.character);
+    const spMult = speedMultFor(p.character) * passiveSpeedMult(p); // Part 3: Adrenaline/Flair
+    // Anchor (mateo): rooted for the duration — no horizontal movement, no dash (Part 6)
+    if(p.transform && p.transform.type === 'ANCHOR'){
+      p.vx = 0;
+      p.dashTimer = 0;
+      p.swingTimer = Math.max(0, p.swingTimer - dt);
+      p.attackAngleDisplay += (p.attackAngle - p.attackAngleDisplay) * Math.min(1, 10*dt);
+      p.vy += PLAYER_GRAVITY*dt;
+      p.y += p.vy*dt;
+      if(p.y + PLAYER_H >= GROUND_Y){ p.y = GROUND_Y - PLAYER_H; p.vy = 0; p.onGround = true; }
+      return;
+    }
     if(p.dashTimer > 0){
       // dash distance uses the tier-based multiplier (normal speed scaling for 4★,
       // plus the extra 5★ bonus) rather than the plain movement multiplier above
@@ -7299,6 +7563,12 @@
             pointPauseTimer -= dt;
             if(pointPauseTimer <= 0) setupServe();
           }
+          tickTransform(left, nowSec);  // expire timed transformation ultimates (Part 6)
+          tickTransform(right, nowSec);
+          applyPassiveMomentumTrickle(left, dt);  // Cristiano Spotlight (Part 3)
+          applyPassiveMomentumTrickle(right, dt);
+          regenStamina(left, dt);  // Stamina regen while grounded & idle (Part 5.1)
+          regenStamina(right, dt);
           logMomentumPeaks(); // Phase 1 instrumentation (Part 8): time-to-PEAK log
         }
       }
@@ -8216,6 +8486,47 @@
     ctx.restore();
   }
 
+  // Active-transformation indicator (MOMENTUM_SPEC Part 6): while a timed Art is
+  // running, ring the player in a bright band with the transform's name and a
+  // shrinking arc that counts the remaining duration down. Purely cosmetic —
+  // reads p.transform, never writes it.
+  function drawTransformIndicator(p, cx){
+    if(!p.transform) return;
+    const nowSec = performance.now()/1000;
+    const remain = Math.max(0, p.transform.expiry - nowSec);
+    const frac = Math.max(0, Math.min(1, remain / p.transform.dur));
+    const cy = p.y + PLAYER_H*0.45;
+    const col = p.side === 'left' ? '#60a5fa' : '#f472b6';
+    ctx.save();
+    // pulsing outline band
+    const pulse = 0.5 + 0.5*Math.sin(nowSec*7);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = col;
+    ctx.globalAlpha = 0.45 + 0.35*pulse;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, PLAYER_W*0.62, PLAYER_H*0.62, 0, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+    // duration arc above the head
+    const ax = cx, ay = p.y - 18, ar = 11;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(ax, ay, ar, 0, Math.PI*2); ctx.stroke();
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(ax, ay, ar, -Math.PI/2, -Math.PI/2 + Math.PI*2*frac); ctx.stroke();
+    ctx.restore();
+    // label
+    ctx.save();
+    ctx.font = '700 10px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = col;
+    ctx.fillText(p.transform.label, cx, p.y - 34);
+    ctx.restore();
+  }
+
   // Phase 1 instrumentation (MOMENTUM_SPEC Part 0.3 / Part 8): the moment a side
   // first hits PEAK, log which character got there, in how many clean contacts,
   // over how many seconds, and their weighted-average WEIGHT vs the 1.15 ceiling.
@@ -8277,8 +8588,9 @@
 
     const facing = p.side === 'left' ? 1 : -1;
     drawMomentumAura(p, cx, groundY); // MOMENTUM_SPEC Part 1.1/Part 7 — under the body
-    drawHumanoid(ctx, cx, groundY, 1, ch, {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack}, facing);
+    drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), ch, {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack}, facing); // Part 4: taller/shorter silhouette
     drawMomentumCrackle(p, cx); // electric crackle hugging the silhouette, over the body
+    drawTransformIndicator(p, cx); // active transformation ultimate ring + timer (Part 6)
 
     drawAttackAngleIndicator(p);
 
@@ -8562,6 +8874,37 @@
     const y = boxY + boxH + 4;
     drawMomentumOneBar(left,  boxX - gap,        y, barW, barH, -1, '#3b82f6');
     drawMomentumOneBar(right, boxX + boxW + gap, y, barW, barH, +1, '#ec4899');
+    // Stamina bars sit just beneath the momentum bars (MOMENTUM_SPEC Part 5).
+    const sy = y + barH + 4, sh = 5;
+    drawStaminaOneBar(left,  boxX - gap,        sy, barW, sh, -1);
+    drawStaminaOneBar(right, boxX + boxW + gap, sy, barW, sh, +1);
+  }
+
+  // Thin stamina gauge (MOMENTUM_SPEC Part 5). Fills from the same inner anchor as
+  // the momentum bar; turns amber→red as it drops, and flashes red below the 25%
+  // lock threshold so the "dash locked / −20% power" state is legible.
+  function drawStaminaOneBar(p, anchorX, y, w, h, dir){
+    const max = GameConstants.STAMINA.MAX;
+    const s = Math.max(0, Math.min(max, p.stamina == null ? max : p.stamina));
+    const frac = s / max;
+    const low = frac < GameConstants.STAMINA.LOW_THRESHOLD;
+    const x = dir < 0 ? anchorX - w : anchorX;
+    ctx.save();
+    ctx.fillStyle = 'rgba(8,12,28,0.7)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, h/2); ctx.fill(); ctx.stroke();
+    if(frac > 0){
+      const fw = w * frac;
+      const fx = dir < 0 ? (anchorX - fw) : anchorX;
+      let col;
+      if(low){ const pulse = 0.5 + 0.5*Math.sin(performance.now()/1000*8); col = 'rgba(255,'+Math.round(40+40*pulse)+',40,0.95)'; }
+      else if(frac < 0.5) col = 'rgba(240,180,60,0.9)';
+      else col = 'rgba(90,200,140,0.9)';
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.roundRect(fx, y, fw, h, h/2); ctx.fill();
+    }
+    ctx.restore();
   }
 
   // ---------- Ultimate landing marker (MOMENTUM_SPEC Part 6, deception) ----------
