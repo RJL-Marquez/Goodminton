@@ -3263,18 +3263,32 @@
     // check. A good player who can reliably TIME a jump smash takes that shot almost every
     // time it's on, not as a coin flip — hesitating used to be a hedge against mistimed
     // jumps that isn't needed anymore.
-    easy:   { reactionDelay:0.38, aimError:75, jumpChance:0.25, chargeDurationMin:0.10, chargeDurationMax:0.32, missChance:0.20, servePower:0.32,
-              smashReactionDelay:0.30, smashChargeDuration:0.18, smashMissChance:0.35, depthAwareness:0.55, dashUse:'never',      placementSkill:0.30, recoverTime:0.55, momentumAwareness:0.25 },
+    easy:   { reactionDelay:0.44, aimError:92, jumpChance:0.20, chargeDurationMin:0.10, chargeDurationMax:0.32, missChance:0.26, servePower:0.32,
+              smashReactionDelay:0.34, smashChargeDuration:0.18, smashMissChance:0.42, depthAwareness:0.48, dashUse:'never',      placementSkill:0.24, recoverTime:0.64, momentumAwareness:0.20 },
     medium: { reactionDelay:0.20, aimError:35, jumpChance:0.45, chargeDurationMin:0.22, chargeDurationMax:0.50, missChance:0.08, servePower:0.50,
               smashReactionDelay:0.15, smashChargeDuration:0.14, smashMissChance:0.15, depthAwareness:0.80, dashUse:'fast-chars', placementSkill:0.60, recoverTime:0.42, momentumAwareness:0.55 },
-    hard:   { reactionDelay:0.08, aimError:12, jumpChance:0.70, chargeDurationMin:0.32, chargeDurationMax:0.62, missChance:0.06, servePower:0.68,
-              smashReactionDelay:0.05, smashChargeDuration:0.10, smashMissChance:0.08, depthAwareness:1.0,  dashUse:'always',     placementSkill:0.88, recoverTime:0.32, momentumAwareness:0.85 },
+    hard:   { reactionDelay:0.06, aimError:9,  jumpChance:0.80, chargeDurationMin:0.32, chargeDurationMax:0.62, missChance:0.04, servePower:0.68,
+              smashReactionDelay:0.05, smashChargeDuration:0.10, smashMissChance:0.06, depthAwareness:1.0,  dashUse:'always',     placementSkill:0.94, recoverTime:0.24, momentumAwareness:0.90 },
     // Highest difficulty: near-optimal decision QUALITY — quicker reads, tighter targets,
-    // near-zero unforced errors — but still 100% bound by the character's stats and the
-    // same physics/inputs as everyone else. No speed boosts, no teleports, no cheats.
-    expert: { reactionDelay:0.04, aimError:6,  jumpChance:0.85, chargeDurationMin:0.35, chargeDurationMax:0.65, missChance:0.025, servePower:0.72,
-              smashReactionDelay:0.03, smashChargeDuration:0.10, smashMissChance:0.04, depthAwareness:1.0,  dashUse:'always',     placementSkill:1.0,  recoverTime:0.24, momentumAwareness:1.0 }
+    // near-zero unforced errors — PLUS a real physical edge (see AI_MOVE_EDGE/AI_REACH_EDGE):
+    // it covers more court, reaches a touch further and reacts faster than a human on the
+    // same character. This is a deliberate departure from the AI spec's "bound purely by
+    // character stats" rule, made at the game owner's request because decision quality alone
+    // left Expert feeling no harder than Easy.
+    expert: { reactionDelay:0.025,aimError:3,  jumpChance:0.94, chargeDurationMin:0.35, chargeDurationMax:0.65, missChance:0.012, servePower:0.72,
+              smashReactionDelay:0.025,smashChargeDuration:0.10,smashMissChance:0.02, depthAwareness:1.0,  dashUse:'always',     placementSkill:1.0,  recoverTime:0.15, momentumAwareness:1.0 }
   };
+
+  // Physical edge per difficulty (game-owner request — see expert note above). Applied ONLY
+  // to AI-controlled players, so a human is never sped up. Easy is deliberately slower and
+  // shorter-reaching than its character; Expert covers noticeably more court and digs a bit
+  // wider. This is what actually makes the tiers FEEL different — decision quality alone did
+  // not, because movement/reach were previously identical across every difficulty.
+  const AI_MOVE_EDGE  = { easy:0.80, medium:1.0, hard:1.12, expert:1.25 }; // movement/dash speed ×
+  const AI_REACH_EDGE = { easy:-14,  medium:0,   hard:10,   expert:20  };  // extra contact reach (px)
+  function aiEdgeActive(p){ return (mode === 'ai' || mode === 'aivai') && !isHumanControlled(p); }
+  function aiMoveEdge(p){ return aiEdgeActive(p) ? (AI_MOVE_EDGE[aiDifficulty]  || 1) : 1; }
+  function aiReachEdge(p){ return aiEdgeActive(p) ? (AI_REACH_EDGE[aiDifficulty] || 0) : 0; }
 
   // Per-side AI controller state — one instance per AI-controlled player, so AI vs AI mode
   // is just "run the same controller twice". All per-rally decision state lives here.
@@ -4706,7 +4720,7 @@
     // Height (Part 4): mirror the contact reach/window the AI actually has, so it
     // doesn't plan swings it can't make (or ignore ones it can). Passive Root reach
     // is included too, since a planted Mateo really can reach further.
-    const aiReach = reachFor(p.character) + heightReachBonus(p.character) + transformReachBonus(p) + passiveReachBonus(p);
+    const aiReach = reachFor(p.character) + heightReachBonus(p.character) + transformReachBonus(p) + passiveReachBonus(p) + aiReachEdge(p);
     const nearReach = dx <= aiReach + 40;   // loose window: start planning
     const inReach = dx <= aiReach;          // tight window: actually allowed to swing
     // never reach across the net for a shuttle still on the opponent's side — if it
@@ -4964,7 +4978,7 @@
     const headY = p.y;
     const dx = Math.abs(shuttle.x - headX);
     // Anchor/Blockade/Rally-Lock transforms (Part 6) + Mateo Root passive (Part 3) extend reach
-    if(dx > reachFor(p.character) + transformReachBonus(p) + passiveReachBonus(p) + heightReachBonus(p.character)){ Simulation.applyMomentumWhiff(p, {maxCharge: moMaxCharge, now: now}); if(spend==='art') rageArtWhiff(p, now); return false; }
+    if(dx > reachFor(p.character) + transformReachBonus(p) + passiveReachBonus(p) + heightReachBonus(p.character) + aiReachEdge(p)){ Simulation.applyMomentumWhiff(p, {maxCharge: moMaxCharge, now: now}); if(spend==='art') rageArtWhiff(p, now); return false; }
 
     // Height (Part 4): tall players reach higher overhead, short players dig lower.
     const smashTop = headY - 90 - heightTopExtend(p.character);
@@ -5007,7 +5021,17 @@
       // While a transform dictates a shot type, every follow-up swing takes it:
       // Anchor smashes everything, Blockade flat-drops everything (Part 6).
       const forced = transformForcedKind(p);
-      if(forced === 'smash'){ kind = 'smash'; power = Math.max(power, 1.0); }
+      if(forced === 'smash'){
+        // Anchor: only smash a genuinely attackable ball (overhead AND front/mid court).
+        // A forced smash on a deep or low ball launches flat-and-fast and sails OUT (and a
+        // smash from deep court grounds on his own side anyway) — the exact "floats high
+        // and out of bounds" bug. On anything else take a controlled float so mateo's
+        // control-5 accuracy shows; the in-bounds clamp below keeps that float honest.
+        const overhead = shuttle.y < headY - 20;
+        const frontMid = Math.abs(headX - NET_X) < (COURT_RIGHT - COURT_LEFT)/2 * 0.55;
+        if(overhead && frontMid){ kind = 'smash'; power = Math.max(power, 1.0); }
+        // else: fall through as the base 'float' — a placed clear/drive, not a rocket
+      }
       else if(forced === 'dink'){ kind = 'dink'; }
     }
 
@@ -5128,6 +5152,20 @@
       shuttle.maxPowerDiveApplied = false;
       shuttle.dinkDiveApplied = false;
       shuttle.netCollisionResolved = false;
+      // In-bounds clamp for power-boosted shots (fixes ult/transform clears sailing OUT —
+      // e.g. Priya Redline power-5 and Mateo's Anchor floats). The AI's charge solver
+      // already keeps its own floats in; here we guarantee it for any spend/transform swing
+      // whose power was forced up, since a human can't hand-tune the charge to compensate.
+      // Uses the same fitted depth model as floatChargeFracFor, inverted for max charge.
+      if(spend || p.transform){
+        const pmReg = powerMultForRegular(p.character);
+        const distNet0 = Math.abs(headX - NET_X);
+        const maxFrac = (505 - 380 + 0.97*distNet0) / (640*pmReg); // 505px ≈ just inside the out line
+        const curFrac = (power - MIN_POWER_MULT) / (MAX_POWER_MULT - MIN_POWER_MULT);
+        if(maxFrac > 0.06 && curFrac > maxFrac){
+          power = MIN_POWER_MULT + (MAX_POWER_MULT - MIN_POWER_MULT) * maxFrac;
+        }
+      }
       const speed = FLOAT_BASE_SPEED * power * powerMultForRegular(p.character);
       // the further back from the net the hit is taken, the higher the arc it's sent on —
       // a clear played from the back line lifts noticeably more than one played right at the net
@@ -7454,14 +7492,17 @@
       if(p.y + PLAYER_H >= GROUND_Y){ p.y = GROUND_Y - PLAYER_H; p.vy = 0; p.onGround = true; }
       return;
     }
+    // Difficulty physical edge (AI only): faster court coverage at higher tiers, slower at
+    // Easy. Never applied to a human (aiMoveEdge returns 1 for human-controlled players).
+    const moveEdge = aiMoveEdge(p);
     if(p.dashTimer > 0){
       // dash distance uses the tier-based multiplier (normal speed scaling for 4★,
       // plus the extra 5★ bonus) rather than the plain movement multiplier above
-      vx = p.dashDir * DASH_SPEED * dashDistanceMultFor(p.character);
+      vx = p.dashDir * DASH_SPEED * dashDistanceMultFor(p.character) * moveEdge;
       p.dashTimer -= dt;
     } else {
-      if(keys[leftKey]) vx -= MOVE_SPEED * spMult;
-      if(keys[rightKey]) vx += MOVE_SPEED * spMult;
+      if(keys[leftKey]) vx -= MOVE_SPEED * spMult * moveEdge;
+      if(keys[rightKey]) vx += MOVE_SPEED * spMult * moveEdge;
     }
     p.vx = vx;
     p.swingTimer = Math.max(0, p.swingTimer - dt);
