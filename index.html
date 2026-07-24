@@ -3366,6 +3366,9 @@
   let lastRallyLength = 0; // contacts in the most recently completed rally
   let ralliesPlayed = 0;
   let rallyHitsTotal = 0;
+  // Momentum instrumentation (MOMENTUM_SPEC Phase 1): wall-clock origin of the
+  // current game, used by the F3 overlay to report seconds-to-PEAK per side.
+  let momentumRunStart = 0;
 
   function isServiceFault(x){
     // called only once we already know x is inside the outer COURT_LEFT..COURT_RIGHT
@@ -3414,6 +3417,12 @@
   const right = makePlayer('right', getComputedStyle(document.documentElement).getPropertyValue('--right-color').trim());
   left.character = CHARACTERS[0];
   right.character = CHARACTERS[1];
+  // Momentum meter state (MOMENTUM_SPEC Part 1). Simulation (shared/simulation.js)
+  // is already loaded via the <script> above, so its engine is reused verbatim —
+  // the local/AI-vs-AI meter here is computed by the exact same code the server
+  // uses, so the two can never disagree on a contact's gain.
+  Simulation.initMomentum(left);
+  Simulation.initMomentum(right);
 
   const shuttle = {
     x: W/2, y: GROUND_Y-100, vx:0, vy:0, active:false, kind:'float',
@@ -3475,6 +3484,27 @@
 
   // ---------- screen shake ----------
   let shakeTime = 0, shakeDuration = 0.001, shakeMag = 0;
+
+  // ---- Ultimate cinematic + hit-freeze state (MOMENTUM_SPEC Phase 3 / Part 7) ----
+  // hitFreezeFrames pauses the local sim for a few frames on an Art connect (the
+  // shot still renders). ultCinematic drives the screen desaturation + portrait
+  // slam overlay while it counts down. Both are render/pacing only — no sim value
+  // is ever read back out of them, so they can't affect determinism.
+  let hitFreezeFrames = 0;
+  let ultCinematic = null; // {timer, dur, side, name, artName, color}
+  function prettyArtName(id){ return id ? id.replace(/_/g, ' ') : 'RAGE ART'; }
+  function triggerUltCinematic(p){
+    const mech = Simulation.mechFor(p.character);
+    ultCinematic = {
+      timer: 0.9, dur: 0.9,
+      side: p.side,
+      name: ((p.character && p.character.name) || '').toUpperCase(),
+      artName: prettyArtName(mech && mech.art && mech.art.id).toUpperCase(),
+      color: p.side === 'left' ? '#3b82f6' : '#ec4899',
+      accent: (p.character && p.character.shirt) || '#ff3b3b'
+    };
+  }
+
   function triggerShake(mag, duration){
     shakeMag = mag;
     shakeDuration = duration;
@@ -4301,7 +4331,15 @@
         const readyToSwing = inReach && canReachHeight && (now >= ai.minHoldUntil || aboutToEscape);
         const mustSwing = now >= ai.maxHoldUntil; // shuttle drifted away — let go and re-arm
         if(readyToSwing || mustSwing){
+          // Ultimate trigger (Phase 3): at PEAK, on a genuine attacking contact the
+          // AI spends — Rage Art off a jump (smash finisher), Rage Drive on the
+          // ground. It can't reproduce the human overhold/dash-cancel input, so it
+          // declares intent directly; releaseHit reads p.aiUltIntent for non-humans.
+          if(readyToSwing && Simulation.canSpendMomentum(p) && canReachHeight){
+            p.aiUltIntent = (!p.onGround) ? 'art' : 'drive';
+          }
           const madeContact = releaseHit(p, now);
+          p.aiUltIntent = null; // intent is per-swing; never leaks to the next contact
           // only a real touch uses up this opportunity — a whiff (shuttle drifted out of
           // reach while charging) leaves the AI free to charge up and try again while
           // the shuttle is still in the air
@@ -4355,18 +4393,38 @@
     }
 
     if(state !== 'rally') return false;
-    if(now - p.lastHitTime < HIT_COOLDOWN) return false;
+    // Momentum: a max-charge swing that never connects still counts for Diego
+    // (MOMENTUM_SPEC Part 2.3). chargeFrac is already clamped to 1.
+    const moMaxCharge = chargeFrac >= 0.99;
+    // Whiff-punish (Part 1.4): an Art that fails to connect doubles this player's
+    // HIT_COOLDOWN. nextCooldownMult carries that penalty to the next swing.
+    if(now - p.lastHitTime < HIT_COOLDOWN * (p.nextCooldownMult || 1)) return false;
+
+    // ---- Ultimate spend detection (MOMENTUM_SPEC Part 1.3-1.5, Phase 3) ----
+    // Only at PEAK. Humans express intent through input timing (overhold =
+    // Rage Art, dash-cancel = Rage Drive); the AI sets p.aiUltIntent directly
+    // since it can't reproduce those exact input windows.
+    let spend = null;
+    if(Simulation.canSpendMomentum(p)){
+      if(isHumanControlled(p)){
+        const rawElapsed = now - p.chargeStart; // pre-clamp elapsed charge (Part 1.5)
+        if(rawElapsed >= chargeTimeFor(p.character) + GameConstants.MOMENTUM.ART_OVERHOLD_TIME) spend = 'art';
+        else if((now - p.lastDashTime) <= DASH_WINDOW) spend = 'drive';
+      } else {
+        spend = p.aiUltIntent || null;
+      }
+    }
 
     const headX = p.x + PLAYER_W/2;
     const headY = p.y;
     const dx = Math.abs(shuttle.x - headX);
-    if(dx > reachFor(p.character)) return false;
+    if(dx > reachFor(p.character)){ Simulation.applyMomentumWhiff(p, {maxCharge: moMaxCharge, now: now}); if(spend==='art') rageArtWhiff(p, now); return false; }
 
     const smashTop = headY - 90;
     const smashBottom = headY + 220;
 
     const dy = shuttle.y;
-    if(dy < smashTop || dy > smashBottom) return false; // out of reach
+    if(dy < smashTop || dy > smashBottom){ Simulation.applyMomentumWhiff(p, {maxCharge: moMaxCharge, now: now}); if(spend==='art') rageArtWhiff(p, now); return false; } // out of reach
 
     // a genuine return means the serve has now been put back in play, so the strict
     // service-box landing rule no longer applies for the rest of the rally
@@ -4389,10 +4447,22 @@
 
     // on the ground it's always an underhand-style return; in the air, a charge of
     // 50% or more turns it into a smash — below that it's a softer underhand return
-    const kind = isNetDink ? 'dink' : ((!p.onGround && chargeFrac >= 0.5) ? 'smash' : 'float');
-    const power = MIN_POWER_MULT + (MAX_POWER_MULT - MIN_POWER_MULT) * chargeFrac;
+    let kind = isNetDink ? 'dink' : ((!p.onGround && chargeFrac >= 0.5) ? 'smash' : 'float');
+    let power = MIN_POWER_MULT + (MAX_POWER_MULT - MIN_POWER_MULT) * chargeFrac;
+
+    // ---- Ultimate shot overrides (Phase 3) ----
+    // Rage Drive = enhanced normal shot (safe): same kind, guaranteed full power.
+    // Rage Art = cinematic finisher: forced smash at overdriven power. Per-character
+    // bespoke drives/arts (Part 6) layer on top of this baseline in a later pass.
+    if(spend === 'drive'){
+      power = 1.15;
+    } else if(spend === 'art'){
+      kind = 'smash';
+      power = 1.5;
+    }
 
     p.lastHitTime = now;
+    p.nextCooldownMult = 1; // a genuine contact clears any whiff-punish penalty
     lastHitBy = p.side;
     rallyHitCount++; // rally-quality bookkeeping: one genuine contact
 
@@ -4512,7 +4582,51 @@
     }
     shuttle.x = headX + dir*10;
     shuttle.y = dy;
+
+    // ---- Momentum gain for this clean contact (MOMENTUM_SPEC Part 1/2) ----
+    const moOpp = p.side === 'left' ? right : left;
+    Simulation.applyMomentumGain(p, moOpp, {
+      event: kind,
+      aerial: !p.onGround,
+      dashSave: (now - p.lastDashTime) <= DASH_WINDOW,
+      stretch: dx >= reachFor(p.character) * 0.8,
+      moved: (Math.abs(p.vx || 0) > 1 || p.dashTimer > 0), // local sim drives movement through vx
+      maxCharge: moMaxCharge,
+      rallyHitCount: rallyHitCount,
+      now: now,
+      clean: true
+    });
+
+    // ---- Ultimate spend: consume the meter + fire effects (Phase 3) ----
+    if(spend){
+      Simulation.spendMomentum(p); // zeroes the meter (gain above is absorbed)
+      p.aiUltIntent = null;
+      if(spend === 'art'){
+        shuttle.hitByMaxPower = true;  // the Art shot dives hard — tough to retrieve
+        shuttle.maxPowerDiveApplied = false;
+        triggerUltCinematic(p);        // screen desaturate + portrait slam (Part 7)
+        hitFreezeFrames = 4;           // 4-frame hit-freeze on contact (Part 7)
+        triggerShake(15, 0.4);
+        playSound('smash');
+        spawnHitParticles(shuttle.x, shuttle.y, 30, true, p.side === 'left' ? '#3b82f6' : '#ec4899');
+      } else { // Rage Drive — quick, non-cinematic
+        triggerShake(7, 0.2);
+        playSound('smash');
+        spawnHitParticles(shuttle.x, shuttle.y, 16, true, p.side === 'left' ? '#3b82f6' : '#ec4899');
+      }
+    }
     return true;
+  }
+
+  // Rage Art that fails to connect: the meter is still spent and this player's
+  // HIT_COOLDOWN doubles for the next swing (MOMENTUM_SPEC Part 1.4).
+  function rageArtWhiff(p, now){
+    Simulation.spendMomentum(p);
+    p.nextCooldownMult = 2;
+    p.lastHitTime = now; // start the doubled recovery window now
+    p.aiUltIntent = null;
+    triggerShake(4, 0.15);
+    playSound('hit');
   }
 
   const SERVE_BASE_SPEED = 1130; // ~15% faster than before, in line with the float/smash bump above
@@ -4543,7 +4657,13 @@
     shuttle.active = true;
     isServeFlight = true;
     state = 'rally';
-    
+
+    // Momentum: the serve is a clean contact too (MOMENTUM_SPEC Part 2.1).
+    Simulation.applyMomentumGain(p, p.side === 'left' ? right : left, {
+      event: 'serve', aerial: false, moved: false,
+      rallyHitCount: rallyHitCount, now: now, clean: true
+    });
+
     // Serve audio & visual kick
     playSound('hit');
     spawnHitParticles(shuttle.x, shuttle.y, 8, false, p.side === 'left' ? '#3b82f6' : '#ec4899');
@@ -4607,6 +4727,11 @@
     }
 
     if(sideThatScores === 'left') left.score++; else right.score++;
+    // Momentum point bonuses (MOMENTUM_SPEC Part 2.2/2.3): rally winner, then loser.
+    Simulation.applyMomentumPoint(
+      sideThatScores === 'left' ? left : right,
+      sideThatScores === 'left' ? right : left,
+      {now: null});
     const a = left.score, b = right.score;
     const leader = a>=b ? left : right;
     const trailer = a>=b ? right : left;
@@ -4682,6 +4807,11 @@
     resetAIController(aiControllers.left);
     resetAIController(aiControllers.right);
     lastRallyLength = 0; ralliesPlayed = 0; rallyHitsTotal = 0;
+    // Momentum resets to 0 at the start of each GAME, not each rally (Part 1.2).
+    Simulation.resetMomentum(left);
+    Simulation.resetMomentum(right);
+    left.moPeakLogged = false; right.moPeakLogged = false;
+    momentumRunStart = performance.now()/1000; // instrumentation: game clock origin
     setupServe();
   }
 
@@ -4696,6 +4826,11 @@
     resetAIController(aiControllers.left);
     resetAIController(aiControllers.right);
     lastRallyLength = 0; ralliesPlayed = 0; rallyHitsTotal = 0;
+    // Momentum resets to 0 at the start of each GAME, not each rally (Part 1.2).
+    Simulation.resetMomentum(left);
+    Simulation.resetMomentum(right);
+    left.moPeakLogged = false; right.moPeakLogged = false;
+    momentumRunStart = performance.now()/1000; // instrumentation: game clock origin
     setupServe();
   }
 
@@ -7010,31 +7145,39 @@
         updateOnlineInterpolation();
         applyLocalPrediction();
       } else if(!onlineMatch){
-        updateAI(dt, nowSec);
+        // Rage Art hit-freeze (Part 7): pause the sim for a few frames on impact
+        // while everything still renders. Purely pacing — no sim value depends on it.
+        if(hitFreezeFrames > 0){
+          hitFreezeFrames--;
+        } else {
+          updateAI(dt, nowSec);
 
-        if(state === 'rally' || state === 'serve'){
-          updatePlayer(left, dt,
-            isHumanControlled(left)  ? keyBindings.p1Left  : AI_KEYMAP.left.moveLeft,
-            isHumanControlled(left)  ? keyBindings.p1Right : AI_KEYMAP.left.moveRight);
-          updatePlayer(right, dt,
-            isHumanControlled(right) ? keyBindings.p2Left  : AI_KEYMAP.right.moveLeft,
-            isHumanControlled(right) ? keyBindings.p2Right : AI_KEYMAP.right.moveRight);
-        }
-        if(state === 'serve'){
-          const server = servingSide === 'left' ? left : right;
-          const serveDir = servingSide === 'left' ? 1 : -1;
-          shuttle.x = server.x + PLAYER_W/2 + serveDir*10;
-          shuttle.y = server.y + PLAYER_H*0.52;
-        }
-        if(state === 'rally'){
-          updateShuttle(dt);
-        }
-        if(state === 'pointPause'){
-          pointPauseTimer -= dt;
-          if(pointPauseTimer <= 0) setupServe();
+          if(state === 'rally' || state === 'serve'){
+            updatePlayer(left, dt,
+              isHumanControlled(left)  ? keyBindings.p1Left  : AI_KEYMAP.left.moveLeft,
+              isHumanControlled(left)  ? keyBindings.p1Right : AI_KEYMAP.left.moveRight);
+            updatePlayer(right, dt,
+              isHumanControlled(right) ? keyBindings.p2Left  : AI_KEYMAP.right.moveLeft,
+              isHumanControlled(right) ? keyBindings.p2Right : AI_KEYMAP.right.moveRight);
+          }
+          if(state === 'serve'){
+            const server = servingSide === 'left' ? left : right;
+            const serveDir = servingSide === 'left' ? 1 : -1;
+            shuttle.x = server.x + PLAYER_W/2 + serveDir*10;
+            shuttle.y = server.y + PLAYER_H*0.52;
+          }
+          if(state === 'rally'){
+            updateShuttle(dt);
+          }
+          if(state === 'pointPause'){
+            pointPauseTimer -= dt;
+            if(pointPauseTimer <= 0) setupServe();
+          }
+          logMomentumPeaks(); // Phase 1 instrumentation (Part 8): time-to-PEAK log
         }
       }
       if(shakeTime > 0) shakeTime = Math.max(0, shakeTime - dt);
+      if(ultCinematic){ ultCinematic.timer -= dt; if(ultCinematic.timer <= 0) ultCinematic = null; }
 
       // Update juice particles
       for (let i = particles.length - 1; i >= 0; i--) {
@@ -7873,6 +8016,101 @@
     ctx.restore();
   }
 
+  // ---------- Momentum aura (MOMENTUM_SPEC Part 1.1 & Part 7) ----------
+  // Base aura is the SAME red for every character — instant, Tekken-style
+  // recognition. Character identity lives in the shuttle trail / ultimate, not
+  // here. The aura is drawn for BOTH players (visible to the opponent is
+  // load-bearing: a visible PEAK meter is pressure even when never spent).
+  // Purely cosmetic — no simulation value is read back out of rendering.
+  function drawMomentumAura(p, cx, groundY){
+    const tier = p.momentumTier || 0;
+    if(tier < 1) return;
+    const nowSec = performance.now()/1000;
+    const pulse = 0.5 + 0.5*Math.sin(nowSec*6 + (p.side==='left'?0:1.6));
+    const cy = p.y + PLAYER_H*0.45;
+
+    // Soft body glow — faint at tier 1, full at PEAK.
+    const glowA = tier===2 ? 0.42 : 0.20*(0.55+0.45*pulse);
+    const rad = tier===2 ? 48 : 34;
+    const g = ctx.createRadialGradient(cx, cy, 3, cx, cy, rad);
+    g.addColorStop(0, 'rgba(255,90,64,'+glowA+')');
+    g.addColorStop(0.6, 'rgba(255,52,40,'+(glowA*0.5)+')');
+    g.addColorStop(1, 'rgba(255,40,30,0)');
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rad*0.72, rad, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+
+    // Ground shockwave ring — PEAK only (Part 7).
+    if(tier===2){
+      const rp = 0.5 + 0.5*Math.sin(nowSec*3.4);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,72,50,'+(0.35+0.35*rp)+')';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.ellipse(cx, GROUND_Y+3, 24+4*rp, 7.5+1.5*rp, 0, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,150,70,'+(0.28*(1-rp))+')';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(cx, GROUND_Y+3, 28+18*rp, 8.5+5*rp, 0, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  function drawMomentumCrackle(p, cx){
+    const tier = p.momentumTier || 0;
+    if(tier < 1) return;
+    const nowSec = performance.now()/1000;
+    const pulse = 0.5 + 0.5*Math.sin(nowSec*6 + (p.side==='left'?0:1.6));
+    const bolts = tier===2 ? 5 : 3;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = tier===2 ? 'rgba(255,186,96,'+(0.7+0.3*pulse)+')'
+                                : 'rgba(255,96,72,'+(0.45+0.4*pulse)+')';
+    ctx.lineWidth = tier===2 ? 1.6 : 1.1;
+    for(let i=0;i<bolts;i++){
+      const ph = nowSec*9 + i*2.1;
+      const side = (i%2===0) ? -1 : 1;
+      let bx = cx + side*(PLAYER_W*0.5 + 2);
+      let by = p.y + 6 + ((i*17) % (PLAYER_H-18));
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      for(let s=0;s<3;s++){
+        bx += side*(3 + 2*Math.sin(ph + s*1.7));
+        by += 5 + 2*Math.cos(ph*1.3 + s);
+        ctx.lineTo(bx, by);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Phase 1 instrumentation (MOMENTUM_SPEC Part 0.3 / Part 8): the moment a side
+  // first hits PEAK, log which character got there, in how many clean contacts,
+  // over how many seconds, and their weighted-average WEIGHT vs the 1.15 ceiling.
+  // This is the "log time-to-PEAK per character across AI-vs-AI runs" the spec
+  // says to instrument before layering anything else on top. Console-only, no
+  // gameplay effect. `moPeakLogged` guards it to fire exactly once per side/game.
+  function logMomentumPeaks(){
+    if(mode !== 'ai' && mode !== 'aivai') return;
+    [left, right].forEach(function(p){
+      if(p.moPeakContacts && !p.moPeakLogged){
+        p.moPeakLogged = true;
+        const wAvg = p.moGainCount ? (p.moGainSum/p.moGainCount) : 0;
+        const secs = p.moPeakTime ? Math.max(0, p.moPeakTime - momentumRunStart) : 0;
+        const over = wAvg > GameConstants.MOMENTUM.NORMALIZE_CEILING;
+        console.log('[MOMENTUM] ' + (p.character ? p.character.name : p.side) +
+          ' → PEAK in ' + p.moPeakContacts + ' contacts (' + secs.toFixed(1) + 's), ' +
+          'wAvg=' + wAvg.toFixed(2) + (over ? '  >1.15 CEILING' : ''));
+      }
+    });
+  }
+
   function drawPlayer(p){
     const ch = p.character || CHARACTERS[0];
     const nowSec = performance.now()/1000;
@@ -7912,7 +8150,9 @@
     ctx.restore();
 
     const facing = p.side === 'left' ? 1 : -1;
+    drawMomentumAura(p, cx, groundY); // MOMENTUM_SPEC Part 1.1/Part 7 — under the body
     drawHumanoid(ctx, cx, groundY, 1, ch, {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack}, facing);
+    drawMomentumCrackle(p, cx); // electric crackle hugging the silhouette, over the body
 
     drawAttackAngleIndicator(p);
 
@@ -8143,6 +8383,118 @@
     return (deg > 0 ? '+' : '') + deg + '°';
   }
 
+  // ---------- Momentum meter bars (HUD) — MOMENTUM_SPEC Part 1 ----------
+  // A readable per-player gauge flanking the scoreboard, mirrored outward from
+  // centre, in every mode. The aura on the body is still the primary "pressure"
+  // cue (Part 1.1); this is the precise readout and the "ultimate ready" prompt.
+  function drawMomentumOneBar(p, anchorX, y, w, h, dir, sideColor){
+    const m = Math.max(0, Math.min(GameConstants.MOMENTUM.MAX, p.momentum || 0));
+    const frac = m / GameConstants.MOMENTUM.MAX;
+    const tier = p.momentumTier || 0;
+    const nowSec = performance.now()/1000;
+    const x = dir < 0 ? anchorX - w : anchorX;      // track origin
+    ctx.save();
+    ctx.textBaseline = 'middle';
+    // track
+    ctx.fillStyle = 'rgba(8,12,28,0.82)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, h/2); ctx.fill(); ctx.stroke();
+    // fill (grows from the inner anchor outward)
+    if(frac > 0){
+      const fw = w * frac;
+      const fx = dir < 0 ? (anchorX - fw) : anchorX;
+      let col;
+      if(tier === 2){ const pulse = 0.5 + 0.5*Math.sin(nowSec*6); col = 'rgba(255,'+Math.round(60+130*pulse)+',50,1)'; }
+      else if(tier === 1) col = 'rgba(255,66,48,0.95)';
+      else col = 'rgba(255,96,74,0.85)';
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.roundRect(fx, y, fw, h, h/2); ctx.fill();
+    }
+    // tier-1 boundary tick at 50%
+    const midX = dir < 0 ? anchorX - w*0.5 : anchorX + w*0.5;
+    ctx.strokeStyle = 'rgba(255,255,255,0.30)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(midX, y+1); ctx.lineTo(midX, y+h-1); ctx.stroke();
+    // side-colour cap on the inner edge, to tie the bar to its player
+    ctx.fillStyle = sideColor;
+    ctx.beginPath(); ctx.roundRect(dir<0 ? anchorX-2 : anchorX, y, 2, h, 1); ctx.fill();
+    // PEAK / ready prompt
+    if(tier === 2){
+      const pulse = 0.5 + 0.5*Math.sin(nowSec*5);
+      ctx.font = '800 9px "Space Grotesk", sans-serif';
+      ctx.textAlign = dir < 0 ? 'right' : 'left';
+      ctx.fillStyle = 'rgba(255,'+Math.round(180+70*pulse)+',90,1)';
+      ctx.fillText('★ PEAK — ULT READY', dir<0 ? anchorX : anchorX, y + h + 7);
+    }
+    ctx.restore();
+  }
+
+  function drawMomentumBars(){
+    const boxW = 160, boxX = W/2 - boxW/2, boxY = 10, boxH = 34;
+    const barW = 150, barH = 8, gap = 16;
+    const y = boxY + boxH + 4;
+    drawMomentumOneBar(left,  boxX - gap,        y, barW, barH, -1, '#3b82f6');
+    drawMomentumOneBar(right, boxX + boxW + gap, y, barW, barH, +1, '#ec4899');
+  }
+
+  // ---------- Rage Art cinematic overlay (MOMENTUM_SPEC Part 7) ----------
+  // Screen desaturates to near-monochrome during the Art, a portrait-slam banner
+  // drives in from the caster's side, and it snaps back to full colour at the end.
+  // Rendered in untranslated screen space (drawn after the world's restore()).
+  function drawUltCinematic(){
+    if(!ultCinematic) return;
+    const c = ultCinematic;
+    const t = 1 - c.timer / c.dur; // 0..1 progress
+    // desaturation: ramp in fast, hold, snap back at the very end (Part 7)
+    let desat;
+    if(t < 0.15) desat = t / 0.15;
+    else if(t > 0.8) desat = Math.max(0, (1 - t) / 0.2);
+    else desat = 1;
+    if(desat > 0){
+      ctx.save();
+      ctx.globalCompositeOperation = 'saturation';
+      ctx.globalAlpha = 0.9 * desat;
+      ctx.fillStyle = 'hsl(0,0%,50%)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = 0.28 * desat;
+      ctx.fillStyle = '#05060a';
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
+    // portrait-slam banner
+    const fromLeft = c.side === 'left';
+    const bw = 520, bh = 96, by = H * 0.30;
+    const targetX = W/2 - bw/2;
+    const startX = fromLeft ? -bw - 40 : W + 40;
+    const ease = 1 - Math.pow(1 - Math.min(1, t/0.28), 4);
+    const bx = startX + (targetX - startX) * ease;
+    const alpha = c.timer < c.dur*0.18 ? (c.timer / (c.dur*0.18)) : 1; // fade at end
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, alpha);
+    ctx.fillStyle = 'rgba(255,40,30,0.16)';
+    ctx.fillRect(0, by - 10, W, bh + 20); // speed-streak band
+    const g = ctx.createLinearGradient(bx, by, bx + bw, by);
+    g.addColorStop(0, c.accent);
+    g.addColorStop(1, '#111318');
+    ctx.fillStyle = g;
+    ctx.strokeStyle = 'rgba(255,70,50,0.9)';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 10); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = c.color;
+    ctx.fillRect(fromLeft ? bx : bx + bw - 10, by, 10, bh); // side accent tab
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '800 34px "Space Grotesk", sans-serif';
+    ctx.fillText(c.name, bx + 28, by + 42);
+    ctx.fillStyle = 'rgba(255,210,120,1)';
+    ctx.font = '800 22px "Space Grotesk", sans-serif';
+    ctx.fillText('★ ' + c.artName, bx + 28, by + 76);
+    ctx.restore();
+  }
+
   function drawPointMessage(){
     if(state !== 'pointPause') return;
 
@@ -8241,6 +8593,14 @@
       const c = aiControllers[side];
       const ch = p.character;
       const s = (ch && ch.stats) || {speed:'?', power:'?', control:'?'};
+      // Momentum instrumentation (MOMENTUM_SPEC Phase 1 / Part 0.3): live meter,
+      // tier, the weighted-average WEIGHT vs the 1.15 ceiling, and how many
+      // contacts / seconds it took this side to first reach PEAK.
+      const wAvg = p.moGainCount ? (p.moGainSum / p.moGainCount) : null;
+      const overCeil = wAvg !== null && wAvg > GameConstants.MOMENTUM.NORMALIZE_CEILING;
+      const peakStr = p.moPeakContacts
+        ? (p.moPeakContacts + 'c' + (p.moPeakTime ? ' ' + Math.max(0, (p.moPeakTime - momentumRunStart)).toFixed(0) + 's' : ''))
+        : '—';
       const lines = [
         (ch ? ch.name : '—') + '  S' + s.speed + ' P' + s.power + ' C' + s.control,
         'diff:   ' + aiDifficulty,
@@ -8249,9 +8609,12 @@
         'target: ' + Math.round(c.targetX),
         'charge: ' + (p.charging
           ? Math.round(100 * Math.min(1, (performance.now()/1000 - p.chargeStart) / chargeTimeFor(ch))) + '%'
-          : '—')
+          : '—'),
+        'mom:    ' + Math.round(p.momentum || 0) + '  T' + (p.momentumTier || 0) + (p.momentumTier===2 ? ' PEAK' : ''),
+        'wAvg:   ' + (wAvg !== null ? wAvg.toFixed(2) : '—') + (overCeil ? '  >1.15!' : ''),
+        'PEAK@:  ' + peakStr
       ];
-      const panelW = 170, lineH = 15;
+      const panelW = 188, lineH = 15;
       const px = side === 'left' ? 14 : W - panelW - 14;
       const py = 96;
       ctx.fillStyle = 'rgba(6, 9, 19, 0.62)';
@@ -8292,9 +8655,11 @@
     drawParticles();
 
     drawScore();
+    drawMomentumBars();
     drawPointMessage();
     drawAIDebug();
     ctx.restore();
+    drawUltCinematic(); // full-screen, untranslated (Part 7)
     updateServeTag();
     updateTouchControlsVisibility();
   }

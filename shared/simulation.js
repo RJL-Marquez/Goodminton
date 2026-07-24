@@ -55,10 +55,209 @@
   }
   function dashDistanceMultFor(ch) { return statMult(ch && ch.stats && ch.stats.speed, C.DASH_DIST_LINEAR, C.DASH_DIST_KICKER); }
 
+  // ==== MOMENTUM ENGINE (MOMENTUM_SPEC Parts 0-2) =========================
+  // Phase 1: the meter and its per-character fill weights only. No ultimates,
+  // no stamina spend, no physics changes — just the numbers and the tiers.
+  //
+  // DETERMINISM (Part 0.1): no Math.random, no Date.now. Every input comes from
+  // simulation state or the `now` already threaded through the sim. All mutable
+  // state lives on the player object, so this same engine drives BOTH the
+  // authoritative server world here AND the local/AI-vs-AI sim inlined in
+  // index.html — they cannot compute a different meter from the same contact.
+  var MO = C.MOMENTUM;
+
+  function mechFor(ch) {
+    return (ch && ch.id && C.CHARACTER_MECHANICS && C.CHARACTER_MECHANICS[ch.id]) || null;
+  }
+
+  // 0-49 Building, 50-99 Momentum Shift, 100 PEAK (Part 1.1).
+  function momentumTierOf(m) {
+    if (m >= MO.MAX) return 2;
+    if (m >= MO.TIER_1) return 1;
+    return 0;
+  }
+
+  // Initialise / reset every field the engine reads or writes. Called from the
+  // player factory and at the start of each GAME (Part 1.2 — momentum resets per
+  // game, not per rally, so nothing here is touched on a serve).
+  function initMomentum(p) {
+    p.momentum = 0;
+    p.momentumTier = 0;
+    p.moStreak = 0;        // maya: consecutive clean contacts (escalation)
+    p.moVarStreak = 0;     // rodrigo: consecutive different-kind contacts
+    p.moReturnStreak = 0;  // benjamin: consecutive returns w/o initiating offense
+    p.moLastKind = null;   // rodrigo/sofia: previous shot type
+    p.moContacts = 0;      // clean counting contacts this game (instrumentation)
+    p.moPeakContacts = 0;  // contacts taken to first reach PEAK (0 until reached)
+    p.moPeakTime = 0;      // `now` at first PEAK (0 until reached)
+    p.moGainSum = 0;       // Part 0.3: running total gain, for weighted-avg readout
+    p.moGainCount = 0;     // Part 0.3: number of gains, for weighted-avg readout
+    p.moPeakEmitted = false; // one-shot guard for the PEAK-reached event
+  }
+  function resetMomentum(p) { initMomentum(p); }
+
+  function oppDistFrac(p, opp) {
+    if (!opp) return 0;
+    return Math.min(1, Math.abs((opp.x || 0) - (p.x || 0)) / (C.COURT_RIGHT - C.COURT_LEFT));
+  }
+
+  // Tags active on one contact. The weight table takes the MAX weight among the
+  // tags it has an entry for; unlisted tags fall back to BASE_GAIN (Part 2.1/2.2).
+  function contactTags(ctx) {
+    var tags = {};
+    if (ctx.event) tags[ctx.event] = true;
+    if (ctx.aerial) tags.aerial = true;
+    if (ctx.aerial && ctx.event === 'smash') tags.aerialSmash = true;
+    if (ctx.dashSave) tags.dashSave = true;
+    if (ctx.stretch) tags.stretch = true;
+    if (ctx.event && ctx.event !== 'serve') tags.returns = true; // any rally return
+    return tags;
+  }
+
+  function weightForTags(weights, tags) {
+    var best = null;
+    for (var k in weights) {
+      if (tags[k] && (best === null || weights[k] > best)) best = weights[k];
+    }
+    return best === null ? MO.BASE_GAIN : best;
+  }
+
+  // Signature rules that can't be flat weights (Part 2 note). Deterministic; read
+  // per-player streak counters updated in applyMomentumGain. Multipliers are kept
+  // deliberately conservative and are the primary knob for the Part 0.3 tuning
+  // pass (target: weighted-average gain <= 1.15). Adjust here, not in the weights.
+  function applySignature(sig, p, opp, ctx, tags, gain) {
+    var behind = opp && (opp.score || 0) > (p.score || 0);
+    switch (sig) {
+      case 'MAYA_ESCALATION':
+        return gain * Math.min(1.5, 1 + 0.06 * Math.max(0, (p.moStreak || 1) - 1));
+      case 'JORDAN_WEAK_RETURN':
+        // committed jump smash is what forces the weak return
+        return gain * (tags.aerialSmash ? 1.8 : 1.0);
+      case 'KENJI_DISTANCE':
+        return gain * (tags.dashSave ? 1.2 : 1.0);
+      case 'AMARA_PLACEMENT':
+        // rewards placing the shot far from the opponent (proxy: current spread)
+        return gain * (ctx.event === 'smash' ? 1.0 : (1 + 0.4 * oppDistFrac(p, opp)));
+      case 'SOFIA_ALTERNATE':
+        return gain * (tags.repeats ? 0.8 : (tags.variety ? 1.3 : 1.0));
+      case 'PRIYA_ADRENALINE':
+        return gain * (behind ? 1.5 : 1.0); // +50% fill while behind (Part 2.3)
+      case 'LIAM_RALLY5':
+        return gain + ((ctx.rallyHitCount && ctx.rallyHitCount % 5 === 0) ? 1.0 : 0);
+      case 'RODRIGO_VARIETY':
+        return gain * Math.min(1.5, 1 + 0.1 * (p.moVarStreak || 0));
+      case 'MATEO_NO_MOVE':
+        return gain * (ctx.moved ? 1.0 : 1.3); // bonus for hits made without moving
+      case 'BENJAMIN_RETURN_STREAK':
+        return gain * Math.min(1.4, 1 + 0.05 * Math.max(0, (p.moReturnStreak || 1) - 1));
+      case 'CRISTIANO_SPOTLIGHT':
+        return gain + (behind ? 0.5 : 0); // Spotlight trickle while behind
+      case 'DIEGO_MAX_CHARGE_WHIFF': // clean contacts gain normally; whiffs: see applyMomentumWhiff
+      case 'ELIJAH_ANY_CONTACT':     // flat weights already cover "any contact"
+      case 'LINDAN_POINT_BONUS':     // handled in applyMomentumPoint
+      default:
+        return gain;
+    }
+  }
+
+  function addMomentum(p, gain, ctx) {
+    if (!(gain > 0)) return 0;
+    // gain is the WEIGHT-based amount (the value the 1.15 ceiling governs); the
+    // meter climbs by gain * FILL_RATE so a ~1.0-weight character peaks in ~30
+    // contacts. Instrumentation records the raw weight-gain, not the scaled add.
+    p.moGainSum = (p.moGainSum || 0) + gain;
+    p.moGainCount = (p.moGainCount || 0) + 1;
+    p.moContacts = (p.moContacts || 0) + 1;
+    var before = p.momentum || 0;
+    p.momentum = Math.min(MO.MAX, before + gain * MO.FILL_RATE);
+    p.momentumTier = momentumTierOf(p.momentum);
+    if (before < MO.MAX && p.momentum >= MO.MAX && !p.moPeakContacts) {
+      p.moPeakContacts = p.moContacts;
+      if (ctx && typeof ctx.now === 'number') p.moPeakTime = ctx.now;
+    }
+    return gain;
+  }
+
+  // Main entry for a racket-on-shuttle contact. Mutates p.momentum; returns the
+  // gain applied (for instrumentation). `ctx` = {event, aerial, dashSave, stretch,
+  // moved, maxCharge, rallyHitCount, now, clean}. opp is the other player.
+  function applyMomentumGain(p, opp, ctx) {
+    var mech = mechFor(p.character);
+    var clean = ctx.clean !== false;
+
+    // Sherman copies the opponent's whole table + signature (Part 2.3); in the
+    // mirror (Sherman vs Sherman) fall back to Liam-flat with a 10% fill bonus.
+    var weights, sig, mirrorBonus = 1;
+    if (mech && mech.signature === 'SHERMAN_INHERIT') {
+      var om = mechFor(opp && opp.character);
+      if (om && om.signature !== 'SHERMAN_INHERIT') { weights = om.weights; sig = om.signature; }
+      else { weights = { float: 1.2, smash: 1.2, dink: 1.2, serve: 1.2 }; sig = 'LIAM_RALLY5'; mirrorBonus = 1.10; }
+    } else if (mech) {
+      weights = mech.weights; sig = mech.signature;
+    } else {
+      weights = {}; sig = null;
+    }
+
+    var tags = contactTags(ctx);
+    // rodrigo variety/repeats depend on the player's own shot history
+    if (p.moLastKind !== null && ctx.event && ctx.event !== 'serve') {
+      if (ctx.event !== p.moLastKind) tags.variety = true; else tags.repeats = true;
+    }
+
+    // Update streak counters BEFORE the signature reads them.
+    if (clean && ctx.event && ctx.event !== 'serve') {
+      p.moStreak = (p.moStreak || 0) + 1;
+      if (p.moLastKind !== null) p.moVarStreak = (ctx.event !== p.moLastKind) ? (p.moVarStreak || 0) + 1 : 0;
+      p.moReturnStreak = (ctx.event === 'smash') ? 0 : (p.moReturnStreak || 0) + 1;
+      p.moLastKind = ctx.event;
+    } else if (!clean) {
+      p.moStreak = 0; p.moVarStreak = 0;
+    }
+
+    var gain = weightForTags(weights, tags);       // base 1.0 * weight
+    gain = applySignature(sig, p, opp, ctx, tags, gain) * mirrorBonus;
+    if (clean) gain = Math.max(gain, MO.MIN_GAIN); // Part 0.4 minimum-gain floor
+
+    return addMomentum(p, gain, ctx);
+  }
+
+  // Diego builds from a WHIFFED max-charge swing (Part 2.3) — effort, not accuracy.
+  // Called from releaseHit's whiff early-returns.
+  function applyMomentumWhiff(p, ctx) {
+    var mech = mechFor(p.character);
+    if (mech && mech.signature === 'DIEGO_MAX_CHARGE_WHIFF' && ctx.maxCharge) {
+      return addMomentum(p, (mech.weights.smash || MO.BASE_GAIN) * 0.7, ctx);
+    }
+    return 0;
+  }
+
+  // ---- Ultimate spend resource rules (MOMENTUM_SPEC Part 1.3, Phase 3) ----
+  // Only the resource half lives here so both sims agree on WHEN a spend is legal
+  // and that it zeroes the meter. The shot/cinematic effect is applied by each
+  // sim's releaseHit. Stamina cost (Part 5) is not wired yet — Phase 5.
+  function canSpendMomentum(p) { return (p.momentum || 0) >= MO.MAX; }
+  function spendMomentum(p) {
+    p.momentum = 0;
+    p.momentumTier = 0;
+    p.moPeakEmitted = false;
+    p.moStreak = 0; p.moVarStreak = 0; // spending is a hard reset of the run
+  }
+
+  // Point resolution bonuses (Part 2.2/2.3): Lin Dan +2.0 on a point won, stacked;
+  // Cristiano's feast pointWon 2.5. `winner`/`loser` are the two players.
+  function applyMomentumPoint(winner, loser, ctx) {
+    var wm = mechFor(winner && winner.character);
+    if (wm) {
+      if (wm.signature === 'LINDAN_POINT_BONUS') addMomentum(winner, 2.0, ctx);
+      else if (wm.signature === 'CRISTIANO_SPOTLIGHT') addMomentum(winner, 2.5, ctx);
+    }
+  }
+
   // ---- world / player factories ------------------------------------------
   function makePlayer(side) {
     var onLeft = side === 'left';
-    return {
+    var pl = {
       side: side,
       x: onLeft ? C.COURT_LEFT + 180 : C.COURT_RIGHT - 180 - C.PLAYER_W,
       y: C.GROUND_Y - C.PLAYER_H,
@@ -84,6 +283,8 @@
       inCharge: false,
       isHuman: true         // networked players are human-controlled
     };
+    initMomentum(pl);       // Momentum meter state (MOMENTUM_SPEC Part 1)
+    return pl;
   }
 
   function makeShuttle() {
@@ -172,17 +373,20 @@
     }
 
     if (w.state !== 'rally') return false;
+    // Momentum: a max-charge swing that never connects still counts for Diego
+    // (Part 2.3). chargeFrac is already clamped to 1, so >=0.99 means overhold.
+    var moMaxCharge = chargeFrac >= 0.99;
     if (now - p.lastHitTime < C.HIT_COOLDOWN) return false;
 
     var headX = p.x + C.PLAYER_W / 2;
     var headY = p.y;
     var dx = Math.abs(shuttle.x - headX);
-    if (dx > reachFor(p.character)) return false;
+    if (dx > reachFor(p.character)) { applyMomentumWhiff(p, { maxCharge: moMaxCharge, now: now }); return false; }
 
     var smashTop = headY - 90;
     var smashBottom = headY + 220;
     var dy = shuttle.y;
-    if (dy < smashTop || dy > smashBottom) return false; // out of reach
+    if (dy < smashTop || dy > smashBottom) { applyMomentumWhiff(p, { maxCharge: moMaxCharge, now: now }); return false; } // out of reach
 
     // serve is now returned -> strict service-box rule no longer applies
     w.isServeFlight = false;
@@ -264,6 +468,21 @@
     }
     shuttle.x = headX + dir * 10;
     shuttle.y = dy;
+
+    // ---- Momentum gain for this clean contact (MOMENTUM_SPEC Part 1/2) ----
+    var moOpp = p.side === 'left' ? w.right : w.left;
+    applyMomentumGain(p, moOpp, {
+      event: kind,
+      aerial: !p.onGround,
+      dashSave: (now - p.lastDashTime) <= C.DASH_WINDOW,
+      stretch: dx >= reachFor(p.character) * 0.8,
+      moved: !!(p.inLeft || p.inRight || p.dashTimer > 0),
+      maxCharge: moMaxCharge,
+      rallyHitCount: w.rallyHitCount,
+      now: now,
+      clean: true
+    });
+    if (p.momentumTier === 2 && !p.moPeakEmitted) { p.moPeakEmitted = true; emit(w, { kind: 'momentumPeak', side: p.side }); }
     return true;
   }
 
@@ -286,6 +505,11 @@
     w.isServeFlight = true;
     w.state = 'rally';
     emit(w, { kind: 'hit', side: p.side, hitKind: 'serve', x: shuttle.x, y: shuttle.y });
+    // Momentum: the serve is a clean contact too (Part 2.1).
+    applyMomentumGain(p, p.side === 'left' ? w.right : w.left, {
+      event: 'serve', aerial: false, moved: false,
+      rallyHitCount: w.rallyHitCount, now: now, clean: true
+    });
   }
 
   // ---- serve / scoring (verbatim) ----------------------------------------
@@ -332,6 +556,10 @@
 
   function awardPoint(w, sideThatScores, reason) {
     if (sideThatScores === 'left') w.left.score++; else w.right.score++;
+    // Momentum point bonuses (Part 2.2/2.3): winner of the rally, then loser.
+    var moWinner = sideThatScores === 'left' ? w.left : w.right;
+    var moLoser = sideThatScores === 'left' ? w.right : w.left;
+    applyMomentumPoint(moWinner, moLoser, { now: null });
     var a = w.left.score, b = w.right.score;
     var leader = a >= b ? w.left : w.right;
     var trailer = a >= b ? w.right : w.left;
@@ -549,6 +777,17 @@
     // exposed for AI / prediction reuse:
     reachFor: reachFor,
     chargeTimeFor: chargeTimeFor,
+    // Momentum engine (MOMENTUM_SPEC) — reused by index.html's local sim so the
+    // AI-vs-AI meter and the server meter are computed by the exact same code.
+    mechFor: mechFor,
+    momentumTierOf: momentumTierOf,
+    initMomentum: initMomentum,
+    resetMomentum: resetMomentum,
+    applyMomentumGain: applyMomentumGain,
+    applyMomentumWhiff: applyMomentumWhiff,
+    applyMomentumPoint: applyMomentumPoint,
+    canSpendMomentum: canSpendMomentum,
+    spendMomentum: spendMomentum,
     currentShuttleGravity: currentShuttleGravity,
     currentShuttleTerminalVy: currentShuttleTerminalVy,
     // Phase 8: the client re-runs ONLY movement (never shuttle/hit resolution,

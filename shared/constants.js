@@ -185,5 +185,148 @@
       stats: { speed: 2, power: 5, control: 3 }, tagline: 'SIUUUU! All red, full power.' }
   ];
 
+  // =========================================================================
+  // MOMENTUM & ULTIMATES LAYER (MOMENTUM_SPEC.md)
+  // -------------------------------------------------------------------------
+  // Pure data, consumed identically by the authoritative server sim
+  // (shared/simulation.js) and the local/AI-vs-AI sim inlined in index.html.
+  // Nothing here reads the DOM. Every value is deterministic (Part 0.1).
+  //
+  // Build order (spec Part 8): Phase 1 uses MOMENTUM + the `weights`/`signature`
+  // of each entry only. `height`, `endurance`, `passive`, `drive`, and `art`
+  // are populated now (they are free — pure data) but are not yet wired to
+  // physics; they belong to later phases and must not change gameplay until then.
+  // =========================================================================
+
+  C.MOMENTUM = {
+    MAX: 100,
+    TIER_1: 50,
+    MIN_GAIN: 0.5,        // Part 0.4 — any clean contact grants at least this
+    BASE_GAIN: 1.0,       // Part 2.1 — base per clean contact, × character weight
+    NORMALIZE_CEILING: 1.15, // Part 0.3 — weighted-average WEIGHT ceiling to tune to
+    // Part 0.3 also targets ~30 clean contacts to PEAK. The weight (compared to
+    // NORMALIZE_CEILING) is the cross-character fairness lever; FILL_RATE is the
+    // single global scalar that turns a ~1.0-weight character's fill into a
+    // ~30-contact climb to MAX (100 / 30). Meter add = weight * FILL_RATE.
+    TARGET_PEAK_CONTACTS: 30,
+    FILL_RATE: 100 / 30,
+    DRIVE_COST: 100,
+    ART_COST: 100,
+    ART_OVERHOLD_TIME: 0.35,
+    GOLDEN_SHUTTLE_ENABLED: false
+  };
+
+  C.STAMINA = {
+    MAX: 100,
+    REGEN_PER_SEC: 8,
+    LOW_THRESHOLD: 0.25,
+    LOW_POWER_MULT: 0.8,
+    COST: { dash: 12, jump: 8, smash: 15, drive: 20, ultimate: 30 }
+  };
+
+  // Per-character mechanics, keyed by C.CHARACTERS[].id exactly.
+  //   height    — cm (Part 4.2)
+  //   endurance — 1..5 (Part 5.2)
+  //   weights   — event/modifier -> Momentum weight (Part 2.2). The engine takes
+  //               the MAX weight among the tags active on a contact; tags with no
+  //               entry fall back to MOMENTUM.BASE_GAIN (1.0). Tag vocabulary:
+  //               float / smash / dink / serve / aerial / aerialSmash / dashSave /
+  //               stretch / returns / variety / repeats.
+  //   signature — named handler for gain rules that can't be a flat weight (Part 2 §note).
+  //   passive   — Part 3 (Phase 2, not yet wired).
+  //   drive/art — Part 6 (Phase 3, not yet wired).
+  C.CHARACTER_MECHANICS = {
+    maya: {
+      height: 168, endurance: 4,
+      weights: { dink: 2.0, stretch: 1.6, smash: 0.5 },
+      signature: 'MAYA_ESCALATION', passive: 'MUSCLE_MEMORY',
+      drive: 'DEEP_CORNER', art: { id: 'CALLED_SHOT', type: 'cinematic' }
+    },
+    jordan: {
+      height: 186, endurance: 2,
+      weights: { smash: 2.2, float: 1.2, dink: 0.4 },
+      signature: 'JORDAN_WEAK_RETURN', passive: 'FOLLOW_THROUGH',
+      drive: 'GUARANTEED_SMASH', art: { id: 'FULL_STOP', type: 'cinematic' }
+    },
+    kenji: {
+      height: 172, endurance: 3,
+      weights: { dashSave: 2.5, float: 1.3, smash: 0.6 },
+      signature: 'KENJI_DISTANCE', passive: 'SECOND_WIND',
+      drive: 'REPOSITION', art: { id: 'SPLIT_STEP', type: 'transformation' }
+    },
+    amara: {
+      height: 165, endurance: 5,
+      weights: { dink: 2.0, placement: 1.8, smash: 0.3 },
+      signature: 'AMARA_PLACEMENT', passive: 'READ',
+      drive: 'MAX_PLACEMENT', art: { id: 'PUPPETEER', type: 'cinematic' }
+    },
+    sofia: {
+      height: 163, endurance: 3,
+      weights: { dink: 1.8, aerial: 1.5, smash: 0.5 },
+      signature: 'SOFIA_ALTERNATE', passive: 'LIGHT_FEET',
+      drive: 'FREE_FEINT', art: { id: 'GRAND_FEINT', type: 'cinematic' }
+    },
+    diego: {
+      height: 183, endurance: 2,
+      weights: { smash: 2.0, float: 1.4, dink: 0.5 },
+      signature: 'DIEGO_MAX_CHARGE_WHIFF', passive: 'RECKLESS_SWING',
+      drive: 'MAX_POWER_SCATTER', art: { id: 'WRECKING_CLEAR', type: 'cinematic' }
+    },
+    priya: {
+      height: 181, endurance: 1,
+      weights: { aerialSmash: 2.2, dashSave: 1.6, dink: 0.4 },
+      signature: 'PRIYA_ADRENALINE', passive: 'ADRENALINE',
+      drive: 'SPEED_POWER_5', art: { id: 'REDLINE', type: 'transformation' }
+    },
+    liam: {
+      height: 178, endurance: 4,
+      weights: { float: 1.2, smash: 1.2, dink: 1.2, serve: 1.2 },
+      signature: 'LIAM_RALLY5', passive: 'CONSISTENCY',
+      drive: 'NO_MISHIT_3', art: { id: 'RALLY_LOCK', type: 'transformation' }
+    },
+    sherman: {
+      height: 175, endurance: 3,
+      weights: {}, // inherits opponent's table at runtime (SHERMAN_INHERIT)
+      signature: 'SHERMAN_INHERIT', passive: 'MIMICRY',
+      drive: 'COPY_DRIVE', art: { id: 'ADAPT', type: 'inherited' }
+    },
+    rodrigo: {
+      height: 174, endurance: 4,
+      weights: { variety: 2.0, dink: 1.4, repeats: 0.4 },
+      signature: 'RODRIGO_VARIETY', passive: 'FLAIR',
+      drive: 'PAUSE_SHOT', art: { id: 'LA_PAUSA', type: 'cinematic' }
+    },
+    mateo: {
+      height: 191, endurance: 5,
+      weights: { smash: 2.0, stretch: 2.0 },
+      signature: 'MATEO_NO_MOVE', passive: 'ROOT',
+      drive: 'DOUBLE_REACH', art: { id: 'ANCHOR', type: 'transformation' }
+    },
+    lindan: {
+      height: 178, endurance: 4,
+      weights: { float: 1.1 },
+      signature: 'LINDAN_POINT_BONUS', passive: 'COURT_SENSE',
+      drive: 'JUMP_SMASH', art: { id: 'LEGEND', type: 'cinematic' }
+    },
+    elijah: {
+      height: 176, endurance: 3,
+      weights: { float: 1.3, smash: 1.3, dink: 1.3, serve: 1.3 },
+      signature: 'ELIJAH_ANY_CONTACT', passive: 'SLIPPERY',
+      drive: 'STIFF_FISH', art: { id: 'FURSONA_UNLEASHED', type: 'transformation' }
+    },
+    benjamin: {
+      height: 170, endurance: 5,
+      weights: { returns: 2.0, stretch: 1.5, smash: 0.5 },
+      signature: 'BENJAMIN_RETURN_STREAK', passive: 'FLAT_FACE',
+      drive: 'WIDE_PLANK', art: { id: 'BLOCKADE', type: 'transformation' }
+    },
+    cristiano: {
+      height: 187, endurance: 2,
+      weights: { aerialSmash: 2.5, dink: 0.3, float: 0.7 },
+      signature: 'CRISTIANO_SPOTLIGHT', passive: 'SPOTLIGHT',
+      drive: 'HANG_TIME', art: { id: 'SIUUUU', type: 'cinematic' }
+    }
+  };
+
   return C;
 });
