@@ -3294,6 +3294,9 @@
       // return that comes back, the way a player presses an advantage they just created
       // instead of treating every incoming ball as a fresh, context-free decision.
       comboIntent:null, // null | {expiresAt}
+      // Part 4 signature memory: sofia's last float stroke (so she can alternate off it)
+      // and maya's last working float depth (so she can reuse a pattern that's landing).
+      lastPlanType:null, mayaLastDepth:null,
       stateLabel:'—' // purely for the F3 debug overlay
     };
   }
@@ -3301,7 +3304,9 @@
   function resetAIController(c){
     c.nextDecisionAt = 0; c.serveAt = null; c.opportunityActive = false;
     c.willAttempt = false; c.plan = null; c.hasSwung = false; c.hasJumped = false;
-    c.focused = false; c.comboIntent = null; c.stateLabel = '—';
+    c.focused = false; c.comboIntent = null; c.lastPlanType = null; c.stateLabel = '—';
+    // mayaLastDepth deliberately persists across rallies — the "muscle memory" pattern is
+    // supposed to survive until it stops working, not reset every serve.
   }
 
   // ---------- stat-derived AI persona ----------
@@ -3317,6 +3322,58 @@
       mobility:   (s.speed   - 1) / 4, // court coverage: dash eagerness, slightly sharper reads on the move
       precision:  (s.control - 1) / 4  // placement tightness: less aim error, fewer unforced errors, loves the net game
     };
+  }
+
+  // Depth misjudgement is a CONTROL failure, not just a difficulty one (Part 2). The
+  // difficulty sets the baseline; the character's precision closes the gap toward 1.0,
+  // so a 5-control character reads depth better than a 2-control character at the same
+  // difficulty — amara stops misjudging depth as often as priya. The 0.75 cap keeps
+  // difficulty meaningful: a high-control character on Easy is still an Easy opponent.
+  function effectiveDepthAwareness(diff, ch){
+    const persona = aiPersonaFor(ch);
+    return Math.min(1, diff.depthAwareness + (1 - diff.depthAwareness) * persona.precision * 0.75);
+  }
+
+  // ---------- shot vocabulary (Part 3) ----------
+  // Persona modulates how WELL a plan executes; vocabulary changes WHICH plans a
+  // character reaches for. Power characters weight clears/smashes and rarely dink;
+  // placement characters live in the net game; speed characters extend rallies with
+  // drives; all-court characters mirror what's played at them. These are BIASES, not
+  // gates — a power character starved of every option but a dink must still dink. The
+  // only hard zero is benjamin's smash (Flat Face forbids it entirely).
+  const AI_VOCABULARY = {
+    power:     { smash: 1.4, clear: 1.3, drive: 1.0, drop: 0.7, dink: 0.4, lift: 0.8 },
+    placement: { smash: 0.5, clear: 0.6, drive: 1.0, drop: 1.4, dink: 1.6, lift: 1.0 },
+    speed:     { smash: 0.8, clear: 0.9, drive: 1.4, drop: 1.1, dink: 1.2, lift: 1.1 },
+    allcourt:  { smash: 1.0, clear: 1.0, drive: 1.0, drop: 1.0, dink: 1.0, lift: 1.0 }
+  };
+  const AI_ARCHETYPE = {
+    jordan:'power',     diego:'power',      mateo:'power',    cristiano:'power',
+    maya:'placement',   amara:'placement',  rodrigo:'placement',
+    kenji:'speed',      sofia:'speed',      lindan:'speed',   priya:'speed',
+    liam:'allcourt',    sherman:'allcourt', benjamin:'allcourt',
+    elijah:'speed'      // 4/2/3 spread → the scrappy retrieval game his tagline describes
+  };
+  function aiArchetypeFor(p){
+    const id = p && p.character && p.character.id;
+    return AI_ARCHETYPE[id] || 'allcourt';
+  }
+  // Effective vocabulary for a character, with per-character signature overrides (Part 4)
+  // folded in: benjamin can never smash; diego over-commits to smashes when a combo is
+  // armed; benjamin leans harder on his safe lifts/drives.
+  function aiVocabFor(p, combo){
+    const base = AI_VOCABULARY[aiArchetypeFor(p)];
+    const id = p && p.character && p.character.id;
+    if(id === 'benjamin') return Object.assign({}, base, { smash: 0, lift: 1.4, drive: 1.2 });
+    if(id === 'diego' && combo) return Object.assign({}, base, { smash: base.smash + 0.2 });
+    return base;
+  }
+  // Weighted choice between two options A and B given a base probability of A and each
+  // option's vocabulary weight. Returns the biased probability of A. With equal weights
+  // (all-court) it returns baseP unchanged, so the bias never becomes a gate.
+  function vocabWeightedP(baseP, wA, wB){
+    const a = baseP*wA, b = (1-baseP)*wB;
+    return (a+b) > 0 ? a/(a+b) : baseP;
   }
 
   // ---------- momentum / scoreboard awareness ----------
@@ -3369,6 +3426,19 @@
   // Momentum instrumentation (MOMENTUM_SPEC Phase 1): wall-clock origin of the
   // current game, used by the F3 overlay to report seconds-to-PEAK per side.
   let momentumRunStart = 0;
+
+  // AI_SPEC Phase 1 instrumentation (Part 1.6 / Part 7): per-character diagnostics for
+  // validating the solver-clamp fix, surfaced in the F3 overlay rather than a new log.
+  //   floatPlans — float placements chosen by chooseAIPlan
+  //   clips      — of those, how many were clipped because the depth was unreachable
+  //   netDeaths  — hit shots that died short (hit the net, or landed on the hitter's own
+  //                side): the symptom the fix targets, tracked as a fraction of floatPlans
+  // Expected after the fix: netDeaths for low-power characters (elijah/sofia/amara/kenji)
+  // drops sharply toward the power characters, and low-power rallies run much longer.
+  const aiDiag = {};
+  function aiDiagFor(id){
+    return aiDiag[id] || (aiDiag[id] = {floatPlans:0, clips:0, netDeaths:0});
+  }
 
   function isServiceFault(x){
     // called only once we already know x is inside the outer COURT_LEFT..COURT_RIGHT
@@ -4235,6 +4305,23 @@
     // instead of treating every return as a fresh, context-free decision.
     const combo = ai.comboIntent && now < ai.comboIntent.expiresAt;
 
+    // Shot vocabulary (Part 3) + per-character signature id (Part 4). vocab biases which
+    // shots this archetype reaches for; sigId keys the handful of personality tweaks
+    // layered on top at the specific decision points they touch.
+    const vocab = aiVocabFor(p, combo);
+    const sigId = p && p.character && p.character.id;
+    // Part 4 priya (Adrenaline): escalates as the rally lengthens — more dangerous the
+    // longer things drag on. Scales her attacking eagerness by the current rally length.
+    const priyaEsc = sigId === 'priya' ? (1 + Math.min(0.8, rallyHitCount/15)) : 1;
+
+    // Ultimate awareness (Part 5.2): the opponent's PEAK aura is visible information by
+    // design, so a self-aware player is entitled to respect it — at opponent PEAK, play
+    // safer: keep the ball deep/neutral and stay off the net, where an ultimate punishes
+    // hardest. Gated behind momentumAwareness exactly like the scoreboard nerve above, so
+    // Easy never does it and it never reads as mind-reading. If playtesters find it
+    // uncanny, lower this gate before touching anything else.
+    const respectPeak = opp && opp.momentumTier === 2 && Math.random() < diff.momentumAwareness;
+
     // a smashable ball is a genuine LOB — clearly above head height as it arrives. A fast
     // flat drive momentarily "above head" out at reach's edge is not one: committing a
     // jump to it just buries a rushed half-charge float into the tape. The height bar
@@ -4267,7 +4354,12 @@
     // should be taken almost every time at the higher difficulties, not hedged against —
     // that hedge existed only because jump timing used to be unreliable, and it isn't
     // anymore (see predictShuttleTimeToY in runAI).
-    const jumpChanceEff = diff.jumpChance * (0.75 + 0.6*persona.aggression) * (combo ? 1.4 : 1);
+    // Part 3: smash vocabulary weight gates how eagerly this archetype hunts the jump kill
+    // (benjamin's 0 means he never smashes — Flat Face). Part 4 cristiano: aerial-smash
+    // hunter, jumps at almost anything airborne to the exclusion of court position.
+    const cristianoJump = sigId === 'cristiano' ? 1.5 : 1;
+    const jumpChanceEff = diff.jumpChance * (0.75 + 0.6*persona.aggression) * (combo ? 1.4 : 1)
+                          * vocab.smash * cristianoJump * priyaEsc;
     if(canJump && Math.random() < Math.min(0.97, jumpChanceEff)){
       ai.comboIntent = null; // pressed the advantage and swung for it — combo resolved
       // A jump smash is a quick, explosive snap, not a slow half-second wind-up — a real
@@ -4288,12 +4380,30 @@
     // Net game — I'm close to the net: a soft dink is deadliest when the opponent is deep.
     // High-control characters love this shot; low-control ones only risk it when it's
     // clearly on. (Tap-length charge → releaseHit's dink mechanics take over.)
-    if(myDistNet <= NET_DINK_DISTANCE*0.9 && (oppDeep || Math.random() < 0.25 + 0.35*persona.precision)){
+    // Part 3: the dink trigger is scaled by the dink vocabulary weight — a placement
+    // character reaches for the net game far more readily than a power slugger, but even
+    // a power character (dink 0.4) can still take it when the opponent is camped deep.
+    // The oppDeep case is no longer an automatic dink; it's a strong-but-weighted lean,
+    // so the bias stays a bias rather than becoming a gate.
+    // respectPeak (Part 5.2) suppresses the net game when the opponent is at PEAK — the
+    // last place to be is at the net feeding an ultimate.
+    const dinkBase = (oppDeep ? 0.85 : (0.25 + 0.35*persona.precision)) * (respectPeak ? 0.3 : 1);
+    if(myDistNet <= NET_DINK_DISTANCE*0.9 && Math.random() < Math.min(0.97, dinkBase * vocab.dink)){
       // a dink pulls the opponent forward — arm the combo so a weak lifted reply gets hunted
       if(Math.random() < diff.placementSkill * (0.35 + 0.4*persona.aggression)){
         ai.comboIntent = {expiresAt: now + COMBO_WINDOW};
       }
       return {type:'dink', windupEarly:false, fracMin:0.03, fracMax:0.09, jump:false};
+    }
+
+    // Defensive lift fallback (Part 1.5): if even a mid-court float is beyond reach from
+    // here — deep, cornered, and low on power — the correct badminton is a lift to reset
+    // the rally, not a doomed drive that dies at the net. A low-power player out of
+    // position lifts and lives to rally again rather than attempting a shot they can't hit.
+    const reach = floatChargeFracFor(300, myDistNet, p.character);
+    if(!reach.achievable && reach.maxDepth < 140){
+      return {type:'lift', windupEarly:true,
+              targetDepth: Math.max(120, reach.maxDepth - 10), jump:false};
     }
 
     // Everything else is a float return, and the real decision is PLACEMENT: where on the
@@ -4307,21 +4417,75 @@
     const deepTarget  = 450 + Math.random()*60;  // pushes at their back line, stays in bounds
     const midTarget   = 280 + Math.random()*120; // neutral rally ball
     let targetDepth;
-    if(Math.random() < diff.placementSkill){
-      if(oppDeep)       targetDepth = (Math.random() < 0.60 + 0.25*persona.precision) ? shortTarget : deepTarget;
-      else if(oppAtNet) targetDepth = deepTarget;
-      else              targetDepth = Math.random() < 0.5 ? shortTarget : deepTarget;
+    // Part 4 maya (Muscle Memory): once a float depth has been working she reuses it with
+    // a little jitter until it stops working (mayaLastDepth is cleared on a lost rally).
+    if(sigId === 'maya' && ai.mayaLastDepth != null && Math.random() < 0.5){
+      targetDepth = ai.mayaLastDepth + (Math.random()*2 - 1)*20;
+    } else if(Math.random() < diff.placementSkill){
+      // Part 4 amara (extremely patient): unless the opponent is genuinely out of
+      // position she declines to force it, plays a neutral rally ball, and waits for the
+      // error rather than manufacturing a winner.
+      if(sigId === 'amara' && !oppDeep && !oppAtNet){
+        targetDepth = midTarget;
+      } else if(oppDeep){
+        // short (drop) vs deep (clear), biased by this archetype's drop/clear weights (Part 3).
+        // respectPeak (Part 5.2) leans further toward the safe deep clear that pushes a
+        // PEAK opponent to the back of the court, away from the net.
+        let pShort = vocabWeightedP(0.60 + 0.25*persona.precision, vocab.drop, vocab.clear);
+        if(respectPeak) pShort *= 0.4;
+        targetDepth = Math.random() < pShort ? shortTarget : deepTarget;
+      } else if(oppAtNet){
+        targetDepth = deepTarget; // over their head; Part 1 clips it to a drive/drop if unreachable
+      } else {
+        let pShort = vocabWeightedP(0.5, vocab.drop, vocab.clear);
+        if(respectPeak) pShort *= 0.4;
+        targetDepth = Math.random() < pShort ? shortTarget : deepTarget;
+      }
     } else {
-      targetDepth = Math.random() < 0.5 ? midTarget : deepTarget;
+      // neutral pick: mid (drive) vs deep (clear), biased by the drive/clear weights
+      const pMid = vocabWeightedP(0.5, vocab.drive, vocab.clear);
+      targetDepth = Math.random() < pMid ? midTarget : deepTarget;
     }
     // contactStress widens the miss on the intended spot — a stretched/rushed/airborne
     // contact is a sloppier contact, physically, not just a coin-flip "fail" flag.
     targetDepth += (Math.random()*2 - 1) * diff.aimError * (1.35 - 0.7*persona.precision) * (1 + 1.1*contactStress);
     targetDepth = Math.max(120, Math.min(520, targetDepth));
-    const type = targetDepth < 230 ? 'drop' : targetDepth > 430 ? 'clear' : 'drive';
+
+    // Part 4 liam (never a low-percentage shot): cap ambition so his float never needs a
+    // near-max charge — he trades a little depth for a comfortable margin every time.
+    if(sigId === 'liam'){
+      const pm = powerMultForRegular(p.character);
+      const liamSafeDepth = 380 - 0.97*myDistNet + 640*0.82*pm;
+      targetDepth = Math.min(targetDepth, liamSafeDepth);
+    }
+
+    // Reachability (Part 1.3): never plan a depth this character cannot physically
+    // produce from here. Clipping BEFORE type derivation means an out-of-range clear
+    // naturally re-derives as a drive or drop — the correct shot for a low-power player
+    // out of position, not a failed clear that dies at the net. The -15 is a safety
+    // margin so a shot solved at exactly the limit still clears the net after aim error.
+    const solve = floatChargeFracFor(targetDepth, myDistNet, p.character);
+    if(sigId){ const d = aiDiagFor(sigId); d.floatPlans++; if(!solve.achievable) d.clips++; } // Part 1.6 instrumentation
+    if(!solve.achievable){
+      targetDepth = Math.max(120, Math.min(targetDepth, solve.maxDepth - 15));
+    }
+
+    let type = targetDepth < 230 ? 'drop' : targetDepth > 430 ? 'clear' : 'drive';
+    // Part 4 sofia (alternates compulsively): if this repeats her last float stroke, shove
+    // the target into a neighbouring band so the reply comes back as a different shot.
+    if(sigId === 'sofia' && type === ai.lastPlanType){
+      if(type === 'drive'){ targetDepth = Math.random() < 0.5 ? 180 : 470; }
+      else { targetDepth = 300; } // a repeated drop or clear becomes a neutral drive
+      const s2 = floatChargeFracFor(targetDepth, myDistNet, p.character);
+      if(!s2.achievable) targetDepth = Math.max(120, Math.min(targetDepth, s2.maxDepth - 15));
+      type = targetDepth < 230 ? 'drop' : targetDepth > 430 ? 'clear' : 'drive';
+    }
+    ai.lastPlanType = type;        // Part 4 sofia bookkeeping
+    if(sigId === 'maya') ai.mayaLastDepth = targetDepth; // Part 4 maya pattern memory
     // a short drop or a deep clear both set up a follow-up kill the same way the dink
-    // above does — the drive stays a neutral rally ball and doesn't arm anything.
-    if(type !== 'drive' && Math.random() < diff.placementSkill * (0.30 + 0.35*persona.aggression)){
+    // above does — the drive stays a neutral rally ball and doesn't arm anything. Priya's
+    // escalation makes her press this advantage harder the longer the rally has run.
+    if(type !== 'drive' && Math.random() < diff.placementSkill * (0.30 + 0.35*persona.aggression) * priyaEsc){
       ai.comboIntent = {expiresAt: now + COMBO_WINDOW};
     }
     return {type, windupEarly:true, targetDepth, jump:false};
@@ -4334,9 +4498,53 @@
   // px across the whole court, so the AI's placement is driven by the real physics rather
   // than hand-tuned charge windows. Character Power scales shot speed, so the fraction is
   // normalized by the same multiplier releaseHit applies.
+  // Returns { frac, achievable, maxDepth }. The old version returned just the clamped
+  // fraction, which SILENTLY capped at 0.95 — a low-power character asked "what charge
+  // lands this at depth 450?" got back 0.95 (indistinguishable from success) even when
+  // the true answer was "more charge than this character possesses", so it swung with
+  // full confidence into a shuttle that died at the net. Now the caller can tell an
+  // achievable plan from an impossible one, and maxDepth reports the deepest float this
+  // character can physically land from here (the inverse solved at frac = 0.95).
   function floatChargeFracFor(targetDepth, distFromNet, ch){
-    const frac = (targetDepth - 380 + 0.97*distFromNet) / 640;
-    return Math.max(0.06, Math.min(0.95, frac / powerMultForRegular(ch)));
+    const pm = powerMultForRegular(ch);
+    const raw = ((targetDepth - 380 + 0.97*distFromNet) / 640) / pm;
+    return {
+      frac: Math.max(0.06, Math.min(0.95, raw)),
+      achievable: raw <= 0.95,
+      maxDepth: 380 - 0.97*distFromNet + 640*0.95*pm
+    };
+  }
+
+  // Ultimate spending decision (Part 5.1): at PEAK, on a genuine attacking contact, pick
+  // between Rage Drive (safe, immediate, cheap) and Rage Art (cinematic, whiff-punishable,
+  // costlier). Inputs mirror the spec: score deficit, opponent court position, stamina,
+  // rally length, and a character-archetype bias (power leans Art; placement/all-court
+  // cash out with Drive). Returns 'art' | 'drive' | null; releaseHit still applies the
+  // final stamina gate, so returning a value never force-fires an unaffordable ultimate.
+  function chooseAIUltIntent(p, opp, airborne){
+    const S = GameConstants.STAMINA.COST;
+    const stam = p.stamina == null ? GameConstants.STAMINA.MAX : p.stamina;
+    const canArt = stam >= S.ultimate + 10; // ~40: don't gamble the Art on fumes (Part 5.1)
+    const canDrive = stam >= S.drive;
+    if(!canDrive && !canArt) return null;   // too drained to spend well — keep the meter
+
+    const halfCourt = (COURT_RIGHT - COURT_LEFT)/2;
+    const oppDistNet = Math.abs((opp.x + PLAYER_W/2) - NET_X);
+    const oppOutOfPosition = oppDistNet > halfCourt*0.75 || oppDistNet < halfCourt*0.18;
+    const behind = p.score < opp.score;
+    const arch = AI_ARCHETYPE[p.character && p.character.id] || 'allcourt';
+
+    let artScore = 0;
+    if(airborne) artScore += 0.5;            // a jump is the natural Art delivery
+    if(oppOutOfPosition) artScore += 0.35;   // punish the open court while it's open
+    if(behind) artScore += 0.2;              // chase harder from behind
+    if(rallyHitCount >= 8) artScore += 0.15; // long rally — worth cashing the big swing
+    if(arch === 'power') artScore += 0.2;
+    else if(arch === 'placement' || arch === 'allcourt') artScore -= 0.2;
+
+    if(canArt && artScore >= 0.6) return 'art';
+    if(canDrive) return 'drive';
+    return canArt ? 'art' : null;
   }
 
   function updateAI(dt, now){
@@ -4355,6 +4563,7 @@
     const persona = aiPersonaFor(p.character);
     const km = AI_KEYMAP[p.side];
     const dead = 6;
+    const sigId = p.character && p.character.id; // Part 4 signature tendencies
 
     keys[km.moveLeft] = false;
     keys[km.moveRight] = false;
@@ -4455,6 +4664,16 @@
     const recovering = now - p.lastHitTime < diff.recoverTime * recoverMult * (1.2 - 0.4*persona.mobility);
 
     const centerX = p.x + PLAYER_W/2;
+    // Part 4 mateo (Root — refuses to leave center): he holds his planted stance and only
+    // chases a ball genuinely coming to him. A wide ball he'd have to sprint for is
+    // conceded rather than scrambled after, matching his no-footwork, big-reach identity.
+    if(sigId === 'mateo'){
+      const stance = aiReadyStanceX(p.side);
+      const reachish = reachFor(p.character) + passiveReachBonus(p) + 70;
+      if(Math.abs(ai.targetX - centerX) > reachish){
+        ai.targetX = stance + (ai.targetX - stance) * 0.3; // mostly hold center
+      }
+    }
     if(!recovering){
       if(ai.targetX > centerX + dead) keys[km.moveRight] = true;
       else if(ai.targetX < centerX - dead) keys[km.moveLeft] = true;
@@ -4466,10 +4685,13 @@
     // a 5★-speed character dashes for gaps a slower one would just concede. Only while
     // actually chasing — no point burning a dash drifting back to the recovery stance.
     const dashAllowed = diff.dashUse === 'always' ||
-                        (diff.dashUse === 'fast-chars' && persona.mobility >= 0.75);
+                        (diff.dashUse === 'fast-chars' && persona.mobility >= 0.75) ||
+                        sigId === 'kenji'; // Part 4: kenji thinks to dash even when others wouldn't
     if(ai.focused && !recovering && dashAllowed && p.onGround && p.dashTimer <= 0 && canDash(p.character) && !staminaLow(p)){
       const travelDist = Math.abs(ai.targetX - centerX);
-      const triggerDist = AI_DASH_TRIGGER_DIST * (1.35 - 0.7*persona.mobility);
+      let triggerDist = AI_DASH_TRIGGER_DIST * (1.35 - 0.7*persona.mobility);
+      if(sigId === 'kenji') triggerDist *= 0.8;     // Part 4: chases balls he shouldn't
+      if(sigId === 'cristiano') triggerDist *= 1.4; // Part 4: won't scramble to reposition — lives for the jump
       const aiDashCd = (p.transform && p.transform.type === 'SPLIT_STEP') ? 0 : DASH_COOLDOWN; // Split Step waives cooldown
       if(travelDist > triggerDist && now - p.lastDashTime >= aiDashCd && staminaHas(p, GameConstants.STAMINA.COST.dash)){
         p.dashDir = ai.targetX > centerX ? 1 : -1;
@@ -4597,8 +4819,20 @@
           // less skilled play sometimes fails to add the extra power a deep hit needs
           // just to clear the net, and the too-soft return dies short.
           const myDist = Math.abs(centerX - NET_X);
-          let frac = floatChargeFracFor(plan.targetDepth, myDist, p.character);
-          if(Math.random() >= diff.depthAwareness){
+          const solve = floatChargeFracFor(plan.targetDepth, myDist, p.character);
+          let frac = solve.frac;
+          // The player has MOVED since the plan was made (the plan is committed when the
+          // shuttle crosses the net; the swing happens after the approach). If the plan
+          // is no longer physically reachable from where they now stand, don't swing into
+          // it — aim at what is actually achievable from here (Part 1.4).
+          if(!solve.achievable){
+            const clipped = Math.max(120, solve.maxDepth - 15);
+            frac = floatChargeFracFor(clipped, myDist, p.character).frac;
+          }
+          // depthAwareness models the classic unforced error: less skilled play sometimes
+          // fails to add the power a deep hit needs. Now scaled by the character's Control
+          // (Part 2), so a precision player misjudges depth far less often.
+          if(Math.random() >= effectiveDepthAwareness(diff, p.character)){
             frac *= 0.55 + Math.random()*0.3; // under-hit — may not survive the trip
           }
           holdDur = frac * chargeTimeFor(p.character);
@@ -4638,7 +4872,7 @@
           // ground. It can't reproduce the human overhold/dash-cancel input, so it
           // declares intent directly; releaseHit reads p.aiUltIntent for non-humans.
           if(readyToSwing && Simulation.canSpendMomentum(p) && canReachHeight){
-            p.aiUltIntent = (!p.onGround) ? 'art' : 'drive';
+            p.aiUltIntent = chooseAIUltIntent(p, opp, !p.onGround); // Part 5.1: smart Drive vs Art
           }
           const madeContact = releaseHit(p, now);
           p.aiUltIntent = null; // intent is per-swing; never leaks to the next contact
@@ -5077,6 +5311,17 @@
     
     if (rallyHitCount === 1 && sideThatScores === servingSide && reason !== 'SERVICE_FAULT') {
       matchStats[sideThatScores].aces++;
+    }
+
+    // AI_SPEC Phase 1 instrumentation (Part 1.6): a "net-death" is a hit shot that died
+    // short — it hit the net body, or it landed on the hitter's OWN side without crossing
+    // (faultySide === lastHitBy for a landing). OUT (long) is the opposite failure and is
+    // deliberately excluded. Counted per the faulty character so the F3 overlay can show
+    // the rate the fix is meant to collapse for low-power characters.
+    if(reason === 'NET_FAULT' || (reason === 'SHUTTLE_LANDED' && faultySide === lastHitBy)){
+      const fp = faultySide === 'left' ? left : right;
+      const fid = fp.character && fp.character.id;
+      if(fid && (mode === 'ai' || mode === 'aivai')) aiDiagFor(fid).netDeaths++;
     }
 
     if(sideThatScores === 'left') left.score++; else right.score++;
@@ -9107,6 +9352,14 @@
         'wAvg:   ' + (wAvg !== null ? wAvg.toFixed(2) : '—') + (overCeil ? '  >1.15!' : ''),
         'PEAK@:  ' + peakStr
       ];
+      // AI_SPEC Phase 1 (Part 1.6 / Part 7): clip-rate and net-death count for this
+      // character — the two numbers that tell whether the solver-clamp fix is working.
+      const dg = (ch && ch.id) ? aiDiagFor(ch.id) : null;
+      if(dg){
+        const clipRate = dg.floatPlans ? (100*dg.clips/dg.floatPlans).toFixed(0)+'%' : '—';
+        lines.push('clip:   ' + clipRate + ' (' + dg.clips + '/' + dg.floatPlans + ')');
+        lines.push('netdie: ' + dg.netDeaths);
+      }
       const panelW = 188, lineH = 15;
       const px = side === 'left' ? 14 : W - panelW - 14;
       const py = 96;
