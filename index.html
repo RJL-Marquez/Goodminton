@@ -5061,6 +5061,7 @@
     // reassigned below, so the smash-return power floor (in the float branch) can borrow
     // the smash's pace and guarantee the return clears the net (see there).
     const incomingWasSmash = shuttle.kind === 'smash';
+    shuttle.ultFx = null; // a struck shuttle drops any previous ult trail (re-set below if THIS is an ult)
 
     // on the ground it's always an underhand-style return; in the air, a charge of
     // 50% or more turns it into a smash — below that it's a softer underhand return
@@ -5294,6 +5295,9 @@
       }
       if(spend === 'art') ultArtEffect(p); else ultDriveEffect(p);
       clampUltShotInBounds(p); // never let a high-power ult rocket out the back (Part 6 fix)
+      // Signature ult trail flavour — the shuttle carries a bespoke per-character effect for
+      // the rest of its flight (drawUltShuttleFx). Sherman shows the COPIED character's trail.
+      shuttle.ultFx = { id: effectiveUltId(p), color: ultTrailColor(p), art: spend === 'art', t: 0 };
       Simulation.spendMomentum(p); // zeroes the meter (gain above is absorbed)
       spendStamina(p, spend === 'art' ? GameConstants.STAMINA.COST.ultimate : GameConstants.STAMINA.COST.drive); // Part 5.1
       p.aiUltIntent = null;
@@ -5384,6 +5388,7 @@
     shuttle.active = false;
     shuttle.kind = 'float';
     shuttle.held = false; shuttle.holdTimer = 0; shuttle.ultMarker = null; // clear ultimate deception state
+    shuttle.ultFx = null; // clear ult signature trail flavour
     shuttle.hitByMaxPower = false;
     shuttle.maxPowerDiveApplied = false;
     shuttle.dinkDiveApplied = false;
@@ -8999,6 +9004,81 @@
     }
   }
 
+  // ---- Signature ultimate shuttle trails (owner request: cool, unique per character) ----
+  const ULT_TRAIL_COLORS = {
+    lindan:'#ffd54a', cristiano:'#ff5a2a', diego:'#ff4444', jordan:'#5b9bff',
+    maya:'#c084fc', amara:'#22d3ee', priya:'#ff2d6b', kenji:'#34d399',
+    sofia:'#f472b6', elijah:'#f59e0b', mateo:'#fb923c', benjamin:'#cbd5e1',
+    rodrigo:'#facc15', sherman:'#a78bfa'
+  };
+  function ultTrailColor(p){
+    const id = effectiveUltId(p);
+    return ULT_TRAIL_COLORS[id] || (p.character && p.character.shirt) || (p.side==='left'?'#3b82f6':'#ec4899');
+  }
+  function ultTrailDir(i){ // unit direction of the flight path at trail point i
+    const a = trail[Math.max(0,i-1)], b = trail[Math.min(trail.length-1,i+1)];
+    let dx=b.x-a.x, dy=b.y-a.y; const m=Math.hypot(dx,dy)||1; return {x:dx/m,y:dy/m};
+  }
+  function fxEnergyComet(col, scale){ // colored glowing comet — the default "special" trail
+    const n=trail.length;
+    for(let i=0;i<n;i++){ const f=(i+1)/n; ctx.globalAlpha=f*f*0.55; ctx.fillStyle=col;
+      ctx.beginPath(); ctx.arc(trail[i].x,trail[i].y, SHUTTLE_RADIUS*(0.4+1.5*f)*scale,0,Math.PI*2); ctx.fill(); }
+    ctx.globalAlpha=1; ctx.strokeStyle=col; ctx.lineWidth=3; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(trail[0].x,trail[0].y); for(let i=1;i<n;i++)ctx.lineTo(trail[i].x,trail[i].y); ctx.stroke();
+  }
+  function fxSpiralDragon(col){ // Lin Dan — a spiralling ribbon "dragon" with scales
+    const n=trail.length, T=performance.now()/1000;
+    for(let pass=0; pass<2; pass++){
+      ctx.beginPath();
+      for(let i=0;i<n;i++){ const d=ultTrailDir(i); const f=(i+1)/n; const amp=6+18*f;
+        const ph=i*0.62 + T*6 + pass*Math.PI;
+        const x=trail[i].x + (-d.y)*Math.sin(ph)*amp, y=trail[i].y + (d.x)*Math.sin(ph)*amp;
+        if(i===0)ctx.moveTo(x,y); else ctx.lineTo(x,y); }
+      ctx.globalAlpha=0.75; ctx.strokeStyle=col; ctx.lineWidth=3; ctx.lineCap='round'; ctx.stroke();
+    }
+    for(let i=2;i<n;i+=2){ const d=ultTrailDir(i); const f=(i+1)/n; const amp=6+18*f; const ph=i*0.62 + T*6;
+      const x=trail[i].x+(-d.y)*Math.sin(ph)*amp, y=trail[i].y+(d.x)*Math.sin(ph)*amp;
+      ctx.globalAlpha=0.6*f; ctx.fillStyle=col; ctx.beginPath(); ctx.arc(x,y,2.4*f+1.2,0,Math.PI*2); ctx.fill(); }
+    ctx.globalAlpha=1;
+  }
+  function fxComet(col, scale){ // Cristiano — fat fiery comet with a white-hot core
+    fxEnergyComet(col, scale);
+    const n=trail.length;
+    for(let i=Math.max(0,n-6);i<n;i++){ const f=(i+1)/n; ctx.globalAlpha=f*0.7; ctx.fillStyle='#fff';
+      ctx.beginPath(); ctx.arc(trail[i].x,trail[i].y,SHUTTLE_RADIUS*0.7*scale,0,Math.PI*2); ctx.fill(); }
+    ctx.globalAlpha=1;
+  }
+  function fxWrecking(col){ // Diego — heavy comet with jagged bolts branching off
+    fxComet(col,1.1);
+    const n=trail.length; ctx.strokeStyle=col; ctx.lineWidth=2; ctx.globalAlpha=0.6;
+    for(let i=Math.max(1,n-8);i<n;i+=2){ const d=ultTrailDir(i); const side=(i%4<2)?1:-1; const len=8+Math.random()*14;
+      ctx.beginPath(); ctx.moveTo(trail[i].x,trail[i].y);
+      ctx.lineTo(trail[i].x+(-d.y)*side*len*0.5+d.x*4, trail[i].y+(d.x)*side*len*0.5+d.y*4);
+      ctx.lineTo(trail[i].x+(-d.y)*side*len-d.x*3, trail[i].y+(d.x)*side*len-d.y*3); ctx.stroke(); }
+    ctx.globalAlpha=1;
+  }
+  function fxTracer(col){ // Jordan — a hard bright tracer streak
+    const n=trail.length;
+    ctx.lineCap='round';
+    ctx.globalAlpha=0.35; ctx.strokeStyle=col; ctx.lineWidth=10;
+    ctx.beginPath(); ctx.moveTo(trail[0].x,trail[0].y); for(let i=1;i<n;i++)ctx.lineTo(trail[i].x,trail[i].y); ctx.stroke();
+    ctx.globalAlpha=0.9; ctx.strokeStyle='#fff'; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.moveTo(trail[0].x,trail[0].y); for(let i=1;i<n;i++)ctx.lineTo(trail[i].x,trail[i].y); ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+  function drawUltShuttleFx(){
+    const fx = shuttle.ultFx;
+    if(!fx || !shuttle.active || trail.length < 2) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    if(fx.id === 'lindan')         fxSpiralDragon(fx.color);
+    else if(fx.id === 'cristiano') fxComet(fx.color, 1.4);
+    else if(fx.id === 'diego')     fxWrecking(fx.color);
+    else if(fx.id === 'jordan')    fxTracer(fx.color);
+    else                           fxEnergyComet(fx.color, 1.0);
+    ctx.restore();
+  }
+
   function drawTrail(){
     const n = trail.length;
     for(let i=0;i<n;i++){
@@ -9525,7 +9605,7 @@
     drawPlayer(left);
     drawPlayer(right);
     drawUltMarker(); // world-space deception marker (Part 6)
-    if(shuttle.active || state==='serve') { drawTrail(); drawShuttle(); }
+    if(shuttle.active || state==='serve') { drawUltShuttleFx(); drawTrail(); drawShuttle(); }
 
     // Draw particles inside world space
     drawParticles();
