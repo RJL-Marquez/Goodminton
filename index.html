@@ -3378,7 +3378,7 @@
   function aiVocabFor(p, combo){
     const base = AI_VOCABULARY[aiArchetypeFor(p)];
     const id = p && p.character && p.character.id;
-    if(id === 'benjamin') return Object.assign({}, base, { smash: 0, lift: 1.4, drive: 1.2 });
+    if(id === 'benjamin') return Object.assign({}, base, { smash: 0.8, lift: 1.4, drive: 1.2 }); // can smash now, still a retriever at heart
     if(id === 'diego' && combo) return Object.assign({}, base, { smash: base.smash + 0.2 });
     return base;
   }
@@ -3582,8 +3582,18 @@
   // slam overlay while it counts down. Both are render/pacing only — no sim value
   // is ever read back out of them, so they can't affect determinism.
   let hitFreezeFrames = 0;
-  let ultCinematic = null; // {timer, dur, side, name, artName, color}
+  let ultCinematic = null; // {timer, dur, side, name, artName, color, quip}
   function prettyArtName(id){ return id ? id.replace(/_/g, ' ') : 'RAGE ART'; }
+  // Signature shout on the Art cinematic — keyed by the acting character (Sherman always
+  // yells his line even while copying someone else's Art). Empty = no quip.
+  const ULT_QUIPS = {
+    sherman:   "AIN'T NO WAAYYY",
+    cristiano: 'SIUUUU!',
+    lindan:    'SUPER DAN',
+    elijah:    'FURSONA... UNLEASHED',
+    diego:     '¡VAMOS!',
+    priya:     'REDLINE!'
+  };
   function triggerUltCinematic(p, artIdOverride){
     const mech = Simulation.mechFor(p.character);
     const artId = artIdOverride || (mech && mech.art && mech.art.id);
@@ -3592,6 +3602,7 @@
       side: p.side,
       name: ((p.character && p.character.name) || '').toUpperCase(),
       artName: prettyArtName(artId).toUpperCase(),
+      quip: ULT_QUIPS[p.character && p.character.id] || '',
       color: p.side === 'left' ? '#3b82f6' : '#ec4899',
       accent: (p.character && p.character.shirt) || '#ff3b3b'
     };
@@ -3628,6 +3639,28 @@
     const lo = p.side === 'left' ? NET_X + 60 : COURT_LEFT + 40;
     const hi = p.side === 'left' ? COURT_RIGHT - 40 : NET_X - 60;
     return (Math.abs(opp.x - lo) >= Math.abs(opp.x - hi)) ? lo : hi; // the end farther from them
+  }
+
+  // Keep an ult shot IN the opponent's court. Generic smash ultimates launch at
+  // power×1.5×powerMultFor, so a high-power character's ult rockets straight out the back
+  // and never lands near the opponent — the whole payoff of the ultimate faulting itself.
+  // Predicts the landing from the current velocity and, if it's past the opponent's
+  // baseline, scales horizontal speed down so it lands just inside it. Only ever REDUCES
+  // an overshoot, so deliberately soft/short ults (Sofia's net-death feint, targeted
+  // launches) are untouched.
+  function clampUltShotInBounds(p){
+    const g = SHUTTLE_GRAVITY, vy = shuttle.vy, vx = shuttle.vx, a = 0.5*g;
+    if(a === 0) return;
+    const disc = vy*vy - 4*a*(shuttle.y - GROUND_Y);
+    if(disc < 0) return;
+    const t = (-vy + Math.sqrt(disc)) / (2*a); // time to hit the floor
+    if(t <= 0) return;
+    const dir = p.side === 'left' ? 1 : -1;
+    const maxX = dir > 0 ? (COURT_RIGHT - 45) : (COURT_LEFT + 45); // just inside the opponent's out line
+    const landX = shuttle.x + vx*t;
+    if((dir > 0 && landX > maxX) || (dir < 0 && landX < maxX)){
+      shuttle.vx = (maxX - shuttle.x) / t; // land exactly at the baseline instead of sailing out
+    }
   }
 
   // La Pausa / mid-swing hitch: freeze the struck shuttle in mid-air, then release
@@ -5060,7 +5093,9 @@
 
     // ---- Passive shot adjustments (MOMENTUM_SPEC Part 3) ----
     const passiveId = passiveIdFor(p);
-    if(passiveId === 'FLAT_FACE' && kind === 'smash') kind = 'float';                 // Benjamin can never smash
+    // (Benjamin's FLAT_FACE "can never smash" restriction was removed by owner request —
+    // he can now smash like anyone else. His retriever identity survives in his momentum
+    // weights and Blockade ult, not a hard shot-type ban.)
     if(passiveId === 'FOLLOW_THROUGH' && now < (p.followThroughUntil||0)) power *= 1.18; // Jordan chain power
 
     // ---- Stamina effects on this swing (MOMENTUM_SPEC Part 5) ----
@@ -5258,6 +5293,7 @@
         }
       }
       if(spend === 'art') ultArtEffect(p); else ultDriveEffect(p);
+      clampUltShotInBounds(p); // never let a high-power ult rocket out the back (Part 6 fix)
       Simulation.spendMomentum(p); // zeroes the meter (gain above is absorbed)
       spendStamina(p, spend === 'art' ? GameConstants.STAMINA.COST.ultimate : GameConstants.STAMINA.COST.drive); // Part 5.1
       p.aiUltIntent = null;
@@ -9308,6 +9344,22 @@
     ctx.font = '800 22px "Space Grotesk", sans-serif';
     ctx.fillText('★ ' + c.artName, bx + 28, by + 76);
     ctx.restore();
+    // Signature shout — pops in under the banner, slightly overshoots then settles.
+    if(c.quip){
+      const pop = Math.min(1, t/0.22);
+      const scale = 1 + 0.25*(1 - Math.pow(1 - pop, 3)) - 0.08*Math.max(0, (t-0.22)/0.78);
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, alpha);
+      ctx.translate(W/2, by + bh + 46);
+      ctx.scale(scale, scale);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(5,6,10,0.9)';
+      ctx.font = '900 40px "Space Grotesk", sans-serif';
+      ctx.strokeText(c.quip, 0, 0);
+      ctx.fillStyle = c.color;
+      ctx.fillText(c.quip, 0, 0);
+      ctx.restore();
+    }
   }
 
   function drawPointMessage(){
