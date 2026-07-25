@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Rally — Pixel Character Preview</title>
+<style>
+  html,body{margin:0;background:#0f1523;color:#e7ecf5;font-family:'Segoe UI',system-ui,sans-serif;}
+  .wrap{max-width:1180px;margin:0 auto;padding:24px 18px 60px;}
+  h1{font-size:20px;letter-spacing:.5px;margin:0 0 2px;}
+  .sub{color:#8b93a7;font-size:13px;margin:0 0 20px;}
+  .row{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-end;justify-content:center;
+       background:linear-gradient(#141b2e,#0d1424);border:1px solid #24304d;border-radius:14px;
+       padding:26px 18px 14px;margin-bottom:22px;}
+  .cell{display:flex;flex-direction:column;align-items:center;gap:10px;}
+  .cell canvas{background:#0a1120;border:1px solid #26324f;border-radius:8px;image-rendering:pixelated;}
+  .tag{font-size:12px;color:#9fb4dd;font-weight:600;letter-spacing:.4px;}
+  .tag b{color:#ffce54;}
+  .faces .cell canvas{background:#0a1120;}
+  .exp{font-size:11px;color:#7fe3c0;font-weight:700;text-transform:uppercase;letter-spacing:.6px;}
+  .legend{color:#8b93a7;font-size:12.5px;line-height:1.7;margin-top:6px;}
+  .legend b{color:#e7ecf5;}
+  .pal{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px;margin:0 4px;border:1px solid rgba(255,255,255,.2);}
+  .note{background:#182036;border-left:3px solid #ffce54;padding:10px 14px;border-radius:6px;font-size:13px;color:#cdd6ea;margin:8px 0 20px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Rally — Pixel Arcade Character (Phase 1 preview)</h1>
+  <p class="sub">Maya's palette · side-view figure · procedural pixels (no image assets). Everything below is drawn by the same <code>px()</code> foundation that ships into the game.</p>
+
+  <div class="note">① <b>Pick the pixel scale.</b> Same figure at three art-pixel sizes. Bigger = chunkier/blockier. My pick is <b>PX 3</b> (middle).</div>
+  <div class="row" id="scaleRow"></div>
+
+  <div class="note">② <b>Reactive faces.</b> The six expression states the face swaps between during play. Each is live/animated (blink, breathing bob).</div>
+  <div class="row faces" id="faceRow"></div>
+
+  <div class="note">③ <b>Poses in motion</b> — the hybrid rig follows the same physics angles the game already computes (idle → charge → smash swing → jump), so gameplay stays reactive; it just looks pixelated.</div>
+  <div class="row" id="poseRow"></div>
+
+  <div class="legend">
+    <b>Maya palette (auto-derived shades):</b>
+    <span class="pal" style="background:#c68863"></span>skin
+    <span class="pal" style="background:#1f8a8c"></span>shirt
+    <span class="pal" style="background:#eafffb"></span>trim
+    <span class="pal" style="background:#123f40"></span>shorts
+    <span class="pal" style="background:#1b1b1b"></span>hair
+    <span class="pal" style="background:#e9e4d8"></span>shoes
+    <br>Every other character reuses this exact sprite with its own color row — the classic arcade palette-swap trick.
+  </div>
+</div>
+
+<script>
+// ============================================================================
+//  PIXEL FOUNDATION  (this is the real Phase-1 code, extracted standalone)
+// ============================================================================
+
+// ---- palette-swap: derive a full shaded palette from a character's colors ----
+function hexToRgb(h){h=h.replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');const n=parseInt(h,16);return[(n>>16)&255,(n>>8)&255,n&255];}
+function rgbToHex(r,g,b){return '#'+[r,g,b].map(v=>Math.max(0,Math.min(255,v|0)).toString(16).padStart(2,'0')).join('');}
+function shade(hex,f){const[r,g,b]=hexToRgb(hex);if(f<0){f=-f;return rgbToHex(r*(1-f),g*(1-f),b*(1-f));}return rgbToHex(r+(255-r)*f,g+(255-g)*f,b+(255-b)*f);}
+
+// A character's palette -> indexed color table used by the sprite maps.
+function makePalette(ch){
+  return {
+    _: null,                    // transparent
+    O: '#0b0d14',               // outline (near-black, cool)
+    K: ch.skin,                 // skin
+    k: shade(ch.skin,-0.28),    // skin shadow
+    H: ch.hair,                 // hair
+    h: shade(ch.hair,-0.35),    // hair shadow
+    S: ch.shirt,                // shirt
+    s: shade(ch.shirt,-0.30),   // shirt shadow
+    T: ch.shirt2,               // trim / accent
+    P: ch.shorts,               // shorts
+    p: shade(ch.shorts,-0.30),  // shorts shadow
+    E: ch.shoe,                 // shoe
+    W: '#f4f7ff',               // eye white
+    D: '#0b0d14'                // dark detail (pupils/mouth)
+  };
+}
+
+// ---- px(): the ONLY drawing primitive. fills one grid-aligned art-pixel. ----
+function makePx(ctx, PX, ox, oy){
+  return function(gx, gy, col){
+    if(!col) return;
+    ctx.fillStyle = col;
+    ctx.fillRect(ox + gx*PX, oy + gy*PX, PX, PX);
+  };
+}
+// fill a rect of art-pixels
+function pxRect(px, x, y, w, h, col){ for(let j=0;j<h;j++)for(let i=0;i<w;i++)px(x+i,y+j,col); }
+// stamp a string-map sprite (rows of index chars) at grid origin
+function pxMap(px, x, y, rows, pal){
+  for(let j=0;j<rows.length;j++){const r=rows[j];for(let i=0;i<r.length;i++){const c=r[i];if(c!==' '&&c!=='_'&&pal[c]!==undefined)px(x+i,y+j,pal[c]);}}
+}
+
+// ============================================================================
+//  CHARACTER SPRITE  (side-view, faces +x. ~14w x 26h art-pixels)
+//  Authored as pixel maps for head+torso; limbs are pixel blocks posed by angle.
+// ============================================================================
+
+// Head base: skin + hair (Maya = bun). Face features drawn separately on top.
+// 9 wide. Row 0 = top of hair.
+const HEAD_BUN = [
+  '__HHHH__',
+  '_HHHHHH_',
+  'HHhKKKKH',   // hairline over forehead
+  'HHKKKKKK',
+  '_HKKKKKK',
+  '_KKKKKKk',
+  '_KKKKKkk',
+  '__KKKkk_',
+  '___KKk__'
+];
+
+// Bold, legible pixel expressions. Two eyes at cols (fx+2..3) and (fx+5..6),
+// mouth centered around col fx+3..5. Every state is deliberately distinct.
+const INK='#0b0d14', EYEW='#f6f9ff', MOUTHR='#7a1f22', TEETH='#f6f9ff', SWEAT='#5ec7ff';
+function drawFace(px, fx, fy, expr, t){
+  const P=(x,y,c)=>px(fx+x,fy+y,c);
+  const blink = (expr==='idle'||expr==='focused') && (Math.floor(t*1.1)%4===0) && ((t*1.1)%1<0.11);
+  const eL=2, eR=5, ey=3;             // eye columns / row
+  // --- eyes ---
+  function openEye(x, tall){          // white sclera + dark pupil
+    P(x,ey,EYEW); P(x+1,ey,EYEW);
+    P(x,ey+1,INK); P(x+1,ey+1,INK);
+    if(tall){ P(x,ey-1,EYEW); P(x+1,ey-1,EYEW); }
+  }
+  function lineEye(x){ P(x,ey+1,INK); P(x+1,ey+1,INK); }           // narrowed / determined
+  function happyEye(x){ P(x,ey+1,INK); P(x+1,ey,INK); }           // upward ^ curve
+  function sadEye(x){ P(x,ey+1,INK); P(x+1,ey+1,INK); P(x,ey,INK); }
+  // --- brows ---
+  function browAngry(){ P(eL,ey-1,INK); P(eL+1,ey,INK); P(eR+1,ey-1,INK); P(eR,ey,INK); } // \  /
+  function browUp(){ P(eL,ey-2,INK); P(eL+1,ey-2,INK); P(eR,ey-2,INK); P(eR+1,ey-2,INK); }
+  function browSad(){ P(eL,ey,INK); P(eL+1,ey-1,INK); P(eR,ey-1,INK); P(eR+1,ey,INK); }   // /  \
+  // --- mouth ---
+  const mx=fx+2, my=fy+6;
+  function mFlat(){ px(mx+1,my,INK); px(mx+2,my,INK); }
+  function mOpen(){ // shouting: 3x2 dark cavity w/ red tongue
+    px(mx+1,my,INK);px(mx+2,my,INK);px(mx+3,my,INK);
+    px(mx+1,my+1,MOUTHR);px(mx+2,my+1,MOUTHR);px(mx+3,my+1,MOUTHR);
+    px(mx+1,my+2,INK);px(mx+2,my+2,INK);px(mx+3,my+2,INK);
+  }
+  function mGrit(){ // clenched teeth bar
+    px(mx,my,INK);px(mx+4,my,INK);
+    px(mx+1,my,TEETH);px(mx+2,my,TEETH);px(mx+3,my,TEETH);
+    px(mx+2,my,INK); // one vertical tooth gap
+  }
+  function mSmile(){ px(mx,my,INK);px(mx+1,my+1,INK);px(mx+2,my+1,INK);px(mx+3,my+1,INK);px(mx+4,my,INK); }
+  function mFrown(){ px(mx,my+1,INK);px(mx+1,my,INK);px(mx+2,my,INK);px(mx+3,my,INK);px(mx+4,my+1,INK); }
+
+  if(blink){ lineEye(eL); lineEye(eR); (expr==='focused'?mFlat:mFlat)(); if(expr==='focused')browAngry(); return; }
+  switch(expr){
+    case 'focused': lineEye(eL); lineEye(eR); browAngry(); mFlat(); break;
+    case 'strain':  lineEye(eL); lineEye(eR); browAngry(); mGrit(); break;
+    case 'smash':   openEye(eL,true); openEye(eR,true); browUp(); mOpen(); break;
+    case 'elated':  happyEye(eL); happyEye(eR); mSmile(); break;
+    case 'dejected':sadEye(eL); sadEye(eR); browSad(); mFrown(); px(fx+7,fy+2,SWEAT); px(fx+7,fy+3,SWEAT); break;
+    default:        openEye(eL,false); openEye(eR,false); mFlat(); break; // idle
+  }
+}
+
+// draw a pixel limb as a short thick segment from (x,y) at angle, length L (art-px)
+function pxLimb(px, x0, y0, ang, L, w, col, footCol){
+  const dx=Math.sin(ang), dy=Math.cos(ang);
+  for(let s=0;s<=L;s++){
+    const cx=Math.round(x0+dx*s), cy=Math.round(y0+dy*s);
+    for(let o=0;o<w;o++) px(cx+o-((w-1)>>1), cy, col);
+  }
+  if(footCol){ const fx=Math.round(x0+dx*L), fy=Math.round(y0+dy*L); pxRect(px,fx-1,fy,3,2,footCol); }
+}
+
+// Full figure. pose = {legF,legB,armF,armB, air}. expr = face state.
+function drawFigure(ctx, PX, ox, oy, ch, pose, expr, t){
+  const pal = makePalette(ch);
+  const px = makePx(ctx, PX, ox, oy);
+  // anchor: hips at (7, 16), everything relative in art-px
+  const hipX=7, hipY=17, shX=7, shY=8;
+  const bob = pose.air?0:Math.round(Math.sin(t*3)*0.5);
+  const yo = bob;
+  // back leg
+  pxLimb(px, hipX-1, hipY+yo, pose.legB, 8, 3, pal.P, pal.E);
+  // back arm (behind torso)
+  pxLimb(px, shX-1, shY+2+yo, pose.armB, 7, 2, pal.k, null);
+  // front leg
+  pxLimb(px, hipX+1, hipY+yo, pose.legF, 8, 3, pal.p, pal.E);
+  // torso (shirt) with trim stripe + shading
+  pxMap(px, 3, shY+yo, [
+    'sSSSSSs',
+    'SSSSSSS',
+    'SSSSSSS',
+    'STTTTTS',
+    'SSSSSSS',
+    'sSSSSSs',
+    'sSSSSSs',
+    'PPPPPPP',
+    'PPpPpPP'
+  ], pal);
+  // head
+  pxMap(px, 3, (shY-8)+yo, HEAD_BUN, pal);
+  drawFace(px, 4, (shY-8)+yo, expr, t);
+  // front arm + racket (drawn last, on top)
+  const ax=shX+1, ay=shY+2+yo;
+  pxLimb(px, ax, ay, pose.armF, 7, 2, pal.K, null);
+  const rx=Math.round(ax+Math.sin(pose.armF)*7), ry=Math.round(ay+Math.cos(pose.armF)*7);
+  drawRacket(px, rx, ry, pose.armF);
+}
+
+function drawRacket(px, x, y, ang){
+  // shaft
+  const dx=Math.sin(ang), dy=Math.cos(ang);
+  for(let s=0;s<5;s++) px(Math.round(x+dx*s), Math.round(y+dy*s), '#3a2a1c');
+  const hx=Math.round(x+dx*5), hy=Math.round(y+dy*5);
+  // head oval frame (blocky)
+  const frame=[
+    ' OOO ',
+    'O   O',
+    'O   O',
+    'O   O',
+    ' OOO '
+  ];
+  for(let j=0;j<frame.length;j++)for(let i=0;i<frame[j].length;i++){
+    if(frame[j][i]==='O') px(hx-2+i, hy-2+j, '#c9ccd6');
+  }
+  // strings hint
+  px(hx,hy-1,'#5b6070'); px(hx,hy,'#5b6070'); px(hx,hy+1,'#5b6070');
+  px(hx-1,hy,'#5b6070'); px(hx+1,hy,'#5b6070');
+}
+
+// ============================================================================
+//  DEMO SCENES
+// ============================================================================
+const MAYA = {skin:'#c68863', hair:'#1b1b1b', shirt:'#1f8a8c', shirt2:'#eafffb', shorts:'#123f40', shoe:'#e9e4d8'};
+const IDLE = {legF:0.25, legB:-0.3, armF:-0.35, armB:-0.55, air:false};
+const CHARGE = {legF:0.2, legB:-0.35, armF:0.9, armB:-0.5, air:false};
+const SMASH = {legF:0.35, legB:-0.4, armF:-1.9, armB:-0.4, air:true};
+const JUMP  = {legF:-0.5, legB:0.3, armF:-1.1, armB:-0.3, air:true};
+
+function makeCanvas(parent, w, h){const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d');ctx.imageSmoothingEnabled=false;parent.appendChild(c);return{c,ctx};}
+function cell(parent, tagHtml, expClass){const d=document.createElement('div');d.className='cell';parent.appendChild(d);const t=document.createElement('div');t.className=expClass||'tag';t.innerHTML=tagHtml;return{d,t};}
+
+// Scale row: PX 2/3/4
+const scaleRow=document.getElementById('scaleRow');
+const scaleCells=[2,3,4].map(PX=>{
+  const{d,t}=cell(scaleRow, `<b>PX ${PX}</b>`);
+  const{ctx}=makeCanvas(d, 22*PX, 30*PX);
+  d.appendChild(t);
+  return{PX,ctx,w:22*PX,h:30*PX};
+});
+
+// Face row
+const faceRow=document.getElementById('faceRow');
+const EXPR=[['idle','IDLE'],['focused','CHARGING'],['strain','DIVE / STRAIN'],['smash','SMASH'],['elated','POINT WON'],['dejected','POINT LOST']];
+const FACE_PX=9;
+const faceCells=EXPR.map(([expr,label])=>{
+  const{d,t}=cell(faceRow, label, 'exp');
+  const{ctx}=makeCanvas(d, 13*FACE_PX, 13*FACE_PX); // big zoomed face
+  d.appendChild(t);
+  return{expr,ctx,PX:FACE_PX};
+});
+
+// Pose row
+const poseRow=document.getElementById('poseRow');
+const POSES=[['IDLE',IDLE,'idle'],['CHARGE',CHARGE,'focused'],['SMASH',SMASH,'smash'],['JUMP',JUMP,'strain']];
+const poseCells=POSES.map(([label,pose,expr])=>{
+  const{d,t}=cell(poseRow, label);
+  const{ctx}=makeCanvas(d, 22*4, 30*4);
+  d.appendChild(t);
+  return{pose,expr,ctx,PX:4};
+});
+
+function frame(now){
+  const t=now/1000;
+  // scale row: idle figure, face cycles through expressions slowly
+  const cyc=EXPR[Math.floor(t/1.1)%EXPR.length][0];
+  scaleCells.forEach(sc=>{ sc.ctx.clearRect(0,0,sc.w,sc.h); drawFigure(sc.ctx,sc.PX, 0, 2*sc.PX, MAYA, IDLE, cyc, t); });
+  // face row: zoomed heads, each fixed expression
+  faceCells.forEach(fc=>{ fc.ctx.clearRect(0,0,13*fc.PX,13*fc.PX); drawFaceZoom(fc.ctx,fc.PX,fc.expr,t); });
+  // pose row
+  poseCells.forEach(pc=>{ pc.ctx.clearRect(0,0,88,120); drawFigure(pc.ctx,pc.PX,0,2*pc.PX,MAYA,pc.pose,pc.expr,t); });
+  requestAnimationFrame(frame);
+}
+function drawFaceZoom(ctx,PX,expr,t){
+  const pal=makePalette(MAYA); const px=makePx(ctx,PX,1*PX,2*PX);
+  pxMap(px,1,0,HEAD_BUN,pal); drawFace(px,2,0,expr,t);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
