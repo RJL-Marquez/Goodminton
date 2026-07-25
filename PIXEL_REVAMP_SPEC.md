@@ -89,16 +89,30 @@ variety and the pre-commit scaffolding cleanup remain.
 - [x] Subtle scanline + vignette post-pass (`drawRetroOverlay`, prebuilt `_scanCanvas` blit; toggle `RETRO_FX`)
 - [x] Pixel crowd in the stands — colored blocky spectators that bob on scoring (`drawFansStand`)
 - [x] Pixel spectators on the bleacher court floor (`drawBleacherFloor`) — coherent with the stands
-- [ ] Dithered pixel skies (currently smooth gradient)
-- [ ] Pixel-align the pennant banner / net / boundary + service lines
-- [ ] Neon signage per court
-- [ ] Review & polish all 6 `BACKGROUNDS` (sunset, arena, beach, night, etc.) for the new look
+- [x] **Offscreen "render small, upscale hard" pipeline** (`COURT_PIXEL_UNIT=3`, `ensureEnvCanvas`/`renderCourtEnv`, cached via `_envKey`) — whole environment layer pixelates uniformly; gameplay lines/net stay full-res on top (spec rule 0.2)
+- [x] `decor()` moved into the pixelated pass
+- [x] Crowd retint from theme line color (`crowdTonesFor`)
+- [x] Revised palettes for the 6 existing courts (spec Part 2)
+- [x] 5 new themes: `neonesports`, `volcanic`, `zengarden`, `aquarium`, `cosmic`
+- [x] 2 signature courts: `ruins` (Diego), `castle` (Lin Dan) with checkered marble tread + red carpet (`opts.pattern:'checker'` in `drawBleacherFloor`, opt-in)
+- [x] Character-select rescaled so it no longer scrolls (verified: 582px panel in 720px viewport)
+- [ ] Runtime-verified (no errors, renders varied pixels); **visual aesthetic sign-off pending Browser pane display**
+- [ ] Optional: Bayer-dither skies (spec Part 1.3) — only if a sky still looks too smooth in playtest
+- [ ] Remove dev scaffolding (`_pixel_preview.html`) before commit
 
-## Phase 3 — Rackets & Shuttle  `[ ]`
+**Court count: 13** (6 original + 5 themes + ruins + castle).
 
-- [ ] Pixel rackets (blocky frame + readable string bed)
-- [ ] Pixel shuttlecock (chunky feathered cork)
-- [ ] Stepped/pixelated flight trail
+## Phase 3 — Rackets & Shuttle  `[~]`
+
+- [x] Pixel rackets — frame now **themed per character** (frame = shirt, grip = accent); Elijah's fish + Benjamin's cross plank preserved (`drawPixRacket`)
+- [x] Pixel shuttlecock — authored sprite (`buildShuttleSprite`) blitted rotated with smoothing off (`drawShuttle`)
+- [ ] Stepped/pixelated flight trail (still the smooth trail)
+
+### Gameplay fixes bundled with this pass (not visual)
+- [x] **Net pass-through / tunneling** — fast smashes could skip the thin net band in one frame; `updateShuttle` now does a **swept** crossing test with interpolated height at the net plane
+- [x] **Ult out-of-bounds & "never reaches"** — `clampUltShotInBounds` is now **two-sided** (caps overshoot AND pushes short/vertical ults onto the opponent's half; skips Sofia's intentional dink)
+- [x] **AI Rage Art cinematic too rare** — `chooseAIUltIntent` threshold 0.6 → 0.45 + small base, so the AI shows its Art (cinematic) far more often
+- [ ] Same net-tunneling guard should be mirrored in `shared/simulation.js` for ONLINE play (this fix covers local/AI mode only)
 
 ## Phase 4 — UI / Menus, FX & SFX  `[ ]`
 

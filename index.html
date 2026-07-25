@@ -1601,9 +1601,10 @@
   }
   
   .profile-canvas-wrapper {
-    /* Frameless: the pixel character floats in the space, no box/border. */
-    width: 160px;
-    height: 180px;
+    /* Frameless: the pixel character floats in the space, no box/border.
+       Sized compact so the whole select screen fits without scrolling. */
+    width: 118px;
+    height: 130px;
     border: none;
     background: none;
     box-shadow: none;
@@ -1612,21 +1613,22 @@
     display: flex;
     align-items: flex-end;
     justify-content: center;
-    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), filter 0.3s ease;
+    transition: filter 0.3s ease;
   }
   .profile-canvas-wrapper canvas {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
     image-rendering: pixelated;
     image-rendering: crisp-edges;
   }
 
-  /* selected: a soft glow that hugs the character silhouette (no rectangle) + slight lift */
+  /* selected: a soft glow that hugs the character silhouette (no rectangle) */
   .p1-profile.active .profile-canvas-wrapper {
-    transform: scale(1.06);
-    filter: drop-shadow(0 0 9px rgba(239, 68, 68, 0.55));
+    filter: drop-shadow(0 0 9px rgba(239, 68, 68, 0.6));
   }
   .p2-profile.active .profile-canvas-wrapper {
-    transform: scale(1.06);
-    filter: drop-shadow(0 0 9px rgba(59, 130, 246, 0.55));
+    filter: drop-shadow(0 0 9px rgba(59, 130, 246, 0.6));
   }
   
   .profile-name {
@@ -2930,13 +2932,15 @@
   // angled court floor, with silhouettes based near `horizonY` (the top edge of the court).
   // `ground` is the floor color of the angled court itself — chosen to keep good contrast
   // against the cream shuttlecock (#f2ede1) on every map.
+  // Palettes revised per the Retro Courts spec Part 2 — `sky` is [sky-top, ground-shadow]
+  // (darkest tone as the bottom gradient stop); `line` is now an opaque themed hex.
   const BACKGROUNDS = [
-    { id:'classic', name:'Classic Gym', sky:['#123a2c','#0a2620'], ground:'#0e4a37', line:'rgba(233,228,216,0.6)',
+    { id:'classic', name:'Classic Gym', sky:['#1c4d3a','#0a5c3d'], ground:'#127a52', line:'#ffe3a3',
       decor:function(c,w,h,gy){
         c.fillStyle='rgba(255,255,255,0.045)';
         for(let x=0; x<=w; x+=90){ c.fillRect(x, 0, 1, gy+30); }
       }},
-    { id:'sunset', name:'Sunset Park', sky:['#ff9a5a','#341a3f'], ground:'#3d2748', line:'rgba(255,240,220,0.6)',
+    { id:'sunset', name:'Sunset Park', sky:['#ff7a45','#421f4a'], ground:'#5a2a63', line:'#ffe6c2',
       decor:function(c,w,h,gy){
         c.fillStyle='#ffdd8a';
         c.beginPath(); c.arc(w*0.78, gy*0.45, 44, 0, Math.PI*2); c.fill();
@@ -2944,7 +2948,7 @@
         const n = Math.ceil(w/150)+1;
         for(let i=0;i<n;i++){ const x=40+i*150; c.beginPath(); c.moveTo(x,gy); c.lineTo(x+18,gy-64); c.lineTo(x+36,gy); c.fill(); }
       }},
-    { id:'arena', name:'Indoor Arena', sky:['#1b1f3a','#08090f'], ground:'#4a3018', line:'rgba(233,228,216,0.55)',
+    { id:'arena', name:'Indoor Arena', sky:['#20264a','#5c3714'], ground:'#7a4a1e', line:'#ffe9b8',
       decor:function(c,w,h,gy){
         c.fillStyle='rgba(255,255,255,0.06)';
         const n = Math.ceil(w/170)+1;
@@ -2952,14 +2956,14 @@
         c.fillStyle='rgba(10,12,22,0.7)';
         c.fillRect(0,gy-14,w,14);
       }},
-    { id:'beach', name:'Beach Court', sky:['#2e93c9','#bfe9ff'], ground:'#caa456', line:'rgba(45,30,10,0.55)',
+    { id:'beach', name:'Beach Court', sky:['#4fb3d9','#c98f34'], ground:'#e0a94a', line:'#3a2a12',
       decor:function(c,w,h,gy){
         c.fillStyle='#ffe9a8'; c.beginPath(); c.arc(90,60,34,0,Math.PI*2); c.fill();
         c.fillStyle='rgba(0,70,100,0.35)'; c.fillRect(0,gy-4,w,4);
         c.fillStyle='rgba(20,60,20,0.55)';
         [50,w-100].forEach(function(x){ c.beginPath(); c.moveTo(x,gy); c.lineTo(x+8,gy-84); c.lineTo(x+16,gy); c.fill(); });
       }},
-    { id:'night', name:'Night City', sky:['#050414','#12102e'], ground:'#1b1b2c', line:'rgba(210,210,255,0.5)',
+    { id:'night', name:'Night City', sky:['#0a0820','#1e1e35'], ground:'#2a2a44', line:'#c9c9ff',
       decor:function(c,w,h,gy){
         c.fillStyle='#e8e6d0'; c.beginPath(); c.arc(w*0.15,55,24,0,Math.PI*2); c.fill();
         c.fillStyle='rgba(10,10,25,0.85)';
@@ -2973,7 +2977,7 @@
           }
         }
       }},
-    { id:'forest', name:'Forest Court', sky:['#9fd9b4','#3c7a52'], ground:'#204a2b', line:'rgba(255,255,255,0.55)',
+    { id:'forest', name:'Forest Court', sky:['#2f6b46','#0f2815'], ground:'#163a20', line:'#eaf5e0',
       decor:function(c,w,h,gy){
         c.fillStyle='rgba(50,80,60,0.55)';
         c.beginPath(); c.moveTo(0,gy-10); c.lineTo(w*0.17,gy-120); c.lineTo(w*0.33,gy-10); c.fill();
@@ -2981,6 +2985,84 @@
         c.fillStyle='rgba(15,45,20,0.65)';
         const n = Math.ceil(w/115)+1;
         for(let i=0;i<n;i++){ const x=20+i*115; c.beginPath(); c.moveTo(x,gy); c.lineTo(x+14,gy-56); c.lineTo(x+28,gy); c.fill(); }
+      }},
+    // ---- new themes (Retro Courts spec Part 2/3) ----
+    { id:'neonesports', name:'Neon Esports', sky:['#0d0221','#0c0c22'], ground:'#12122e', line:'#5ef1ff',
+      decor:function(c,w,h,gy){
+        c.fillStyle='rgba(94,241,255,0.12)'; c.fillRect(0,gy-6,w,6);
+        const n=Math.ceil(w/120)+1;
+        for(let i=0;i<n;i++){ const x=i*120, hgt=80+((i*41)%90);
+          c.fillStyle='rgba(6,4,20,0.92)'; c.fillRect(x,gy-hgt,84,hgt);
+          c.fillStyle=(i%2===0)?'rgba(94,241,255,0.8)':'rgba(255,80,200,0.8)';
+          for(let wy=gy-hgt+12; wy<gy-8; wy+=16){ c.fillRect(x+10,wy,64,3); }
+        }
+        c.strokeStyle='rgba(94,241,255,0.5)'; c.lineWidth=3;
+        c.beginPath(); c.arc(w*0.5, gy*0.5, 34, 0, Math.PI*2); c.stroke();
+      }},
+    { id:'volcanic', name:'Volcanic Rift', sky:['#2b0a06','#1f0904'], ground:'#3d1108', line:'#ffd9a0',
+      decor:function(c,w,h,gy){
+        c.fillStyle='rgba(20,6,4,0.9)';
+        c.beginPath(); c.moveTo(w*0.5-140,gy); c.lineTo(w*0.5,gy-150); c.lineTo(w*0.5+140,gy); c.closePath(); c.fill();
+        c.fillStyle='rgba(255,90,30,0.85)'; c.fillRect(w*0.5-16,gy-150,32,10);
+        c.fillStyle='rgba(255,140,40,0.6)'; c.fillRect(w*0.5-6,gy-142,12,120);
+        c.fillStyle='rgba(255,80,20,0.18)'; c.fillRect(0,gy-8,w,8);
+        c.fillStyle='rgba(255,170,80,0.7)';
+        for(let i=0;i<30;i++){ const x=(i*89)%w, y=(i*47)%(gy-20); c.fillRect(x,y,2,2); }
+      }},
+    { id:'zengarden', name:'Zen Garden', sky:['#d98b7a','#432a1c'], ground:'#5c3a28', line:'#f7e9d9',
+      decor:function(c,w,h,gy){
+        c.fillStyle='rgba(90,58,70,0.6)';
+        c.beginPath(); c.moveTo(0,gy); c.lineTo(w*0.3,gy-90); c.lineTo(w*0.6,gy); c.closePath(); c.fill();
+        const tx=w*0.75, tw=90;
+        c.fillStyle='rgba(150,40,40,0.85)';
+        c.fillRect(tx-tw/2-6,gy-96,10,96); c.fillRect(tx+tw/2-4,gy-96,10,96);
+        c.fillRect(tx-tw/2-16,gy-104,tw+32,10); c.fillRect(tx-tw/2-8,gy-84,tw+16,7);
+        c.fillStyle='rgba(255,200,220,0.8)';
+        for(let i=0;i<26;i++){ const x=(i*97)%w, y=(i*59)%(gy-20); c.fillRect(x,y,2,2); }
+      }},
+    { id:'aquarium', name:'Deep Aquarium', sky:['#062a4a','#072538'], ground:'#0a3a52', line:'#6fe3ff',
+      decor:function(c,w,h,gy){
+        c.fillStyle='rgba(111,227,255,0.10)'; c.fillRect(0,0,w,gy);
+        c.fillStyle='rgba(6,40,50,0.7)';
+        [w*0.2,w*0.8,w*0.55].forEach(function(x,i){ for(let s=0;s<6;s++){ c.fillRect(x+Math.sin(s*0.9+i)*8, gy-10-s*14, 6, 14); } });
+        c.fillStyle='rgba(20,80,110,0.7)';
+        [[w*0.35,gy*0.4],[w*0.6,gy*0.6],[w*0.15,gy*0.7]].forEach(function(p){ c.fillRect(p[0],p[1],14,6); c.beginPath(); c.moveTo(p[0],p[1]+3); c.lineTo(p[0]-6,p[1]); c.lineTo(p[0]-6,p[1]+6); c.fill(); });
+        c.fillStyle='rgba(180,240,255,0.6)';
+        for(let i=0;i<28;i++){ const x=(i*83)%w, y=(i*53)%(gy-10); c.fillRect(x,y,2,2); }
+      }},
+    { id:'cosmic', name:'Cosmic Arena', sky:['#1a0b2e','#170f28'], ground:'#241a3d', line:'#d9c9ff',
+      decor:function(c,w,h,gy){
+        c.fillStyle='rgba(230,230,255,0.9)';
+        for(let i=0;i<70;i++){ const x=(i*67)%w, y=(i*43)%(gy+40); const s=(i%7===0)?2:1; c.fillRect(x,y,s,s); }
+        c.fillStyle='rgba(150,110,200,0.8)'; c.beginPath(); c.arc(w*0.78, gy*0.4, 30, 0, Math.PI*2); c.fill();
+        c.strokeStyle='rgba(210,180,255,0.7)'; c.lineWidth=3;
+        c.beginPath(); c.ellipse(w*0.78, gy*0.4, 48, 12, -0.4, 0, Math.PI*2); c.stroke();
+        c.fillStyle='rgba(120,80,180,0.15)'; c.fillRect(0,gy*0.5,w,gy*0.5);
+      }},
+    // ---- signature courts (spec Part 3) ----
+    { id:'ruins', name:'Ruins of a Village', sky:['#4a5568','#3f362e'], ground:'#6b5d52', line:'#ff8c42',
+      decor:function(c,w,h,gy){
+        c.fillStyle='rgba(30,26,22,0.7)';
+        c.fillRect(w*0.08, gy-140, 18, 140);
+        c.fillRect(w*0.08+70, gy-140, 18, 100);   // shorter — broken off
+        c.fillRect(w*0.08, gy-140, 88, 16);        // lintel
+        c.fillStyle='rgba(45,38,32,0.75)';
+        const n = Math.ceil(w/140)+1;
+        for(let i=0;i<n;i++){ const x = w*0.55 + i*70, hgt = 40 + ((i*53)%50); c.fillRect(x, gy-hgt, 46, hgt); }
+        c.fillStyle='rgba(200,190,180,0.35)';           // drifting ash (deterministic)
+        for(let i=0;i<24;i++){ const x=(i*97)%w, y=(i*53)%(gy-20); c.fillRect(x,y,2,2); }
+        c.fillStyle='rgba(255,140,66,0.25)'; c.fillRect(w*0.55, gy-6, w*0.4, 6); // ember glow
+      }},
+    { id:'castle', name:'Monarch Castle', sky:['#2a1f4a','#4a1420'], ground:'#7a1f2e', line:'#d4af37', floorPattern:'checker',
+      decor:function(c,w,h,gy){
+        const n = Math.ceil(w/160)+1;
+        for(let i=0;i<n;i++){ const x = 30 + i*160;
+          c.fillStyle='rgba(20,14,36,0.8)'; c.fillRect(x, 20, 60, 130);           // window frame
+          c.fillStyle='rgba(180,120,220,0.45)'; c.fillRect(x+8, 28, 44, 114);     // glass glow
+        }
+        c.fillStyle='rgba(212,175,55,0.5)'; c.fillRect(0, 155, w, 4);             // gold trim
+        c.fillStyle='rgba(122,31,46,0.75)';
+        for(let i=0;i<n;i++){ const x = 60 + i*160; c.fillRect(x, 160, 24, 90); } // hanging banners
       }}
   ];
   let selectedBackgroundId = 'classic';
@@ -3649,25 +3731,33 @@
     return (Math.abs(opp.x - lo) >= Math.abs(opp.x - hi)) ? lo : hi; // the end farther from them
   }
 
-  // Keep an ult shot IN the opponent's court. Generic smash ultimates launch at
-  // power×1.5×powerMultFor, so a high-power character's ult rockets straight out the back
-  // and never lands near the opponent — the whole payoff of the ultimate faulting itself.
-  // Predicts the landing from the current velocity and, if it's past the opponent's
-  // baseline, scales horizontal speed down so it lands just inside it. Only ever REDUCES
-  // an overshoot, so deliberately soft/short ults (Sofia's net-death feint, targeted
-  // launches) are untouched.
+  // Keep an ult shot IN the opponent's court — a TWO-SIDED landing window.
+  //  * OVERSHOOT: a high-power smash (power×1.5×powerMultFor) rockets out the back —
+  //    scale horizontal speed DOWN so it lands just inside the baseline.
+  //  * UNDERSHOOT: a steep/near-vertical ult (or one launched low) lands on the hitter's
+  //    own side and "never reaches the opponent" — scale horizontal speed UP so it lands
+  //    safely onto the opponent's half. This is the fix for Sherman's finisher sailing OUT
+  //    and for ults that only go up and drop short.
+  // Intentional net shots (Sofia's Grand Feint dink) place themselves and are skipped.
+  // Predicts the ballistic landing (ignoring drag / the mid-flight smash dive, which only
+  // ever lands the shuttle EARLIER, so the in-bounds guarantee is conservative).
   function clampUltShotInBounds(p){
-    const g = SHUTTLE_GRAVITY, vy = shuttle.vy, vx = shuttle.vx, a = 0.5*g;
-    if(a === 0) return;
-    const disc = vy*vy - 4*a*(shuttle.y - GROUND_Y);
+    if(shuttle.kind === 'dink') return; // deliberate net death — leave it alone
+    const g = SHUTTLE_GRAVITY, vy = shuttle.vy;
+    const disc = vy*vy - 2*g*(shuttle.y - GROUND_Y);
     if(disc < 0) return;
-    const t = (-vy + Math.sqrt(disc)) / (2*a); // time to hit the floor
+    const t = (-vy + Math.sqrt(disc)) / g; // time to hit the floor
     if(t <= 0) return;
     const dir = p.side === 'left' ? 1 : -1;
-    const maxX = dir > 0 ? (COURT_RIGHT - 45) : (COURT_LEFT + 45); // just inside the opponent's out line
-    const landX = shuttle.x + vx*t;
-    if((dir > 0 && landX > maxX) || (dir < 0 && landX < maxX)){
-      shuttle.vx = (maxX - shuttle.x) / t; // land exactly at the baseline instead of sailing out
+    const outer = dir > 0 ? (COURT_RIGHT - 45) : (COURT_LEFT + 45); // just inside the opponent's out line
+    const inner = NET_X + dir * 150;                               // safely onto the opponent's half
+    const landX = shuttle.x + shuttle.vx * t;
+    if(dir > 0){
+      if(landX > outer)      shuttle.vx = (outer - shuttle.x) / t; // clip the overshoot
+      else if(landX < inner) shuttle.vx = (inner - shuttle.x) / t; // push a short shot across
+    } else {
+      if(landX < outer)      shuttle.vx = (outer - shuttle.x) / t;
+      else if(landX > inner) shuttle.vx = (inner - shuttle.x) / t;
     }
   }
 
@@ -3766,8 +3856,8 @@
     RALLY_LOCK:        { dur: 6.0, stats: { control: 5 },                     label: 'RALLY LOCK' },
     // mateo Anchor — rooted, every shot a smash, reach covers most of his half.
     ANCHOR:            { dur: 6.0, stats: { power: 5, control: 5 },           label: 'ANCHOR' },
-    // elijah Fursona Unleashed — power up, speed down (spec: 2→5 / 4→2).
-    FURSONA_UNLEASHED: { dur: 8.0, stats: { power: 5, speed: 2, control: 4 }, label: 'FURSONA' },
+    // elijah Fursona Unleashed — turns into a furry cat with EVERY stat maxed (5/5/5).
+    FURSONA_UNLEASHED: { dur: 8.0, stats: { speed: 5, power: 5, control: 5 }, label: 'FURSONA' },
     // benjamin Blockade — a wall: massive reach, every return a flat dead drop, no offense.
     BLOCKADE:          { dur: 5.0, stats: { control: 5, power: 1 },           label: 'BLOCKADE' }
   };
@@ -4598,15 +4688,17 @@
     const behind = p.score < opp.score;
     const arch = AI_ARCHETYPE[p.character && p.character.id] || 'allcourt';
 
-    let artScore = 0;
+    let artScore = 0.15;                     // small base so the AI actually shows off its Art
     if(airborne) artScore += 0.5;            // a jump is the natural Art delivery
     if(oppOutOfPosition) artScore += 0.35;   // punish the open court while it's open
     if(behind) artScore += 0.2;              // chase harder from behind
     if(rallyHitCount >= 8) artScore += 0.15; // long rally — worth cashing the big swing
     if(arch === 'power') artScore += 0.2;
-    else if(arch === 'placement' || arch === 'allcourt') artScore -= 0.2;
+    else if(arch === 'placement' || arch === 'allcourt') artScore -= 0.15;
 
-    if(canArt && artScore >= 0.6) return 'art';
+    // Threshold lowered (0.6 -> 0.45): the AI was almost always cashing out with the
+    // cheaper, non-cinematic Rage Drive, so the Art cinematic was rarely seen on its side.
+    if(canArt && artScore >= 0.45) return 'art';
     if(canDrive) return 'drive';
     return canArt ? 'art' : null;
   }
@@ -7444,7 +7536,7 @@
     drawFansStand(c2, bg, 0, fansTop, w, fansBottom-fansTop);
 
     const topY = h*0.44, botY = h*0.92, inset = w*0.1;
-    drawBleacherFloor(c2, bg, inset, topY, w-inset*2, botY-topY, {rows:3});
+    drawBleacherFloor(c2, bg, inset, topY, w-inset*2, botY-topY, {rows:3, pattern: bg.floorPattern});
     c2.strokeStyle = bg.line;
     c2.lineWidth = 1.2;
     c2.strokeRect(inset, topY, w-inset*2, botY-topY);
@@ -7792,6 +7884,7 @@
     if(shuttle.vy > terminalVy) shuttle.vy = terminalVy;
     shuttle.vx -= HORIZONTAL_DRAG * shuttle.vx * dt;
 
+    const _prevX = shuttle.x, _prevY = shuttle.y; // pre-step position for swept net collision
     shuttle.x += shuttle.vx*dt;
     shuttle.y += shuttle.vy*dt;
 
@@ -7825,11 +7918,22 @@
     // incoming shot power: low-power shots drop close to the net, high-power shots travel
     // farther into the opponent's court. Anywhere lower (net body) is a clean fault.
     // netCollisionResolved guards this so it only ever resolves once per flight.
-    const inNetX = shuttle.x + SHUTTLE_RADIUS >= NET_X - NET_WIDTH/2 &&
-                   shuttle.x - SHUTTLE_RADIUS <= NET_X + NET_WIDTH/2;
-    if(inNetX && !shuttle.netCollisionResolved && shuttle.y + SHUTTLE_RADIUS >= NET_TOP){
+    // Swept test (anti-tunneling): a fast smash can clear the whole net band in one step, so
+    // check whether the step CROSSED the net plane — not just where it happened to land — and
+    // evaluate the height at the crossing point. Fixes smashes (e.g. Diego's) passing through
+    // the net, which showed up most on the side hitting the hardest/flattest.
+    const _halfBand = NET_WIDTH/2 + SHUTTLE_RADIUS;
+    const crossedNet = (_prevX - NET_X) * (shuttle.x - NET_X) <= 0 && _prevX !== shuttle.x;
+    const inBandNow = Math.abs(shuttle.x - NET_X) <= _halfBand;
+    let yAtNet = shuttle.y;
+    if(crossedNet){
+      const f = Math.max(0, Math.min(1, (NET_X - _prevX) / (shuttle.x - _prevX)));
+      yAtNet = _prevY + (shuttle.y - _prevY) * f; // interpolate height at x = NET_X
+    }
+    if((crossedNet || inBandNow) && !shuttle.netCollisionResolved && yAtNet + SHUTTLE_RADIUS >= NET_TOP){
       shuttle.netCollisionResolved = true;
-      const hitTape = (shuttle.y + SHUTTLE_RADIUS) <= NET_TOP + NET_TAPE_BAND;
+      shuttle.y = yAtNet; // resolve at the net plane, not wherever the fast step overshot to
+      const hitTape = (yAtNet + SHUTTLE_RADIUS) <= NET_TOP + NET_TAPE_BAND;
       playSound('net');
       if(hitTape){
         const dir = shuttle.vx >= 0 ? 1 : -1;
@@ -8477,10 +8581,12 @@
       var wx=Math.round(x+dx*3),wy=Math.round(y+dy*3);
       _pxrect(px,wx,wy-3,1,10,'#8b5a2b'); _pxrect(px,wx-4,wy+1,9,1,'#8b5a2b'); return;
     }
-    for(var q=0;q<5;q++)px(Math.round(x+dx*q),Math.round(y+dy*q),'#3a2a1c');
+    // default racket — frame themed to the character's colors (grip=accent, frame=shirt)
+    var grip = ch.shirt2 || '#3a2a1c', frame = ch.shirt || '#c9ccd6', frameLo = _shade(frame,-0.25);
+    for(var q=0;q<5;q++)px(Math.round(x+dx*q),Math.round(y+dy*q),grip); // grip/shaft
     var rx=Math.round(x+dx*6),ry=Math.round(y+dy*6);
-    _pxmap(px,rx-2,ry-3,[' FFF ','F   F','F   F','F   F',' FFF '],{F:'#c9ccd6'});
-    px(rx,ry-1,'#5b6070');px(rx,ry,'#5b6070');px(rx,ry+1,'#5b6070');px(rx-1,ry,'#5b6070');px(rx+1,ry,'#5b6070');
+    _pxmap(px,rx-2,ry-3,[' FFF ','G   G','G   G','G   G',' GGG '],{F:frame,G:frameLo}); // frame ring w/ shading
+    px(rx,ry-1,'#dfe6f2');px(rx,ry,'#dfe6f2');px(rx,ry+1,'#dfe6f2');px(rx-1,ry,'#dfe6f2');px(rx+1,ry,'#dfe6f2'); // string bed
   }
   // Build the whole figure into the offscreen buffer, then return it.
   function buildPixFigure(ch, ang, expr, t){
@@ -8493,6 +8599,14 @@
     // back leg (shorts + bare shin + shoe) + back arm
     _pxleg(px,hipX-1,hipY+yo,ang.legBack,8,3,'p','k','E');
     _pxlimb(px,shX-1,shY+2+yo,ang.armBack,7,2,'k',null,slvB,slvLen);
+    // Fursona Unleashed — ginger cat tail curling up off the back hip (behind the torso)
+    if(ang.furry){
+      var _tx=hipX-2, _ty=hipY+yo;
+      var _tail=[[_tx,_ty],[_tx-1,_ty-1],[_tx-2,_ty-2],[_tx-2,_ty-4],[_tx-1,_ty-6],[_tx,_ty-8],[_tx+1,_ty-9]];
+      for(var _i=0;_i<_tail.length;_i++){ px(_tail[_i][0],_tail[_i][1],'#e08a3c'); px(_tail[_i][0]+1,_tail[_i][1],'#e08a3c'); }
+      px(_tx-2,_ty-3,'#b5661f'); px(_tx-1,_ty-6,'#b5661f'); // darker stripe rings
+      px(_tx+1,_ty-9,'#f4c98a'); px(_tx+2,_ty-9,'#f4c98a'); // lighter tip
+    }
     // front leg
     _pxleg(px,hipX+1,hipY+yo,ang.legFront,8,3,'P','K','E');
     // torso — jacket (open, with a shirt placket down the middle) or plain shirt
@@ -8507,6 +8621,15 @@
     drawPixHair(px,hx,hy,ch);
     if(ch.longNose){ px(hx+8,hy+4,'K');px(hx+9,hy+4,'K');px(hx+9,hy+5,'k'); }
     drawPixFace(px,hx+1,hy,expr,t,ch.glasses);
+    // Fursona Unleashed — ginger cat ears, whiskers + a pink nose over the head
+    if(ang.furry){
+      px(hx+1,hy-2,'#e08a3c'); px(hx+2,hy-1,'#e08a3c');   // left ear
+      px(hx+6,hy-2,'#e08a3c'); px(hx+5,hy-1,'#e08a3c');   // right ear
+      px(hx+1,hy-1,'#f2a6b8'); px(hx+6,hy-1,'#f2a6b8');   // pink inner ears
+      px(hx+8,hy+4,'#f6f9ff'); px(hx+9,hy+5,'#f6f9ff');   // whiskers (front cheek)
+      px(hx-1,hy+4,'#f6f9ff'); px(hx-2,hy+5,'#f6f9ff');   // whiskers (back cheek)
+      px(hx+4,hy+5,'#f2a6b8');                            // pink nose
+    }
     // front (racket) arm on top
     var ax=shX+1, ay=shY+2+yo;
     _pxlimb(px,ax,ay,ang.armFront,7,2,'K',null,slv,slvLen);
@@ -8846,20 +8969,46 @@
   // service lines and the net are all drawn AFTER this by the caller, so gameplay markings
   // stay crisp and legible on top of the tread pattern.
   const BLEACHER_CROWD_TONES = ['rgba(255,255,255,0.36)','rgba(255,255,255,0.26)','rgba(255,255,255,0.20)','rgba(255,255,255,0.14)'];
+  // PIXEL_REVAMP Phase 2 (spec Part 1.4) — crowd colors derived from the theme's line
+  // color so the audience reads as belonging to THIS stadium, kept semi-transparent so
+  // they stay background and never read as obstacles on the playing surface.
+  function crowdTonesFor(bg){
+    const rgb = hexToRgb(bg.line);
+    const t = function(amt, a){
+      const mix = function(v){ return amt >= 0 ? v + (255-v)*amt : v + v*amt; };
+      return 'rgba(' + Math.round(mix(rgb[0])) + ',' + Math.round(mix(rgb[1])) + ',' + Math.round(mix(rgb[2])) + ',' + a + ')';
+    };
+    return [t(0.10, 0.50), t(-0.10, 0.42), t(-0.30, 0.50), t(-0.50, 0.55)];
+  }
   function drawBleacherFloor(c, bg, x, y, w, h, opts){
     opts = opts || {};
     const rows = Math.max(2, opts.rows || 6);
     const rowH = h / rows;
     const bounceY = opts.bounce || 0;
+    const crowdTones = crowdTonesFor(bg);
+    // opt-in checkered marble tread (Monarch Castle) — defaults to the existing
+    // uniform shade-per-row for every other court (spec: don't change the default).
+    const checker = opts.pattern === 'checker';
+    const CHECK_A = '#e9ddc4', CHECK_B = bg.ground; // cream + the theme's burgundy tile
 
     for(let i=0; i<rows; i++){
       const rowY = y + i*rowH;
       const depth = i/(rows-1||1); // 0 = back row, 1 = front row (closer to camera)
 
-      // tread: each row a slightly different shade, lighter toward the back so the
-      // steps read as receding rather than as one flat block
-      c.fillStyle = shade(bg.ground, 0.08 - depth*0.18);
-      c.fillRect(x, rowY, w, rowH);
+      if(checker){
+        const tile = rowH; // square-ish marble tiles
+        let col = 0;
+        for(let tx = x; tx < x+w; tx += tile){
+          c.fillStyle = ((col + i) % 2 === 0) ? CHECK_A : shade(CHECK_B, -depth*0.12);
+          c.fillRect(tx, rowY, Math.min(tile, x+w-tx), rowH);
+          col++;
+        }
+      } else {
+        // tread: each row a slightly different shade, lighter toward the back so the
+        // steps read as receding rather than as one flat block
+        c.fillStyle = shade(bg.ground, 0.08 - depth*0.18);
+        c.fillRect(x, rowY, w, rowH);
+      }
 
       // front lip of the step, darkened, so each tread has a visible edge
       c.strokeStyle = shade(bg.ground, -0.28);
@@ -8869,35 +9018,45 @@
       c.lineTo(x+w, rowY+rowH-c.lineWidth/2);
       c.stroke();
 
-      // faint seat-back ticks across the row
-      c.strokeStyle = 'rgba(0,0,0,0.08)';
-      c.lineWidth = 1;
-      const tickSpacing = Math.max(9, rowH*0.62);
-      for(let tx = x + tickSpacing/2; tx < x+w; tx += tickSpacing){
-        c.beginPath();
-        c.moveTo(tx, rowY + rowH*0.16);
-        c.lineTo(tx, rowY + rowH*0.86);
-        c.stroke();
-      }
+      if(!checker){
+        // faint seat-back ticks across the row (skipped on the marble floor)
+        c.strokeStyle = 'rgba(0,0,0,0.08)';
+        c.lineWidth = 1;
+        const tickSpacing = Math.max(9, rowH*0.62);
+        for(let tx = x + tickSpacing/2; tx < x+w; tx += tickSpacing){
+          c.beginPath();
+          c.moveTo(tx, rowY + rowH*0.16);
+          c.lineTo(tx, rowY + rowH*0.86);
+          c.stroke();
+        }
 
-      // sparse seated crowd — deterministic gaps (not every seat filled) so it reads
-      // as a real audience rather than a solid painted band
-      const seatSpacing = Math.max(11, rowH*0.9);
-      const offset = (i % 2 === 0) ? 0 : seatSpacing/2;
-      const rowBounce = (i % 2 === 0) ? bounceY : bounceY*0.6;
-      let k = 0;
-      for(let sx = x + seatSpacing*0.5 + offset; sx < x+w-4; sx += seatSpacing){
-        k++;
-        if((Math.floor(sx)+i*7) % 5 === 0) continue; // empty seat
-        // PIXEL_REVAMP Phase 2 — blocky pixel spectators (kept faint so they stay
-        // background and never read as obstacles on the playing surface)
-        c.fillStyle = BLEACHER_CROWD_TONES[(k+i) % BLEACHER_CROWD_TONES.length];
-        const q = Math.max(2, Math.round(rowH*0.13));
-        const cx2 = Math.round(sx);
-        const cy = Math.round(rowY + rowH*0.44 - rowBounce);
-        c.fillRect(cx2 - q, cy - q*2, q*2, q*2);   // head
-        c.fillRect(cx2 - q*2, cy, q*4, q*2);        // shoulders
+        // sparse seated crowd — deterministic gaps (not every seat filled) so it reads
+        // as a real audience rather than a solid painted band. Blocky spectators.
+        const seatSpacing = Math.max(11, rowH*0.9);
+        const offset = (i % 2 === 0) ? 0 : seatSpacing/2;
+        const rowBounce = (i % 2 === 0) ? bounceY : bounceY*0.6;
+        let k = 0;
+        for(let sx = x + seatSpacing*0.5 + offset; sx < x+w-4; sx += seatSpacing){
+          k++;
+          if((Math.floor(sx)+i*7) % 5 === 0) continue; // empty seat
+          c.fillStyle = crowdTones[(k+i) % crowdTones.length];
+          const q = Math.max(2, Math.round(rowH*0.13));
+          const cx2 = Math.round(sx);
+          const cy = Math.round(rowY + rowH*0.44 - rowBounce);
+          c.fillRect(cx2 - q, cy - q*2, q*2, q*2);   // head
+          c.fillRect(cx2 - q*2, cy, q*4, q*2);        // shoulders
+        }
       }
+    }
+
+    // Monarch Castle signature: a red carpet runner down the center, toward the net.
+    if(checker){
+      const cw = Math.round(w*0.14), cxc = Math.round(x + w/2);
+      c.fillStyle = '#8a1526';
+      c.fillRect(cxc - cw/2, y, cw, h);
+      c.fillStyle = '#a8324a'; // lighter edge stripes
+      c.fillRect(cxc - cw/2, y, Math.max(2, cw*0.10), h);
+      c.fillRect(cxc + cw/2 - Math.max(2, cw*0.10), y, Math.max(2, cw*0.10), h);
     }
   }
 
@@ -8925,42 +9084,60 @@
 
   // The court floor is a flat, straight-on rectangle — no vanishing point, no perspective
   // narrowing. All boundary/service lines are plain horizontals and verticals.
+  // ---------- PIXEL_REVAMP Phase 2 — retro court pipeline (render small, upscale hard) ----------
+  // The whole environment layer (sky, banner, fan stand, ground apron, bleacher floor,
+  // decor) is rendered to a small offscreen buffer and blitted up with smoothing off, so
+  // every existing gradient/arc/decor call pixelates uniformly at one grid — no per-shape
+  // rewrites. Gameplay markings (boundary/service lines, net) are drawn AFTER, on the main
+  // ctx at full resolution, so they stay crisp (spec rule 0.2).
+  const COURT_PIXEL_UNIT = 3; // one knob: 2 = SNES-detailed, 3 = balanced 16-bit, 4-5 = chunkier
+  let _envCanvas = null, _envCtx = null, _envKey = null;
+  function ensureEnvCanvas(w, h){
+    const bw = Math.ceil(w / COURT_PIXEL_UNIT), bh = Math.ceil(h / COURT_PIXEL_UNIT);
+    if(_envCanvas && _envCanvas.width === bw && _envCanvas.height === bh) return;
+    _envCanvas = document.createElement('canvas');
+    _envCanvas.width = bw; _envCanvas.height = bh;
+    _envCtx = _envCanvas.getContext('2d');
+    _envCtx.imageSmoothingEnabled = false;
+  }
+  function renderCourtEnv(bg, courtBounce){
+    ensureEnvCanvas(W, H);
+    const ec = _envCtx;
+    ec.setTransform(1/COURT_PIXEL_UNIT, 0, 0, 1/COURT_PIXEL_UNIT, 0, 0); // downsample; existing code uses full-res coords unchanged
+    ec.clearRect(0, 0, W, H);
+    const skyGrad = ec.createLinearGradient(0, 0, 0, FANS_BOTTOM + 60);
+    skyGrad.addColorStop(0, bg.sky[0]);
+    skyGrad.addColorStop(1, bg.sky[1] || bg.sky[0]);
+    ec.fillStyle = skyGrad;
+    ec.fillRect(0, 0, W, H);
+    drawTopBanner(ec, bg, W, FANS_TOP);
+    drawFansStand(ec, bg, 0, FANS_TOP, W, FANS_BOTTOM - FANS_TOP);
+    ec.fillStyle = bg.ground;
+    ec.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+    drawBleacherFloor(ec, bg, COURT_LEFT, COURT_TOP, COURT_RIGHT - COURT_LEFT, GROUND_Y - COURT_TOP, {rows:6, bounce:courtBounce, pattern: bg.floorPattern});
+    if(bg.decor) bg.decor(ec, W, H, FANS_BOTTOM); // scenery pixelates with the rest
+    ec.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
   function drawCourt(){
     const bg = BACKGROUNDS.find(function(b){ return b.id === selectedBackgroundId; }) || BACKGROUNDS[0];
 
-    // backdrop — a soft gradient between the theme's two sky tones. The court floor
-    // below is still drawn as a flat, uniform rectangle (no perspective); this gradient
-    // only lives in the space above it, giving that freed-up area some atmosphere now
-    // that the plain dotted band is gone.
-    const skyGrad = ctx.createLinearGradient(0, 0, 0, FANS_BOTTOM + 60);
-    skyGrad.addColorStop(0, bg.sky[0]);
-    skyGrad.addColorStop(1, bg.sky[1] || bg.sky[0]);
-    ctx.fillStyle = skyGrad;
-    ctx.fillRect(0,0,W,H);
-
-    // themed flourish in the strip of background freed up above the fan stand
-    drawTopBanner(ctx, bg, W, FANS_TOP);
-
-    // fan stand band, bordered, sitting above the (now shorter) court
-    drawFansStand(ctx, bg, 0, FANS_TOP, W, FANS_BOTTOM-FANS_TOP);
-
-    // ground apron below the court's near edge, so the floor color reaches the bottom
-    // of the frame instead of leaving a mismatched strip of sky color there
-    ctx.fillStyle = bg.ground;
-    ctx.fillRect(0, GROUND_Y, W, H-GROUND_Y);
-
-    // court floor — rendered as a tiered stadium bleacher (treads + seated crowd)
-    // instead of a flat color, so the playing surface itself reads as part of the
-    // stadium. Boundary/service lines/net are drawn afterward, on top, so they stay
-    // crisp and the rally is always easy to track.
+    // scoring bounce is the only thing that animates the environment per point.
     let courtBounce = 0;
     if(state === 'pointPause'){ courtBounce = Math.abs(Math.sin(performance.now() * 0.014)) * 3; }
-    drawBleacherFloor(ctx, bg, COURT_LEFT, COURT_TOP, COURT_RIGHT-COURT_LEFT, GROUND_Y-COURT_TOP, {rows:6, bounce:courtBounce});
 
-    // outer boundary (doubles line) — top and bottom edges run the full width as
-    // before; the left/right sides are now short ticks that drop DOWN onto the grass
-    // apron where the players actually stand, instead of running up through the
-    // bleacher crowd above.
+    // cache the offscreen render: only rebuild when the theme changes or the bounce
+    // animates (during a point pause) — otherwise reuse the buffer every frame (spec Part 5).
+    const dynamic = (state === 'pointPause');
+    const key = selectedBackgroundId + '|' + (dynamic ? 'b' + Math.round(courtBounce*3) : 'static');
+    if(key !== _envKey){ renderCourtEnv(bg, courtBounce); _envKey = key; }
+
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(_envCanvas, 0, 0, _envCanvas.width, _envCanvas.height, 0, 0, W, H);
+    ctx.imageSmoothingEnabled = true; // restore for players/UI drawn afterward
+
+    // outer boundary (doubles line) — full-resolution on the main ctx, on TOP of the
+    // pixelated environment so the rally is always easy to track.
     ctx.strokeStyle = bg.line;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -8975,9 +9152,6 @@
       ctx.moveTo(lx, GROUND_Y); ctx.lineTo(lx, GROUND_Y + BOUNDARY_TICK_H);
       ctx.stroke();
     });
-
-    // custom decor (if any)
-    if(bg.decor) bg.decor(ctx, W, H, FANS_BOTTOM);
 
     // service lines — same ground-anchored treatment: a short painted tick sitting
     // right at the ground the players stand on (where a real service line is actually
@@ -9220,8 +9394,10 @@
     else if(p.swingTimer > 0){ pixExpr = !p.onGround ? 'smash' : 'focused'; }
     else if(p.charging){ pixExpr = 'focused'; }
     else if(!p.onGround){ pixExpr = 'strain'; }
+    // Elijah's Fursona Unleashed: render cat ears/tail/whiskers while the transform is live.
+    const pixFurry = !!(p.transform && p.transform.type === 'FURSONA_UNLEASHED');
     drawMomentumAura(p, cx, groundY); // MOMENTUM_SPEC Part 1.1/Part 7 — under the body
-    drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), ch, {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, expr:pixExpr, onGround:p.onGround}, facing); // Part 4: taller/shorter silhouette
+    drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), ch, {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, expr:pixExpr, onGround:p.onGround, furry:pixFurry}, facing); // Part 4: taller/shorter silhouette
     drawMomentumCrackle(p, cx); // electric crackle hugging the silhouette, over the body
     drawTransformIndicator(p, cx); // active transformation ultimate ring + timer (Part 6)
 
@@ -9385,76 +9561,50 @@
     }
   }
 
+  // PIXEL_REVAMP Phase 3 — pixel-art shuttlecock. Authored once into a tiny sprite buffer
+  // (feathers point UP / -y, cork at the bottom), then blitted rotated with smoothing off
+  // so it keeps hard pixels while it spins to face its trajectory.
+  const SHUT_W = 8, SHUT_H = 12;
+  const _shutBuf = document.createElement('canvas'); _shutBuf.width = SHUT_W; _shutBuf.height = SHUT_H;
+  let _shutReady = false;
+  function buildShuttleSprite(){
+    const sc = _shutBuf.getContext('2d');
+    sc.clearRect(0,0,SHUT_W,SHUT_H);
+    const pal = { F:'#f6f4ec', f:'#cfc7b0', R:'#c0392b', r:'#8f2a20', C:'#fdfaf1', c:'#cbbf9e', O:'#3a3427' };
+    const rows = [
+      ' FFFFFF ',   // feather skirt — widest at the top
+      'FFFFFFFF',
+      'FFFffFFF',
+      ' FFffFF ',
+      ' FFffFF ',
+      '  FffF  ',
+      '  OOOO  ',   // binding
+      '  RRRR  ',   // red band
+      '  rRRr  ',
+      '  CCCC  ',   // cork
+      '  CccC  ',
+      '   CC   '
+    ];
+    for(let y=0;y<rows.length;y++){ const row=rows[y]; for(let x=0;x<row.length;x++){ const k=row[x]; if(k!==' '&&pal[k]){ sc.fillStyle=pal[k]; sc.fillRect(x,y,1,1); } } }
+    _shutReady = true;
+  }
   function drawShuttle(){
+    if(!_shutReady) buildShuttleSprite();
     ctx.save();
     ctx.translate(shuttle.x, shuttle.y);
-
-    // Orient the shuttle by its actual trajectory rather than a small side-lean: the cork
-    // (drawn at the origin/pivot below) always leads, with the feathers trailing directly
-    // opposite the velocity vector — just like a real shuttlecock's drag-heavy feathers
-    // dragging behind its heavier nose. The feather fan is drawn pointing "up" (-y) in
-    // local space, so rotating local "up" to face -velocity means rotating by
-    // atan2(vy,vx) - PI/2 (see derivation in the code-change notes). Physics (shuttle.vx/
-    // vy) are untouched — this only changes how the existing values are drawn.
+    // Orient by actual trajectory: cork leads, feathers trail opposite the velocity vector.
     const speedSq = shuttle.vx*shuttle.vx + shuttle.vy*shuttle.vy;
     if(speedSq > SHUTTLE_ROTATION_MIN_SPEED_SQ){
       shuttle.angle = Math.atan2(shuttle.vy, shuttle.vx) - Math.PI/2;
     }
     ctx.rotate(shuttle.angle);
-
-    // soft contact shadow/glow so the shuttle reads clearly against any court color
-    ctx.shadowColor = 'rgba(0,0,0,0.55)';
-    ctx.shadowBlur = 5;
-
-    const R = SHUTTLE_RADIUS;
-
-    // feather skirt — a fan of overlapping strips flaring up from the cork
-    ctx.fillStyle = 'rgba(250,248,242,0.96)';
-    ctx.strokeStyle = 'rgba(150,140,115,0.55)';
-    ctx.lineWidth = 0.6;
-    for(let i=-2;i<=2;i++){
-      const spread = i*0.26;
-      ctx.save();
-      ctx.rotate(spread);
-      ctx.beginPath();
-      ctx.moveTo(-1.6, -R*0.2);
-      ctx.lineTo(-3.2, -R*3.1);
-      ctx.lineTo(0, -R*3.6);
-      ctx.lineTo(3.2, -R*3.1);
-      ctx.lineTo(1.6, -R*0.2);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    ctx.shadowBlur = 0;
-
-    // thin ribbing detail on the central feather for texture
-    ctx.strokeStyle = 'rgba(150,140,115,0.4)';
-    ctx.lineWidth = 0.6;
-    ctx.beginPath();
-    ctx.moveTo(0,-R*0.3); ctx.lineTo(0,-R*3.4);
-    ctx.stroke();
-
-    // small red accent band, just above the cork (a common shuttlecock detail)
-    ctx.fillStyle = '#c0392b';
-    ctx.beginPath();
-    ctx.arc(0, R*0.15, R*0.62, 0, Math.PI*2);
-    ctx.fill();
-
-    // cork base — rounded, gently shaded sphere
-    const corkGrad = ctx.createRadialGradient(-R*0.3, R*0.55, R*0.15, 0, R*0.75, R*1.15);
-    corkGrad.addColorStop(0, '#fffdf7');
-    corkGrad.addColorStop(1, '#d6cbad');
-    ctx.fillStyle = corkGrad;
-    ctx.beginPath();
-    ctx.arc(0, R*0.75, R*0.8, 0, Math.PI*2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(20,20,20,0.35)';
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
-
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 4;
+    ctx.imageSmoothingEnabled = false;
+    const SP = 1.7;                              // art-px -> screen px
+    const dw = SHUT_W*SP, dh = SHUT_H*SP;
+    // place the cork (bottom of the sprite) near the pivot, feathers extending up (-y)
+    ctx.drawImage(_shutBuf, -dw/2, -dh + SP*3, dw, dh);
     ctx.restore();
   }
 
