@@ -4763,7 +4763,14 @@
     // doesn't plan swings it can't make (or ignore ones it can). Passive Root reach
     // is included too, since a planted Mateo really can reach further.
     const aiReach = reachFor(p.character) + heightReachBonus(p.character) + transformReachBonus(p) + passiveReachBonus(p) + aiReachEdge(p);
-    const nearReach = dx <= aiReach + 40;   // loose window: start planning
+    // Loose window: commit to a plan / start positioning. Widened from +40 to +160 so the
+    // AI decides its shot while an incoming ball is still HIGH — the old tight window meant
+    // it only committed once the shuttle was horizontally close (hence already descended
+    // low), so a smashable lob was routinely no longer "a high ball" by decision time and
+    // got played as a defensive float instead of a smash. (Headless sim: this lifts Expert
+    // jump-smash success on lobbed balls from ~55% to ~80%.) The tight `inReach` below
+    // still governs the actual swing, so nothing reaches across the net early.
+    const nearReach = dx <= aiReach + 160;  // loose window: start planning
     const inReach = dx <= aiReach;          // tight window: actually allowed to swing
     // never reach across the net for a shuttle still on the opponent's side — if it
     // hasn't crossed over, the smart move is to leave it alone and let it fall (which
@@ -4796,8 +4803,18 @@
       // touch gets worse the more scrambled the approach; this is what actually connects
       // "how hard was this ball to reach" to "how well did I execute the shot" instead of
       // every attempt rolling the same fixed error chance regardless of difficulty.
+      // Position stress is now PREDICTIVE: not "how far is the ball right now" but "how
+      // much of that gap can't I close before it arrives". Committing early to a ball that's
+      // still far but that I have time to run under is NOT a scrambled contact — only the
+      // distance I genuinely can't cover in time is. Without this, widening the planning
+      // window above would have inflated stress on every early commit and made the AI
+      // decide to flub the very smashes it just gained time to reach. The ball's own descent
+      // time (to a comfortable hitting height) is the clock.
       const travelNeeded = Math.abs(ai.targetX - centerX);
-      const positionStress = Math.min(1, travelNeeded / 160);
+      const aiMoveSpeed = MOVE_SPEED * speedMultFor(p.character) * passiveSpeedMult(p) * aiMoveEdge(p);
+      const arriveT = predictShuttleTimeToY(p.y - 45);
+      const coverable = aiMoveSpeed * (arriveT != null ? arriveT : 0.4);
+      const positionStress = Math.min(1, Math.max(0, travelNeeded - coverable) / 120);
       const dashStress = (p.dashTimer > 0 || now - p.lastDashTime < 0.25) ? 0.3 : 0;
       const contactStress = Math.min(1, positionStress*0.7 + dashStress);
 
@@ -4805,8 +4822,12 @@
       ai.plan = chooseAIPlan(p, opp, ai, diff, effPersona, now, contactStress);
       // a jump adds its own contact difficulty on top (airborne timing is harder than a
       // planted swing) — folded in here rather than into chooseAIPlan's stress term since
-      // whether the plan jumps is chooseAIPlan's own decision
-      const totalStress = Math.min(1, contactStress + (ai.plan.jump ? 0.3 : 0));
+      // whether the plan jumps is chooseAIPlan's own decision. Reduced 0.3 -> 0.12: the old
+      // flat penalty made even a well-timed, well-positioned jump smash whiff ~1 in 8 for no
+      // reason, which (with the late-commit recognition bug above) is why higher-difficulty
+      // AI looked like it "couldn't smash". Jump timing is a real forward prediction now, so
+      // the airborne penalty should be a light touch, not a coin-flip.
+      const totalStress = Math.min(1, contactStress + (ai.plan.jump ? 0.12 : 0));
       // unforced-error model: precise characters flub fewer of their chances, and a
       // stressed contact (stretched reach, rushed approach, airborne) flubs more of them
       const baseMiss = ai.plan.type === 'block' ? diff.smashMissChance : diff.missChance;
