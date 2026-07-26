@@ -3149,6 +3149,29 @@
   let pointPauseTimer = 0;
   let pointMessage = '';
   let pointCelebrateSide = null; // PIXEL_REVAMP: which side won the last point (winner grins, loser slumps)
+  // Rising floating-text popups (e.g. Elijah's uwu "Meow~" while transformed).
+  let floatTexts = [];
+  function spawnFloatText(x, y, text, color){
+    floatTexts.push({ x: x, y: y, text: text, color: color || '#ffffff', t: 0, dur: 1.1 });
+    if(floatTexts.length > 24) floatTexts.shift();
+  }
+  function drawFloatTexts(){
+    for(let i = 0; i < floatTexts.length; i++){
+      const f = floatTexts[i];
+      const prog = f.t / f.dur;                 // 0..1
+      const y = f.y - prog * 26;                 // drift upward
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1 - prog);
+      ctx.font = '800 15px "Space Grotesk", system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.strokeText(f.text, f.x, y);
+      ctx.fillStyle = f.color;
+      ctx.fillText(f.text, f.x, y);
+      ctx.restore();
+    }
+  }
   const POINT_PAUSE_DURATION = 1.1; // how long the rally-result overlay stays up, in seconds
   const POINT_PAUSE_FADE_DURATION = 0.3; // trailing portion of that time spent fading out
 
@@ -3857,7 +3880,8 @@
     // mateo Anchor — rooted, every shot a smash, reach covers most of his half.
     ANCHOR:            { dur: 6.0, stats: { power: 5, control: 5 },           label: 'ANCHOR' },
     // elijah Fursona Unleashed — turns into a furry cat with EVERY stat maxed (5/5/5).
-    FURSONA_UNLEASHED: { dur: 8.0, stats: { speed: 5, power: 5, control: 5 }, label: 'FURSONA' },
+    // Duration is 75% longer than the other transforms (8.0 -> 14.0s) at the owner's request.
+    FURSONA_UNLEASHED: { dur: 14.0, stats: { speed: 5, power: 5, control: 5 }, label: 'FURSONA' },
     // benjamin Blockade — a wall: massive reach, every return a flat dead drop, no offense.
     BLOCKADE:          { dur: 5.0, stats: { control: 5, power: 1 },           label: 'BLOCKADE' }
   };
@@ -5247,6 +5271,10 @@
     }
     p.swingTimer = SWING_DURATION;
     p.swingPowerFrac = 0.6 + 0.4*chargeFrac;
+    // Fursona Unleashed: Elijah says "Meow~" (uwu) on every shuttle he strikes while transformed.
+    if(p.transform && p.transform.type === 'FURSONA_UNLEASHED'){
+      spawnFloatText(p.x + PLAYER_W/2, p.y - 8, 'Meow~', '#ffc4e2');
+    }
     const dir = p.side === 'left' ? 1 : -1;
 
     if(kind === 'smash'){
@@ -5469,6 +5497,10 @@
     if(typeof now === 'number') p.lastHitTime = now;
     p.swingTimer = SWING_DURATION;
     p.swingPowerFrac = 0.6 + 0.4*chargeFrac;
+    // Fursona Unleashed: Elijah says "Meow~" (uwu) on every shuttle he strikes while transformed.
+    if(p.transform && p.transform.type === 'FURSONA_UNLEASHED'){
+      spawnFloatText(p.x + PLAYER_W/2, p.y - 8, 'Meow~', '#ffc4e2');
+    }
     const dir = p.side === 'left' ? 1 : -1;
     const speed = SERVE_BASE_SPEED * power * powerMultForRegular(p.character);
     const angle = 32 * Math.PI/180;
@@ -8073,6 +8105,7 @@
       }
       if(shakeTime > 0) shakeTime = Math.max(0, shakeTime - dt);
       if(ultCinematic){ ultCinematic.timer -= dt; if(ultCinematic.timer <= 0) ultCinematic = null; }
+      for(let _fi = floatTexts.length - 1; _fi >= 0; _fi--){ floatTexts[_fi].t += dt; if(floatTexts[_fi].t >= floatTexts[_fi].dur) floatTexts.splice(_fi, 1); }
 
       // Update juice particles
       for (let i = particles.length - 1; i >= 0; i--) {
@@ -8476,7 +8509,10 @@
   const _portBuf=document.createElement('canvas'); _portBuf.width=PBUF_W; _portBuf.height=PBUF_H;
   const _portCtx=_portBuf.getContext('2d');
   function _pxrect(px,x,y,w,h,k){ for(var j=0;j<h;j++)for(var i=0;i<w;i++)px(x+i,y+j,k); }
-  function _pxmap(px,x,y,rows,pal){ for(var j=0;j<rows.length;j++){var r=rows[j];for(var i=0;i<r.length;i++){var c=r[i];if(c!==' '&&c!=='_'&&pal[c]!==undefined)px(x+i,y+j,c);}} }
+  // Resolve each cell's color from THIS map's palette and hand px the resolved value
+  // (a #hex or a key px re-resolves). Passing the raw char made px look it up in its own
+  // palette instead — silently dropping any sprite with a local palette (fish, racket frame).
+  function _pxmap(px,x,y,rows,pal){ for(var j=0;j<rows.length;j++){var r=rows[j];for(var i=0;i<r.length;i++){var c=r[i];if(c===' '||c==='_')continue;var col=pal[c];if(col!==undefined&&col!==null)px(x+i,y+j,col);}} }
   // limb as a thick pixel segment from (x0,y0) at angle, length L; optional foot block.
   // Optional sleeveKey/sleeveLen paint the first sleeveLen segments a different color
   // (e.g. a jacket sleeve over a skin arm).
@@ -8573,9 +8609,13 @@
   function drawPixRacket(px,x,y,ang,ch){
     var pal=pixPalette(ch), dx=Math.sin(ang),dy=Math.cos(ang);
     if(ch.racketType==='fish'){
-      for(var s=0;s<3;s++)px(Math.round(x+dx*s),Math.round(y+dy*s),'k');
-      var hx=Math.round(x+dx*4),hy=Math.round(y+dy*4);
-      _pxmap(px,hx-2,hy-2,[' BB ','BBBB','BBBB',' BB '],{B:'#6ab8cd'}); px(hx+1,hy-1,'#0b0d14'); return;
+      // Elijah's signature: he slaps the shuttle with a whole fish.
+      for(var s=0;s<3;s++)px(Math.round(x+dx*s),Math.round(y+dy*s),'#9aa0ac'); // grey grip
+      var fhx=Math.round(x+dx*5),fhy=Math.round(y+dy*5);
+      _pxmap(px,fhx-3,fhy-2,[' FFFF ','FFFFFf','FFFFFf',' FFFF '],{F:'#5bb7cd',f:'#3f97ad'}); // body
+      px(fhx-4,fhy-2,'#3f97ad'); px(fhx-5,fhy-1,'#3f97ad'); px(fhx-4,fhy,'#3f97ad'); px(fhx-4,fhy+1,'#3f97ad'); px(fhx-5,fhy+2,'#3f97ad'); // tail fin
+      px(fhx+1,fhy-1,'#0b0d14'); // eye
+      return;
     }
     if(ch.racketType==='cross'){
       var wx=Math.round(x+dx*3),wy=Math.round(y+dy*3);
@@ -8599,13 +8639,21 @@
     // back leg (shorts + bare shin + shoe) + back arm
     _pxleg(px,hipX-1,hipY+yo,ang.legBack,8,3,'p','k','E');
     _pxlimb(px,shX-1,shY+2+yo,ang.armBack,7,2,'k',null,slvB,slvLen);
-    // Fursona Unleashed — ginger cat tail curling up off the back hip (behind the torso)
+    // Fursona Unleashed — big fluffy ginger cat tail sweeping off the back hip (behind torso)
     if(ang.furry){
-      var _tx=hipX-2, _ty=hipY+yo;
-      var _tail=[[_tx,_ty],[_tx-1,_ty-1],[_tx-2,_ty-2],[_tx-2,_ty-4],[_tx-1,_ty-6],[_tx,_ty-8],[_tx+1,_ty-9]];
-      for(var _i=0;_i<_tail.length;_i++){ px(_tail[_i][0],_tail[_i][1],'#e08a3c'); px(_tail[_i][0]+1,_tail[_i][1],'#e08a3c'); }
-      px(_tx-2,_ty-3,'#b5661f'); px(_tx-1,_ty-6,'#b5661f'); // darker stripe rings
-      px(_tx+1,_ty-9,'#f4c98a'); px(_tx+2,_ty-9,'#f4c98a'); // lighter tip
+      var _tx=hipX-1, _ty=hipY+yo-2;
+      var _tail=[
+        [_tx,_ty+2],[_tx-1,_ty+1],[_tx-2,_ty],[_tx-3,_ty-1],
+        [_tx-4,_ty-3],[_tx-4,_ty-5],[_tx-3,_ty-7],[_tx-2,_ty-9],
+        [_tx-1,_ty-11],[_tx-1,_ty-13],[_tx-2,_ty-15]
+      ];
+      for(var _i=0;_i<_tail.length;_i++){
+        var _p=_tail[_i];
+        px(_p[0],_p[1],'#e08a3c'); px(_p[0]+1,_p[1],'#e08a3c'); px(_p[0],_p[1]+1,'#c9741f'); // 3px-thick, shaded
+      }
+      px(_tail[3][0],_tail[3][1],'#b5661f'); px(_tail[6][0],_tail[6][1],'#b5661f'); px(_tail[9][0],_tail[9][1],'#b5661f'); // tabby stripe rings
+      var _tip=_tail[_tail.length-1];
+      px(_tip[0]-1,_tip[1]-1,'#f4c98a'); px(_tip[0],_tip[1]-1,'#f4c98a'); px(_tip[0]+1,_tip[1]-1,'#f4c98a'); px(_tip[0],_tip[1]-2,'#f4c98a'); // fluffy tip
     }
     // front leg
     _pxleg(px,hipX+1,hipY+yo,ang.legFront,8,3,'P','K','E');
@@ -10029,6 +10077,7 @@
 
     // Draw particles inside world space
     drawParticles();
+    drawFloatTexts(); // rising "Meow~" etc., in world space
 
     drawScore();
     drawMomentumBars();
