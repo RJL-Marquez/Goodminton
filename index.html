@@ -3740,7 +3740,9 @@
     const tDown = Math.sqrt(2 * Math.max(1, (GROUND_Y - (y0 - arcH))) / g);
     const T = Math.max(0.2, tUp + tDown);
     shuttle.vy = vyUp;
-    shuttle.vx = (targetX - x0) / T;
+    // X(t) = x0 + (vx / drag) * (1 - e^(-drag * T)) => vx = (targetX - x0) * drag / (1 - e^(-drag * T))
+    const drag = HORIZONTAL_DRAG;
+    shuttle.vx = (targetX - x0) * drag / (1 - Math.exp(-drag * T));
     shuttle.kind = 'float';
     shuttle.hitByMaxPower = false; shuttle.maxPowerDiveApplied = false;
     shuttle.dinkDiveApplied = false; shuttle.netCollisionResolved = false;
@@ -3774,13 +3776,20 @@
     const dir = p.side === 'left' ? 1 : -1;
     const outer = dir > 0 ? (COURT_RIGHT - 45) : (COURT_LEFT + 45); // just inside the opponent's out line
     const inner = NET_X + dir * 150;                               // safely onto the opponent's half
-    const landX = shuttle.x + shuttle.vx * t;
+    const drag = HORIZONTAL_DRAG;
+    const landX = shuttle.x + (shuttle.vx / drag) * (1 - Math.exp(-drag * t));
+    
+    // helper to assign a new vx that hits a specific targetX
+    const setVxToTarget = (targetX) => {
+      shuttle.vx = (targetX - shuttle.x) * drag / (1 - Math.exp(-drag * t));
+    };
+
     if(dir > 0){
-      if(landX > outer)      shuttle.vx = (outer - shuttle.x) / t; // clip the overshoot
-      else if(landX < inner) shuttle.vx = (inner - shuttle.x) / t; // push a short shot across
+      if(landX > outer)      setVxToTarget(outer); // clip the overshoot
+      else if(landX < inner) setVxToTarget(inner); // push a short shot across
     } else {
-      if(landX < outer)      shuttle.vx = (outer - shuttle.x) / t;
-      else if(landX > inner) shuttle.vx = (inner - shuttle.x) / t;
+      if(landX < outer)      setVxToTarget(outer);
+      else if(landX > inner) setVxToTarget(inner);
     }
   }
 
@@ -3878,7 +3887,7 @@
     // liam Rally Lock — perfect-hit forgiveness (max control + reach bonus).
     RALLY_LOCK:        { dur: 6.0, stats: { control: 5 },                     label: 'RALLY LOCK' },
     // mateo Anchor — rooted, every shot a smash, reach covers most of his half.
-    ANCHOR:            { dur: 6.0, stats: { power: 5, control: 5 },           label: 'ANCHOR' },
+    ANCHOR:            { dur: 6.0, stats: { speed: 5, power: 5, control: 5 },           label: 'ANCHOR' },
     // elijah Fursona Unleashed — turns into a furry cat with EVERY stat maxed (5/5/5).
     // Duration is 75% longer than the other transforms (8.0 -> 14.0s) at the owner's request.
     FURSONA_UNLEASHED: { dur: 14.0, stats: { speed: 5, power: 5, control: 5 }, label: 'FURSONA' },
@@ -4420,11 +4429,15 @@
 
   function tryJump(p, now){
     if(state !== 'rally' && state !== 'serve') return;
-    if(p.transform && p.transform.type === 'ANCHOR') return; // rooted (Part 6)
     if(p.onGround){
       p.vy = JUMP_VELOCITY * heightJumpMult(p.character); // taller = higher apex (Part 4)
       p.onGround = false;
+      p.jumpsUsed = 1;
       spendStamina(p, GameConstants.STAMINA.COST.jump); // Part 5.1 — jump costs but is not locked
+    } else if (p.transform && p.transform.type === 'ANCHOR' && (!p.jumpsUsed || p.jumpsUsed < 2)) {
+      p.vy = JUMP_VELOCITY * heightJumpMult(p.character);
+      p.jumpsUsed = (p.jumpsUsed || 1) + 1;
+      spendStamina(p, GameConstants.STAMINA.COST.jump);
     }
   }
 
@@ -5102,7 +5115,6 @@
   function tryDash(p, dir, tag, now){
     if(state !== 'rally' && state !== 'serve') return;
     if(!canDash(p.character)) return; // kept as a guard in case dash eligibility is ever regated
-    if(p.transform && p.transform.type === 'ANCHOR') return; // rooted (Part 6)
     if(staminaLow(p)) return; // below 25% stamina the dash is locked (Part 5.1)
     const last = p.lastTapTime[tag];
     p.lastTapTime[tag] = now;
@@ -5272,7 +5284,7 @@
     p.swingTimer = SWING_DURATION;
     p.swingPowerFrac = 0.6 + 0.4*chargeFrac;
     // Fursona Unleashed: Elijah says "Meow~" (uwu) on every shuttle he strikes while transformed.
-    if(p.transform && p.transform.type === 'FURSONA_UNLEASHED'){
+    if(p.character.id === 'elijah' && p.transform && p.transform.type === 'FURSONA_UNLEASHED'){
       spawnFloatText(p.x + PLAYER_W/2, p.y - 8, 'Meow~', '#ffc4e2');
     }
     const dir = p.side === 'left' ? 1 : -1;
@@ -5285,7 +5297,8 @@
       const halfCourt = (COURT_RIGHT - COURT_LEFT)/2;
       const netProximityFrac = Math.max(0, Math.min(1, distFromNet / halfCourt));
       const netSpeedScale = SMASH_NET_SLOWDOWN + (1 - SMASH_NET_SLOWDOWN) * netProximityFrac;
-      const speed = SMASH_BASE_SPEED * power * netSpeedScale * powerMultFor(p.character);
+      let speed = SMASH_BASE_SPEED * power * netSpeedScale * powerMultFor(p.character);
+      if (spend === 'art') speed *= 1.25;
       // the steep "safety" angle below only kicks in when the hit is taken right up against
       // the net (within NET_CLOSE_RANGE) — anywhere further back than that, smashes keep
       // their normal flatter angle regardless of how far from the net they were
@@ -5302,7 +5315,7 @@
       shuttle.kind = 'smash';
       // flag this flight for the max-power dive adjustment in updateShuttle() — only armed
       // for 5-star power characters, and only re-armed here so it can only trigger once per smash
-      shuttle.hitByMaxPower = !!(p.character && p.character.stats && p.character.stats.power === 5);
+      shuttle.hitByMaxPower = !!(p.character && p.character.stats && p.character.stats.power === 5) || (spend === 'art');
       shuttle.hitDir = dir;
       shuttle.maxPowerDiveApplied = false;
       shuttle.dinkDiveApplied = false;
@@ -5462,6 +5475,9 @@
         playSound('smash');
         spawnHitParticles(shuttle.x, shuttle.y, 16, true, col);
       }
+    } else if (shuttle.hitByMaxPower) {
+      // Regular max-power smashes (e.g. during Fursona Unleashed) can also sail out from deep court
+      clampUltShotInBounds(p);
     }
     return true;
   }
@@ -5498,7 +5514,7 @@
     p.swingTimer = SWING_DURATION;
     p.swingPowerFrac = 0.6 + 0.4*chargeFrac;
     // Fursona Unleashed: Elijah says "Meow~" (uwu) on every shuttle he strikes while transformed.
-    if(p.transform && p.transform.type === 'FURSONA_UNLEASHED'){
+    if(p.character.id === 'elijah' && p.transform && p.transform.type === 'FURSONA_UNLEASHED'){
       spawnFloatText(p.x + PLAYER_W/2, p.y - 8, 'Meow~', '#ffc4e2');
     }
     const dir = p.side === 'left' ? 1 : -1;
@@ -7714,17 +7730,7 @@
   function updatePlayer(p, dt, leftKey, rightKey){
     let vx = 0;
     const spMult = speedMultFor(p.character) * passiveSpeedMult(p); // Part 3: Adrenaline/Flair
-    // Anchor (mateo): rooted for the duration — no horizontal movement, no dash (Part 6)
-    if(p.transform && p.transform.type === 'ANCHOR'){
-      p.vx = 0;
-      p.dashTimer = 0;
-      p.swingTimer = Math.max(0, p.swingTimer - dt);
-      p.attackAngleDisplay += (p.attackAngle - p.attackAngleDisplay) * Math.min(1, 10*dt);
-      p.vy += PLAYER_GRAVITY*dt;
-      p.y += p.vy*dt;
-      if(p.y + PLAYER_H >= GROUND_Y){ p.y = GROUND_Y - PLAYER_H; p.vy = 0; p.onGround = true; }
-      return;
-    }
+
     // Difficulty physical edge (AI only): faster court coverage at higher tiers, slower at
     // Easy. Never applied to a human (aiMoveEdge returns 1 for human-controlled players).
     const moveEdge = aiMoveEdge(p);
@@ -7842,12 +7848,14 @@
     return shuttle.maxPowerDiveApplied ? SMASH_MAXPOWER_DIVE_GRAVITY
          : shuttle.dinkDiveApplied ? shuttle.dinkPostNetGravity
          : shuttle.kind === 'dink' ? DINK_PRE_NET_GRAVITY
+         : (shuttle.ultFx && shuttle.ultFx.art && shuttle.kind !== 'smash' && shuttle.vy > 0) ? SHUTTLE_GRAVITY * 2
          : SHUTTLE_GRAVITY;
   }
   function currentShuttleTerminalVy(){
     return shuttle.maxPowerDiveApplied ? SMASH_MAXPOWER_DIVE_TERMINAL_VY
          : shuttle.dinkDiveApplied ? DINK_POST_NET_TERMINAL_VY
          : shuttle.kind === 'dink' ? DINK_PRE_NET_TERMINAL_VY
+         : (shuttle.ultFx && shuttle.ultFx.art && shuttle.kind !== 'smash' && shuttle.vy > 0) ? SHUTTLE_TERMINAL_VY * 2
          : SHUTTLE_TERMINAL_VY;
   }
 
@@ -8606,15 +8614,29 @@
       P(2,ey-1,g);P(3,ey-1,g);P(5,ey-1,g);P(6,ey-1,g);                  // top rims + bridge
     }
   }
-  function drawPixRacket(px,x,y,ang,ch){
+  function drawPixRacket(px,x,y,ang,ch,isFurry){
     var pal=pixPalette(ch), dx=Math.sin(ang),dy=Math.cos(ang);
+    if(isFurry){
+      // Fursona Unleashed: big cat paw racket
+      var pxpx=Math.round(x+dx*4),pypy=Math.round(y+dy*4);
+      _pxmap(px,pxpx-3,pypy-3,[' O O ','OOOOO',' OOO '],{O:'#e08a3c'}); // orange paw
+      px(pxpx-3,pypy-4,'#f2a6b8'); px(pxpx-1,pypy-4,'#f2a6b8'); px(pxpx+1,pypy-4,'#f2a6b8'); // pink beans
+      px(pxpx-1,pypy-2,'#f2a6b8'); // main pad
+      return;
+    }
     if(ch.racketType==='fish'){
-      // Elijah's signature: he slaps the shuttle with a whole fish.
-      for(var s=0;s<3;s++)px(Math.round(x+dx*s),Math.round(y+dy*s),'#9aa0ac'); // grey grip
-      var fhx=Math.round(x+dx*5),fhy=Math.round(y+dy*5);
-      _pxmap(px,fhx-3,fhy-2,[' FFFF ','FFFFFf','FFFFFf',' FFFF '],{F:'#5bb7cd',f:'#3f97ad'}); // body
-      px(fhx-4,fhy-2,'#3f97ad'); px(fhx-5,fhy-1,'#3f97ad'); px(fhx-4,fhy,'#3f97ad'); px(fhx-4,fhy+1,'#3f97ad'); px(fhx-5,fhy+2,'#3f97ad'); // tail fin
-      px(fhx+1,fhy-1,'#0b0d14'); // eye
+      // Elijah's signature: more aesthetic fish
+      for(var s=0;s<2;s++)px(Math.round(x+dx*s),Math.round(y+dy*s),'#8ca1a6'); // teal-ish grip
+      var fhx=Math.round(x+dx*4),fhy=Math.round(y+dy*4);
+      _pxmap(px,fhx-4,fhy-2,[
+        '  fFFF  ',
+        ' fFFFFF ',
+        'ffFFFFf ',
+        ' fFFFf  '
+      ],{F:'#4ab8d9',f:'#26809e'});
+      px(fhx-5,fhy-1,'#26809e'); px(fhx-6,fhy-2,'#26809e'); px(fhx-6,fhy+1,'#26809e'); // sharper tail fins
+      px(fhx+2,fhy-1,'#0d141a'); // eye
+      px(fhx+1,fhy,'#f5fafa'); // little cheek highlight
       return;
     }
     if(ch.racketType==='cross'){
@@ -8682,7 +8704,7 @@
     var ax=shX+1, ay=shY+2+yo;
     _pxlimb(px,ax,ay,ang.armFront,7,2,'K',null,slv,slvLen);
     var rx=Math.round(ax+Math.sin(ang.armFront)*7), ry=Math.round(ay+Math.cos(ang.armFront)*7);
-    drawPixRacket(px,rx,ry,ang.armFront,ch);
+    drawPixRacket(px,rx,ry,ang.armFront,ch,ang.furry);
     return _pixBuf;
   }
   // Head-and-shoulders portrait into the portrait buffer (bigger face, no limbs).
@@ -9443,7 +9465,7 @@
     else if(p.charging){ pixExpr = 'focused'; }
     else if(!p.onGround){ pixExpr = 'strain'; }
     // Elijah's Fursona Unleashed: render cat ears/tail/whiskers while the transform is live.
-    const pixFurry = !!(p.transform && p.transform.type === 'FURSONA_UNLEASHED');
+    const pixFurry = !!(p.character.id === 'elijah' && p.transform && p.transform.type === 'FURSONA_UNLEASHED');
     drawMomentumAura(p, cx, groundY); // MOMENTUM_SPEC Part 1.1/Part 7 — under the body
     drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), ch, {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, expr:pixExpr, onGround:p.onGround, furry:pixFurry}, facing); // Part 4: taller/shorter silhouette
     drawMomentumCrackle(p, cx); // electric crackle hugging the silhouette, over the body

@@ -326,7 +326,14 @@
   // ---- input primitives (former keypress handlers) -----------------------
   function tryJump(w, p) {
     if (w.state !== 'rally' && w.state !== 'serve') return;
-    if (p.onGround) { p.vy = C.JUMP_VELOCITY; p.onGround = false; }
+    if (p.onGround) {
+      p.vy = C.JUMP_VELOCITY;
+      p.onGround = false;
+      p.jumpsUsed = 1;
+    } else if (p.transform && p.transform.type === 'ANCHOR' && (!p.jumpsUsed || p.jumpsUsed < 2)) {
+      p.vy = C.JUMP_VELOCITY;
+      p.jumpsUsed = (p.jumpsUsed || 1) + 1;
+    }
   }
 
   /**
@@ -612,6 +619,7 @@
       p.y = C.GROUND_Y - C.PLAYER_H;
       p.vy = 0;
       p.onGround = true;
+      p.jumpsUsed = 0;
     }
   }
 
