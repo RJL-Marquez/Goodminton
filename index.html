@@ -2870,7 +2870,8 @@
       stats:{speed:5, power:4, control:2}, tagline:'Blazing and heavy-handed — and reckless with it.'},
     {id:'liam',   name:'Liam',   skin:'#f0d5b8', hair:'#a5471f', hairStyle:'short',    shirt:'#5c6770', shirt2:'#3f7cff', shorts:'#2c333a', shoe:'#f2ede1', demeanor:'nonchalant',
       stats:{speed:3, power:4, control:5}, tagline:'Well-rounded, with real punch behind it.'},
-    { id: 'sherman', name: 'Sherman', skin: '#f4e3cd', hair: '#1b1b1b', hairStyle: 'short', shirt: '#d32f2f', shirt2: '#ffeb3b', shorts: '#111111', shoe: '#ffffff', glasses: '#9aa3b2', portraitExpr: 'goofy',
+    { id: 'sherman', name: 'Sherman', skin: '#f4e3cd', hair: '#1b1b1b', hairStyle: 'short', shirt: '#12233f', shirt2: '#e8c257', shorts: '#0c1526', shoe: '#161616',
+      jacket: '#12233f', cap: '#0d1830', capBrim: '#0a0e18', capBadge: '#e8c257', medals: true, glasses: '#9aa3b2', portraitExpr: 'focused', demeanor: 'stern',
       stats: { speed: 4, power: 4, control: 4 }, tagline: 'Balanced at everything, lacking nothing.' },
     { id: 'rodrigo', name: 'Rodrigo', skin: '#e8b892', hair: '#161513', hairStyle: 'short', shirt: '#75aadb', shirt2: '#ffffff', shorts: '#000000', shoe: '#ffffff',
       stats: { speed: 4, power: 3, control: 5 }, tagline: 'Exceptional control with Argentinian flair.' },
@@ -9403,6 +9404,15 @@
     else if(st==='braids'){ _pxrect(px,hx-1,hy+2,2,5,'H'); _pxrect(px,hx+7,hy+2,2,5,'H'); }
     else if(st==='long'){ _pxrect(px,hx-1,hy+1,2,9,'H'); _pxrect(px,hx+7,hy+1,2,9,'H'); }
   }
+  // Stiff peaked/military cap — retro-pixel, blocky silhouette, no photoreal shading.
+  // Drawn in place of hair (front = +x, matching drawPixFace/racket convention).
+  function drawPixCap(px,hx,hy,ch){
+    var C=ch.cap, B=ch.capBrim||_shade(C,-0.4), G=ch.capBadge||'#e8c257';
+    _pxmap(px,hx,hy-1,[' CCCCCC ','CCCCCCCC','CCCCCCCC'],{C:C});   // crown, one row taller than normal hair
+    px(hx+3,hy,G); px(hx+4,hy,G);                                  // gold cockade/badge on the band
+    _pxrect(px,hx+1,hy+2,7,1,B);                                   // stiff visor
+    px(hx+7,hy+2,B); px(hx+8,hy+2,B);                              // brim juts out over the face (+x/front)
+  }
   // --- reactive faces — facing +x. `glasses` (hex) draws gray specs over the eyes. ---
   const _INK='#0b0d14',_EYEW='#f6f9ff',_MRED='#7a1f22',_TEETH='#f6f9ff',_SWEAT='#5ec7ff',_GLASS='#dfe7f4';
   function drawPixFace(px,fx,fy,expr,t,glasses){
@@ -9533,10 +9543,14 @@
     } else {
       _pxmap(px,OX+3,shY+yo,['sSSSSSs','SSSSSSS','SSSSSSS','STTTTTS','SSSSSSS','sSSSSSs','sSSSSSs','PPPPPPP','PPpPpPP'],pal);
     }
-    // head: skin -> hair -> nose -> face
+    if(ch.medals){
+      px(OX+3,shY+yo,'#e8c257'); px(OX+9,shY+yo,'#e8c257');                 // gold epaulette tips at each shoulder
+      px(OX+4,shY+yo+3,'#e8c257'); px(OX+8,shY+yo+3,'#e8c257');             // two small medal-bar dots on the chest
+    }
+    // head: skin -> hair (or cap) -> nose -> face
     var hx=OX+3, hy=(shY-8)+yo;
     _pxmap(px,hx,hy,HEAD_SKIN,pal);
-    drawPixHair(px,hx,hy,ch);
+    if(ch.cap) drawPixCap(px,hx,hy,ch); else drawPixHair(px,hx,hy,ch);
     if(ch.longNose){ px(hx+8,hy+4,'K');px(hx+9,hy+4,'K');px(hx+9,hy+5,'k'); }
     drawPixFace(px,hx+1,hy,expr,t,ch.glasses);
     // Fursona Unleashed — ginger cat ears, whiskers + a pink nose over the head
@@ -9566,12 +9580,16 @@
     _pxrect(px,2,11,1,7,sh); _pxrect(px,13,11,1,7,sh);   // side shading
     px(6,10,'T'); px(9,10,'T');                            // collar hints
     if(ch.jacket){ _pxrect(px,7,11,2,7,'S'); px(6,11,'j'); px(9,11,'j'); } // open placket + lapels
+    if(ch.medals){
+      px(2,11,'#e8c257'); px(13,11,'#e8c257');                            // gold epaulette tips
+      px(5,14,'#e8c257'); px(10,14,'#e8c257'); px(6,15,'#e8c257'); px(9,15,'#e8c257'); // small medal cluster
+    }
     // neck
     _pxrect(px,7,8,2,3,'K'); px(7,10,'k');
-    // head + hair + face
+    // head + hair (or cap) + face
     var hx=4, hy=0;
     _pxmap(px,hx,hy,HEAD_SKIN,pal);
-    drawPixHair(px,hx,hy,ch);
+    if(ch.cap) drawPixCap(px,hx,hy,ch); else drawPixHair(px,hx,hy,ch);
     if(ch.longNose){ px(hx+8,hy+4,'K'); px(hx+9,hy+4,'K'); px(hx+9,hy+5,'k'); }
     drawPixFace(px,hx+1,hy,expr,t,ch.glasses);
     return _portBuf;
@@ -9580,6 +9598,7 @@
     var expr=(ang && ang.expr) || 'idle';
     // Nonchalant characters (Jordan/Liam/Lin Dan) stay cool in the low-effort states.
     if(ch.demeanor==='nonchalant' && (expr==='idle'||expr==='focused')) expr='nonchalant';
+    if(ch.demeanor==='stern' && expr==='idle') expr='focused';
     var t=performance.now()/1000;
     buildPixFigure(ch, ang, expr, t);
     var s=PX_ART*(scale||1);
