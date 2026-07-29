@@ -4104,8 +4104,8 @@
       const isReal = (i === realIndex);
       const startX = minX + i * step + (Math.random() * 16 - 8);
       const startY = -80 - Math.random() * 40;
-      // 20% slower descent than Amara/Maya (~140..155 vy)
-      const vy = 145 + Math.random() * 10;
+      // fast, near-simultaneous descent — kept tight so the real one is hard to track
+      const vy = 260 + Math.random() * 20;
       const vx = (Math.random() - 0.5) * 10;
       const color = isReal ? '#ffd700' : fireworkColors[i % fireworkColors.length];
 
@@ -4145,43 +4145,42 @@
       ctx.translate(item.x, item.y);
 
       if(item.isReal){
-        // THE ONLY SHINING ONE!
-        // 1. Intense bright golden radial aura
+        // Still marked, but scaled down and dimmed to stay close to a decoy during the fall.
         ctx.globalCompositeOperation = 'lighter';
-        const radGlow = ctx.createRadialGradient(0, 0, 2, 0, 0, 34);
-        radGlow.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
-        radGlow.addColorStop(0.35, 'rgba(255, 215, 0, 0.95)');
-        radGlow.addColorStop(0.7, 'rgba(255, 223, 100, 0.45)');
+        const radGlow = ctx.createRadialGradient(0, 0, 2, 0, 0, 20);
+        radGlow.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
+        radGlow.addColorStop(0.35, 'rgba(255, 215, 0, 0.7)');
+        radGlow.addColorStop(0.7, 'rgba(255, 223, 100, 0.3)');
         radGlow.addColorStop(1, 'rgba(255, 215, 0, 0)');
         ctx.fillStyle = radGlow;
         ctx.beginPath();
-        ctx.arc(0, 0, 34, 0, Math.PI * 2);
+        ctx.arc(0, 0, 20, 0, Math.PI * 2);
         ctx.fill();
 
-        // 2. Rotating 4-point Golden Lens Flare / Starburst
+        // Rotating 4-point starburst, scaled down to match the smaller glow
         const starRot = nowSec * 4.0;
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
         for(let s = 0; s < 4; s++){
           const a = starRot + (s * Math.PI / 2);
-          const r1 = 24;
+          const r1 = 13;
           ctx.moveTo(0, 0);
           ctx.lineTo(Math.cos(a) * r1, Math.sin(a) * r1);
         }
         ctx.stroke();
 
-        ctx.strokeStyle = 'rgba(255, 215, 0, 0.85)';
-        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)';
+        ctx.lineWidth = 1;
         ctx.beginPath();
         for(let s = 0; s < 4; s++){
           const a = starRot + Math.PI/4 + (s * Math.PI / 2);
           ctx.moveTo(0, 0);
-          ctx.lineTo(Math.cos(a) * 14, Math.sin(a) * 14);
+          ctx.lineTo(Math.cos(a) * 8, Math.sin(a) * 8);
         }
         ctx.stroke();
 
-        // 3. Shining Core Shuttlecock Sprite
+        // Shining Core Shuttlecock Sprite
         ctx.rotate(item.angle);
         const SP = 1.7;
         const dw = SHUT_W * SP, dh = SHUT_H * SP;
@@ -4190,13 +4189,13 @@
       } else {
         // Decoy Firework Shuttlecock
         ctx.globalCompositeOperation = 'lighter';
-        const radGlow = ctx.createRadialGradient(0, 0, 2, 0, 0, 18);
+        const radGlow = ctx.createRadialGradient(0, 0, 2, 0, 0, 15);
         radGlow.addColorStop(0, item.color);
         radGlow.addColorStop(0.6, item.color + '66');
         radGlow.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = radGlow;
         ctx.beginPath();
-        ctx.arc(0, 0, 18, 0, Math.PI * 2);
+        ctx.arc(0, 0, 15, 0, Math.PI * 2);
         ctx.fill();
 
         // Decoy Shuttlecock Sprite
