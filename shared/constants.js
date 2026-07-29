@@ -182,7 +182,9 @@
     { id: 'benjamin', name: 'Benjamin', skin: '#f4d9c6', hair: '#ffffff', hairStyle: 'short', shirt: '#0038b8', shirt2: '#ffffff', shorts: '#ffffff', shoe: '#0038b8', racketType: 'cross', longNose: true,
       stats: { speed: 3, power: 3, control: 3 }, tagline: 'Brings his own wooden plank.' },
     { id: 'cristiano', name: 'Cristiano', skin: '#f0c9a0', hair: '#1b1b1b', hairStyle: 'slick', shirt: '#ff0000', shirt2: '#006600', shorts: '#ff0000', shoe: '#ff0000',
-      stats: { speed: 2, power: 5, control: 3 }, tagline: 'SIUUUU! All red, full power.' }
+      stats: { speed: 2, power: 5, control: 3 }, tagline: 'SIUUUU! All red, full power.' },
+    { id: 'ninjja', name: 'Ninjja', skin: '#e6d2c2', hair: '#0d0d18', hairStyle: 'slick', shirt: '#0a0e2a', shirt2: '#6ef3ff', shorts: '#0a0e2a', shoe: '#101020', glow: '#6ef3ff',
+      stats: { speed: 5, power: 5, control: 5 }, hidden: true, tagline: "Hasn't lost focus once. Doesn't plan to start." }
   ];
 
   // =========================================================================
@@ -286,9 +288,9 @@
     },
     sherman: {
       height: 175, endurance: 3,
-      weights: {}, // inherits opponent's table at runtime (SHERMAN_INHERIT)
-      signature: 'SHERMAN_INHERIT', passive: 'MIMICRY',
-      drive: 'COPY_DRIVE', art: { id: 'ADAPT', type: 'inherited' }
+      weights: { float: 1.5, dink: 1.5, smash: 1.5 },
+      signature: 'SHERMAN_FIREWORK', passive: 'MIMICRY',
+      drive: 'FIREWORK_RAIN', art: { id: 'FIREWORK_RAIN', type: 'cinematic' }
     },
     rodrigo: {
       height: 174, endurance: 4,
@@ -318,13 +320,19 @@
       height: 170, endurance: 5,
       weights: { returns: 2.0, stretch: 1.5, smash: 0.5 },
       signature: 'BENJAMIN_RETURN_STREAK', passive: 'FLAT_FACE',
-      drive: 'WIDE_PLANK', art: { id: 'BLOCKADE', type: 'transformation' }
+      drive: 'WIDE_PLANK', art: { id: 'AMEN', type: 'transformation' }
     },
     cristiano: {
       height: 187, endurance: 2,
       weights: { aerialSmash: 2.5, dink: 0.3, float: 0.7 },
       signature: 'CRISTIANO_SPOTLIGHT', passive: 'SPOTLIGHT',
       drive: 'HANG_TIME', art: { id: 'SIUUUU', type: 'cinematic' }
+    },
+    ninjja: {
+      height: 179, endurance: 5,
+      weights: { smash: 2.5, dink: 2.0, aerialSmash: 2.5, dashSave: 2.0, stretch: 2.0 },
+      signature: 'NINJJA_OMNISCIENCE', passive: 'UNTOUCHABLE',
+      drive: 'PERFECT_READ', art: { id: 'ABSOLUTE_ZONE', type: 'cinematic' }
     }
   };
 

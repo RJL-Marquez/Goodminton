@@ -51,7 +51,11 @@
     var c = (ch && ch.stats && ch.stats.control) || 3;
     var diff = c - 3;
     var sign = diff > 0 ? 1 : (diff < 0 ? -1 : 0);
-    return C.HIT_REACH_X + diff * 14 + sign * diff * diff * 3;
+    var base = C.HIT_REACH_X + diff * 14 + sign * diff * diff * 3;
+    if (ch && (ch.id === 'ninjja' || ch.passive === 'UNTOUCHABLE')) {
+      base *= 1.25;
+    }
+    return base;
   }
   function dashDistanceMultFor(ch) { return statMult(ch && ch.stats && ch.stats.speed, C.DASH_DIST_LINEAR, C.DASH_DIST_KICKER); }
 
@@ -153,6 +157,8 @@
         return gain * Math.min(1.4, 1 + 0.05 * Math.max(0, (p.moReturnStreak || 1) - 1));
       case 'CRISTIANO_SPOTLIGHT':
         return gain + (behind ? 0.5 : 0); // Spotlight trickle while behind
+      case 'NINJJA_OMNISCIENCE':
+        return 2.5; // Every clean contact grants highest weight (2.5) regardless of shot type
       case 'DIEGO_MAX_CHARGE_WHIFF': // clean contacts gain normally; whiffs: see applyMomentumWhiff
       case 'ELIJAH_ANY_CONTACT':     // flat weights already cover "any contact"
       case 'LINDAN_POINT_BONUS':     // handled in applyMomentumPoint
@@ -343,7 +349,8 @@
    */
   function applyDash(w, p, dir, now) {
     if (w.state !== 'rally' && w.state !== 'serve') return;
-    if (now - p.lastDashTime >= C.DASH_COOLDOWN) {
+    var cd = (p && p.character && (p.character.id === 'ninjja' || p.character.glow === '#6ef3ff')) ? C.DASH_COOLDOWN * 0.5 : C.DASH_COOLDOWN;
+    if (now - p.lastDashTime >= cd) {
       p.dashTimer = C.DASH_DURATION;
       p.dashDir = dir;
       p.lastDashTime = now;
@@ -429,6 +436,7 @@
       var angleS = (angleDeg - manualOffset(w, p)) * Math.PI / 180;
       shuttle.vx = dir * speed * Math.cos(angleS);
       shuttle.vy = speed * Math.sin(angleS);
+      shuttle.ultSmashArc = false;
       shuttle.kind = 'smash';
       shuttle.hitByMaxPower = !!(p.character && p.character.stats && p.character.stats.power === 5);
       shuttle.hitDir = dir;
@@ -596,6 +604,10 @@
       if (p.inLeft) vx -= C.MOVE_SPEED * spMult;
       if (p.inRight) vx += C.MOVE_SPEED * spMult;
     }
+    if (p.transform && p.transform.type === 'AMEN') {
+      vx = 0;
+      p.dashTimer = 0;
+    }
     p.vx = vx;
     p.swingTimer = Math.max(0, p.swingTimer - dt);
     p.x += vx * dt;
@@ -670,13 +682,15 @@
     return shuttle.maxPowerDiveApplied ? C.SMASH_MAXPOWER_DIVE_GRAVITY
       : shuttle.dinkDiveApplied ? shuttle.dinkPostNetGravity
         : shuttle.kind === 'dink' ? C.DINK_PRE_NET_GRAVITY
-          : C.SHUTTLE_GRAVITY;
+          : (shuttle.ultFastDrop && shuttle.vy > 0) ? C.SHUTTLE_GRAVITY * shuttle.ultFastDrop
+            : C.SHUTTLE_GRAVITY;
   }
   function currentShuttleTerminalVy(shuttle) {
     return shuttle.maxPowerDiveApplied ? C.SMASH_MAXPOWER_DIVE_TERMINAL_VY
       : shuttle.dinkDiveApplied ? C.DINK_POST_NET_TERMINAL_VY
         : shuttle.kind === 'dink' ? C.DINK_PRE_NET_TERMINAL_VY
-          : C.SHUTTLE_TERMINAL_VY;
+          : (shuttle.ultFastDrop && shuttle.vy > 0) ? 1400
+            : C.SHUTTLE_TERMINAL_VY;
   }
 
   // ---- shuttle integration + collisions + scoring (verbatim) --------------
