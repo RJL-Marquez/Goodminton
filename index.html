@@ -2314,6 +2314,10 @@
                   <span class="keybindActionLabel">Hit (Hold to Charge)</span>
                   <button class="menuTextLink inlineTextBtn keybindBtn" data-action="p1Hit">SPACE</button>
                 </div>
+                <div class="keybindRow">
+                  <span class="keybindActionLabel">Charge Ultimate</span>
+                  <button class="menuTextLink inlineTextBtn keybindBtn" data-action="p1Ult">L-SHIFT</button>
+                </div>
 
                 <div class="keybindGroupLabel p2">Player 2</div>
                 <div class="keybindRow">
@@ -2331,6 +2335,10 @@
                 <div class="keybindRow">
                   <span class="keybindActionLabel">Hit (Hold to Charge)</span>
                   <button class="menuTextLink inlineTextBtn keybindBtn" data-action="p2Hit">ENTER</button>
+                </div>
+                <div class="keybindRow">
+                  <span class="keybindActionLabel">Charge Ultimate</span>
+                  <button class="menuTextLink inlineTextBtn keybindBtn" data-action="p2Ult">R-SHIFT</button>
                 </div>
 
                 <button class="menuTextLink inlineTextBtn" id="btnResetBasicKeybinds" style="font-size:11px !important; opacity:0.6; margin-top:6px;">RESET TO DEFAULTS</button>
@@ -2883,8 +2891,8 @@
       stats: { speed: 4, power: 2, control: 3 }, tagline: 'Slaps shuttles with a wet fish.' },
     { id: 'benjamin', name: 'Benjamin', skin: '#f4d9c6', hair: '#ffffff', hairStyle: 'short', shirt: '#0038b8', shirt2: '#ffffff', shorts: '#ffffff', shoe: '#0038b8', racketType: 'cross', longNose: true,
       stats: { speed: 3, power: 3, control: 3 }, tagline: 'Brings his own wooden plank.' },
-    { id: 'cristiano', name: 'Cristiano', skin: '#f0c9a0', hair: '#1b1b1b', hairStyle: 'slick', shirt: '#ff0000', shirt2: '#006600', shorts: '#ff0000', shoe: '#ff0000',
-      stats: { speed: 2, power: 5, control: 3 }, tagline: 'SIUUUU! All red, full power.' },
+    { id: 'cristiano', name: 'Cristiano', skin: '#f0c9a0', hair: '#1b1b1b', hairStyle: 'slick', shirt: '#ff0000', shirt2: '#006600', shorts: '#ff0000', shoe: '#ff0000', racketType: 'none',
+      stats: { speed: 2, power: 5, control: 3 }, tagline: 'Plays Sepak Takraw. Feet & headers only.' },
     { id: 'ninjja', name: 'Ninjja', skin: '#e6d2c2', hair: '#0d0d18', hairStyle: 'slick', shirt: '#0a0e2a', shirt2: '#6ef3ff', shorts: '#0a0e2a', shoe: '#101020', glow: '#6ef3ff', demeanor: 'nonchalant',
       stats: { speed: 5, power: 5, control: 5 }, hidden: true, tagline: "Hasn't lost focus once. Doesn't plan to start." }
   ];
@@ -3357,19 +3365,21 @@
   // attack-angle actions) is looked up by code here rather than hardcoded in the keydown
   // listener, so all of it can be rebound from Settings > Customize Controls at runtime.
   const DEFAULT_KEY_BINDINGS = {
-    p1Left:'KeyA', p1Right:'KeyD', p1Jump:'KeyW', p1Hit:'Space',
-    p2Left:'ArrowLeft', p2Right:'ArrowRight', p2Jump:'ArrowUp', p2Hit:'Enter',
+    p1Left:'KeyA', p1Right:'KeyD', p1Jump:'KeyW', p1Hit:'Space', p1Ult:'ShiftLeft',
+    p2Left:'ArrowLeft', p2Right:'ArrowRight', p2Jump:'ArrowUp', p2Hit:'Enter', p2Ult:'ShiftRight',
     p1AngleUp:'KeyQ', p1AngleDown:'KeyE', p2AngleUp:'KeyU', p2AngleDown:'KeyO'
   };
   let keyBindings = Object.assign({}, DEFAULT_KEY_BINDINGS);
   // the "Basic" and "Advanced" tabs in Customize Controls each get their own reset scope
-  const BASIC_BINDING_ACTIONS = ['p1Left','p1Right','p1Jump','p1Hit','p2Left','p2Right','p2Jump','p2Hit'];
+  const BASIC_BINDING_ACTIONS = ['p1Left','p1Right','p1Jump','p1Hit','p1Ult','p2Left','p2Right','p2Jump','p2Hit','p2Ult'];
   const ADVANCED_BINDING_ACTIONS = ['p1AngleUp','p1AngleDown','p2AngleUp','p2AngleDown'];
   // keys that never drive gameplay directly — never assignable to any action
   const HARD_RESERVED_CODES = ['Escape','F3','KeyR'];
 
   function keyLabel(code){
     if(!code) return '—';
+    if(code === 'ShiftLeft') return 'L-SHIFT';
+    if(code === 'ShiftRight') return 'R-SHIFT';
     if(code.indexOf('Key') === 0) return code.slice(3);
     if(code.indexOf('Digit') === 0) return code.slice(5);
     if(code === 'Space') return 'SPACE';
@@ -3399,9 +3409,9 @@
     const p2Move = document.getElementById('p2MoveHint');
     const p2Hit = document.getElementById('p2HitHint');
     if(p1Move) p1Move.textContent = keyLabel(keyBindings.p1Left) + '/' + keyLabel(keyBindings.p1Right) + ': Move • ' + keyLabel(keyBindings.p1Jump) + ': Jump/Smash';
-    if(p1Hit) p1Hit.textContent = keyLabel(keyBindings.p1Hit) + ': Hold to Charge Hit';
+    if(p1Hit) p1Hit.textContent = keyLabel(keyBindings.p1Hit) + ': Hold to Charge Hit • ' + keyLabel(keyBindings.p1Ult || 'ShiftLeft') + ': Charge Ult';
     if(p2Move) p2Move.textContent = keyLabel(keyBindings.p2Left) + '/' + keyLabel(keyBindings.p2Right) + ': Move • ' + keyLabel(keyBindings.p2Jump) + ': Jump/Smash';
-    if(p2Hit) p2Hit.textContent = keyLabel(keyBindings.p2Hit) + ': Hold to Charge Hit';
+    if(p2Hit) p2Hit.textContent = keyLabel(keyBindings.p2Hit) + ': Hold to Charge Hit • ' + keyLabel(keyBindings.p2Ult || 'ShiftRight') + ': Charge Ult';
   }
 
   function rejectRebind(action){
@@ -4006,10 +4016,36 @@
         shuttle.ultMarker = { startX: shuttle.x, fakeX: landX, realX: landX, revealFrac: 0, isPerfectRead: true };
         break;
       }
-      case 'jordan': case 'cristiano': case 'lindan':
+      case 'jordan': case 'lindan':
         ultLaunchToward(ultAwayFromOpponentX(p), 220);
         shuttle.hitByMaxPower = true;
         break;
+      case 'cristiano': {                      // Grounded Knuckleball Free Kick
+        const targetX = ultRandomX(p);
+        ultLaunchToward(targetX, 260);
+        shuttle.isKnuckleball = true;
+        shuttle.knuckleballDir = dir;
+        shuttle.hitByMaxPower = true;
+        shuttle.cristianoUltScoredBy = p.side;
+        shuttle.cristianoUltKind = 'knuckleball';
+        playSound('subbass');
+        triggerShake(18, 0.45);
+        triggerStinger('CRISTIANO', 'KNUCKLEBALL FREE KICK', '#ff5a2a', 1.8);
+        for(let k = 0; k < 18; k++){
+          particles.push({
+            x: shuttle.x,
+            y: shuttle.y,
+            vx: (Math.random() - 0.5) * 320,
+            vy: (Math.random() - 0.5) * 320,
+            color: Math.random() < 0.5 ? '#ff5a2a' : '#ffd700',
+            size: Math.random() * 5 + 2,
+            alpha: 1.0,
+            decay: 3.0,
+            gravity: 0
+          });
+        }
+        break;
+      }
       default:
         ultLaunchToward(ultAwayFromOpponentX(p), 220);
         break;
@@ -4024,32 +4060,135 @@
       case 'sherman':
         triggerShermanFireworkRain(p);
         break;
-      case 'rodrigo': holdShuttle(0.20); break; // La Pausa — release delayed ~0.2s
+      case 'rodrigo': {
+        holdShuttle(0.20);
+        // False impact VFX
+        playSound('hit');
+        spawnHitParticles(shuttle.x, shuttle.y, 12, false, '#facc15');
+        p.engañoTimer = 12.0; // Ground Buff El Engaño
+        triggerShake(12, 0.35);
+        triggerStinger('RODRIGO', 'LA PAUSA', '#facc15', 1.8);
+        break;
+      }
       case 'amara': {                            // Puppeteer — no landing marker, unpredictable sky lob
         const realX = ultRandomX(p);
         ultLaunchToward(realX, 1500, 5.2);
         shuttle.ultMarker = null;
+        triggerShake(10, 0.3);
+        triggerStinger('AMARA', 'PUPPETEER', '#22d3ee', 1.8);
         break;
       }
-      case 'maya': {                             // Called Shot — no landing marker, unpredictable sky lob
-        const realX = ultRandomX(p);
-        ultLaunchToward(realX, 1500, 5.2);
-        shuttle.ultMarker = null;
-        break;
-      }
-      case 'sofia':                              // Grand Feint — big wind-up, shuttle dies at the net
+      case 'maya': {
+        holdShuttle(0.35); // Overlong wind-up
         shuttle.kind = 'dink';
-        ultLaunchToward(NET_X + dir * 40, 60);
+        const targetDist = 30; // lands very close past net
+        const control = (p.character && p.character.stats && p.character.stats.control) || 3;
+        const dinkDiveMult = statMult(control, DINK_CONTROL_DIVE_LINEAR, DINK_CONTROL_DIVE_KICKER);
+        shuttle.dinkPostNetGravity = DINK_POST_NET_GRAVITY_BASE * dinkDiveMult;
+        shuttle.dinkDiveApplied = false;
+        shuttle.dinkDir = dir;
+        shuttle.netCollisionResolved = false;
+        
+        const dinkLaunch = solveDinkTrajectory(shuttle.y, Math.abs(shuttle.x - NET_X), shuttle.dinkPostNetGravity, targetDist);
+        shuttle.vx = dir * dinkLaunch.vx;
+        shuttle.vy = dinkLaunch.vy;
+        
+        // Hide marker before crossing net:
+        shuttle.hideMarkerBeforeCrossNet = true;
+        shuttle.hitterSide = p.side;
+        shuttle.ultMarker = { startX: shuttle.x, fakeX: NET_X + dir * 30, realX: NET_X + dir * 30, revealFrac: 1.0 };
+        triggerShake(10, 0.3);
+        triggerStinger('MAYA', 'BLUEPRINT', '#c084fc', 1.8);
         break;
-      case 'diego':                              // Wrecking Clear — heavy smooth power arc
-        ultLaunchToward(ultAwayFromOpponentX(p), 240);
-        shuttle.vx += dir * 100 * Math.sin(shuttle.x * 0.7);
+      }
+      case 'sofia': {
+        holdShuttle(0.35);
+        shuttle.kind = 'dink';
+        shuttle.vx = dir * 140;
+        shuttle.vy = 280;
+        p.driftTimer = 12.0; // Ground Buff Drift
+        triggerShake(10, 0.3);
+        triggerStinger('SOFIA', 'FEINT ROYALE', '#f472b6', 1.8);
+        break;
+      }
+      case 'diego': {
+        const targetX = ultAwayFromOpponentX(p);
+        ultLaunchToward(targetX, 220);
+        shuttle.kind = 'smash';
         shuttle.hitByMaxPower = true;
+        shuttle.diegoScatter = true;
+        shuttle.ultMarker = { startX: shuttle.x, fakeX: targetX - dir * 180, realX: targetX, revealFrac: 0.5 };
+        p.todoGasTimer = 10.0; // Ground Buff ¡Todo Gas!
+        p.todoGasStacks = 0;
+        triggerShake(18, 0.45);
+        triggerStinger('DIEGO', 'SCATTER SHOT', '#ff4444', 1.8);
         break;
-      case 'lindan':                             // Legend — smooth high-power arc into deep corner
-        ultLaunchToward(ultDeepCornerX(p), 220);
+      }
+      case 'lindan': {
+        const targetX = p.side === 'left' ? COURT_RIGHT - 20 : COURT_LEFT + 20;
+        ultLaunchToward(targetX, 480, 1.8); // fast downward drop
+        shuttle.kind = 'clear';
+        p.legendTimer = 12.0; // Ground Buff Legend
+        // Understated VFX: no shake, no screen flash, just standard stinger
+        triggerStinger('LIN DAN', 'AUTHORITATIVE CLEAR', '#ffd54a', 1.8);
+        break;
+      }
+      case 'jordan': {
+        holdShuttle(0.35);
+        const targetX = ultDeepCornerX(p);
+        ultLaunchToward(targetX, 220);
+        shuttle.kind = 'smash';
         shuttle.hitByMaxPower = true;
+        shuttle.noDrag = true;
+        shuttle.jordanSkip = true;
+        p.deadWeightSwings = 3;
+        p.deadWeightStack = 0;
+        p.deadWeightTimer = 15.0; // Ground Buff Dead Weight
+        triggerShake(18, 0.4);
+        triggerStinger('JORDAN', 'FULL STOP', '#5b9bff', 1.8);
         break;
+      }
+      case 'kenji': {
+        p.x += dir * 40; // visual sprint
+        const targetX = ultDeepCornerX(p);
+        ultLaunchToward(targetX, 320);
+        shuttle.kind = 'clear';
+        p.secondGearTimer = 12.0; // Ground Buff Second Gear
+        triggerShake(12, 0.35);
+        triggerStinger('KENJI', 'SPRINT RETURN', '#34d399', 1.8);
+        break;
+      }
+      case 'priya': {
+        p.x -= dir * 15; // physical step back
+        shuttle.kind = 'smash';
+        shuttle.vx = dir * 1400;
+        shuttle.vy = 40;
+        shuttle.hitByMaxPower = true;
+        shuttle.priyaIgnitionTrail = true;
+        triggerShake(20, 0.45);
+        triggerStinger('PRIYA', 'IGNITION', '#ff2d6b', 1.8);
+        break;
+      }
+      case 'liam': {
+        const incomingWasSmash = shuttle.kind === 'smash';
+        if (incomingWasSmash) {
+          shuttle.kind = 'smash';
+          shuttle.vx = dir * 900;
+          shuttle.vy = 50;
+        } else if (shuttle.kind === 'dink') {
+          shuttle.kind = 'clear';
+          ultLaunchToward(p.side === 'left' ? COURT_RIGHT - 40 : COURT_LEFT + 40, 450);
+        } else {
+          shuttle.kind = 'dink';
+          shuttle.vx = dir * 150;
+          shuttle.vy = 200;
+        }
+        p.inTheZoneTimer = 15.0; // Ground Buff In The Zone
+        p.inTheZoneHits = 0;
+        triggerShake(12, 0.35);
+        triggerStinger('LIAM', 'THE ANSWER', '#5c6770', 1.8);
+        break;
+      }
       case 'ninjja': {                           // Absolute Zone — lightning fast, capped boost, desaturate hold
         const targetX = ultAwayFromOpponentX(p);
         ultLaunchToward(targetX, 160);
@@ -4075,10 +4214,30 @@
         }
         break;
       }
-      case 'jordan': case 'cristiano':           // heavy finisher — smooth high-power arc into opponent's lair
-        ultLaunchToward(ultAwayFromOpponentX(p), 220);
+      case 'cristiano': {                      // Grounded Knuckleball Free Kick
+        const targetX = ultRandomX(p);
+        ultLaunchToward(targetX, 260);
+        shuttle.isKnuckleball = true;
+        shuttle.knuckleballDir = dir;
         shuttle.hitByMaxPower = true;
+        playSound('subbass');
+        triggerShake(18, 0.45);
+        triggerStinger('CRISTIANO', 'KNUCKLEBALL FREE KICK', '#ff5a2a', 1.8);
+        for(let k = 0; k < 18; k++){
+          particles.push({
+            x: shuttle.x,
+            y: shuttle.y,
+            vx: (Math.random() - 0.5) * 320,
+            vy: (Math.random() - 0.5) * 320,
+            color: Math.random() < 0.5 ? '#ff5a2a' : '#ffd700',
+            size: Math.random() * 5 + 2,
+            alpha: 1.0,
+            decay: 3.0,
+            gravity: 0
+          });
+        }
         break;
+      }
       default:
         ultLaunchToward(ultAwayFromOpponentX(p), 220);
         break;
@@ -4090,24 +4249,43 @@
     triggerShake(12, 0.35);
     
     const oppSide = p.side === 'left' ? 'right' : 'left';
-    const minX = oppSide === 'right' ? NET_X + 60 : COURT_LEFT + 60;
-    const maxX = oppSide === 'right' ? COURT_RIGHT - 60 : NET_X - 60;
+    const oppMinX = oppSide === 'right' ? NET_X + 60 : COURT_LEFT + 60;
+    const oppMaxX = oppSide === 'right' ? COURT_RIGHT - 60 : NET_X - 60;
     const count = 5;
-    const step = (maxX - minX) / (count - 1);
     const realIndex = Math.floor(Math.random() * count);
     const fireworkColors = ['#f43f5e', '#a855f7', '#3b82f6', '#22c55e', '#f59e0b', '#ec4899', '#06b6d4'];
     
+    // Spread target landing locations inside opponent's court and shuffle
+    const targetXs = [];
+    const step = (oppMaxX - oppMinX) / (count - 1);
+    for(let i = 0; i < count; i++){
+      targetXs.push(oppMinX + i * step);
+    }
+    for(let i = targetXs.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      const temp = targetXs[i];
+      targetXs[i] = targetXs[j];
+      targetXs[j] = temp;
+    }
+
     shuttle.isShermanRain = true;
     shuttle.rainShuttles = [];
 
     for(let i = 0; i < count; i++){
       const isReal = (i === realIndex);
-      const startX = minX + i * step + (Math.random() * 16 - 8);
-      const startY = -80 - Math.random() * 40;
-      // fast, near-simultaneous descent — kept tight so the real one is hard to track
-      const vy = 260 + Math.random() * 20;
-      const vx = (Math.random() - 0.5) * 10;
+      let startX = oppMinX + i * step + (Math.random() * 20 - 10);
+      startX = Math.max(oppMinX + 10, Math.min(oppMaxX - 10, startX));
+      const startY = -90 - Math.random() * 50;
+      const targetX = targetXs[i];
+
+      const dy = GROUND_Y - startY;
+      const vy = 240 + Math.random() * 30;
+      const estTime = dy / (vy + 20);
+      const dx = targetX - startX;
+      // Calculate initial vx to reach targetX with drag, giving distinct varied angles
+      const vx = dx / (0.7 * estTime);
       const color = isReal ? '#ffd700' : fireworkColors[i % fireworkColors.length];
+      const initialAngle = Math.atan2(vy, vx) - Math.PI / 2;
 
       shuttle.rainShuttles.push({
         id: i,
@@ -4118,7 +4296,9 @@
         isReal: isReal,
         color: color,
         hit: false,
-        angle: Math.PI / 2
+        angle: initialAngle,
+        minX: oppMinX,
+        maxX: oppMaxX
       });
     }
 
@@ -4232,7 +4412,8 @@
     LEGEND:            { dur: 20.0, stats: { speed: 5, power: 5, control: 5 },  label: 'LEGEND' },
     FURSONA_UNLEASHED: { dur: 20.0, stats: { speed: 5, power: 5, control: 5 },  label: 'FURSONA' },
     AMEN:              { dur: 20.0, stats: { control: 5, power: 1 },            label: 'AMEN' },
-    SIUUUU:            { dur: 20.0, stats: { speed: 5, power: 5 },             label: 'SIUUUU' }
+    SIUUUU:            { dur: 20.0, stats: { speed: 5, power: 5 },             label: 'SIUUUU' },
+    CLEOPATRA:         { dur: 20.0, stats: { power: 5, control: 5 },           label: 'CLEOPATRA' }
   };
   function activateTransform(p, type, now){
     const cfg = TRANSFORM_CONFIG[type] || { dur: 20.0, stats: null, label: (type || 'AURA').replace(/_/g, ' ') };
@@ -4243,6 +4424,9 @@
       ? Object.assign({}, base, { stats: Object.assign({}, base.stats, cfg.stats) })
       : base;
     p.transform = { type: type, expiry: now + cfg.dur, dur: cfg.dur, label: cfg.label };
+    if (type === 'CLEOPATRA') {
+      p.character.isCleopatra = true;
+    }
   }
   function tickTransform(p, now){
     if(p.transform && now >= p.transform.expiry){
@@ -4306,14 +4490,42 @@
   function passiveSpeedMult(p){
     let m = 1;
     const id = passiveIdFor(p);
-    if(id === 'ADRENALINE' && passiveIsBehind(p)) m *= 1.12;          // Priya: +1-speed feel while behind
-    if(id === 'FLAIR') m *= 1 + Math.min(3, p.flairStacks||0)*0.03;   // Rodrigo: varied shots stack a small buff
+    
+    // Kenji: "On My Way" speed passive: movement speed passively increases the further he is from the shuttle's predicted landing spot
+    if (p.character && p.character.id === 'kenji') {
+      const predX = predictShuttleLandingX();
+      const dist = Math.abs(p.x - predX);
+      m *= 1 + Math.min(0.5, dist / 400);
+    }
+    
+    // Kenji: "Second Gear" speed buff
+    if (p.secondGearTimer && p.secondGearTimer > 0) m *= 1.25;
+    // Sofia: "Drift" speed buff
+    if (p.driftTimer && p.driftTimer > 0) m *= 1.5;
+    // Diego: "¡Todo Gas!" speed buff
+    if (p.todoGasTimer && p.todoGasTimer > 0) m *= 1 + (p.todoGasStacks || 0) * 0.15;
+    // Priya: "Burnout" speed buff
+    if (p.burnoutTimer && p.burnoutTimer > 0) m *= 1.45;
+    // Sofia: "Light Feet" speed buff
+    if (p.lightFeetTimer && p.lightFeetTimer > 0) m *= 1.15;
+
+    if(id === 'FLAIR') {
+      if (p.aireLibreTimer && p.aireLibreTimer > 0) {
+        m *= 1.09; // Keep flair stacks high or stable during Rodrigo's buff
+      } else {
+        m *= 1 + Math.min(3, p.flairStacks||0)*0.03;
+      }
+    }
     return m;
   }
   // Extra reach from a passive (Mateo Root: planted-stance hits reach further; Ninjja Untouchable: +25% reach).
   function passiveReachBonus(p){
     if(passiveIdFor(p) === 'ROOT' && Math.abs(p.vx||0) < 1 && p.dashTimer <= 0) return 22;
     if(passiveIdFor(p) === 'UNTOUCHABLE' || (p.character && p.character.id === 'ninjja')) return HIT_REACH_X * 0.25;
+    // Sofia: "Light Feet" reach bonus
+    if (p.character && p.character.id === 'sofia' && p.lightFeetTimer && p.lightFeetTimer > 0) return 15;
+    // Lin Dan: "Court Sense" reach bonus
+    if (p.character && p.character.id === 'lindan' && p.courtSenseShots && p.courtSenseShots > 0) return 30;
     return 0;
   }
   // Passive Momentum trickle while behind (Cristiano Spotlight). Bypasses the gain
@@ -4327,10 +4539,62 @@
   // Post-contact passive bookkeeping — called from releaseHit after a clean hit.
   function updatePassivesOnHit(p, kind, now){
     const id = passiveIdFor(p);
+    
+    // Maya: "Muscle Memory" flow state tracking
+    if (p.character && p.character.id === 'maya') {
+      if (kind === 'dink') {
+        p.mayaDinkCount = (p.mayaDinkCount || 0) + 1;
+        if (p.mayaDinkCount >= 3) {
+          p.mayaFlowState = true;
+          spawnHitParticles(p.x + PLAYER_W/2, p.y + PLAYER_H/2, 10, false, '#ffd700');
+        }
+      } else if (kind === 'smash') {
+        p.mayaDinkCount = 0;
+        p.mayaFlowState = false;
+      }
+    }
+    
+    // Jordan: "Dead Weight" power stack tracker
+    if (p.deadWeightSwings && p.deadWeightSwings > 0) {
+      p.deadWeightStack = (p.deadWeightStack || 0) + 1;
+      p.deadWeightSwings--;
+      if (p.deadWeightSwings <= 0) p.deadWeightSwings = 0;
+    }
+    
+    // Sofia: "Light Feet" trigger
+    if (p.character && p.character.id === 'sofia' && kind === 'dink') {
+      p.lightFeetTimer = 3.0;
+    }
+    
+    // Diego: "¡Todo Gas!" stack tracker
+    if (p.todoGasTimer && p.todoGasTimer > 0) {
+      p.todoGasStacks = Math.min(3, (p.todoGasStacks || 0) + 1);
+    }
+    
+    // Liam: "In The Zone" hits tracker
+    if (p.inTheZoneTimer && p.inTheZoneTimer > 0) {
+      p.inTheZoneHits = (p.inTheZoneHits || 0) + 1;
+      if (p.inTheZoneHits % 3 === 0) {
+        p.momentum = Math.min(GameConstants.MOMENTUM.MAX, (p.momentum || 0) + GameConstants.MOMENTUM.MAX * 0.35);
+        p.momentumTier = Simulation.momentumTierOf(p.momentum);
+        spawnHitParticles(p.x + PLAYER_W/2, p.y + PLAYER_H/2, 8, false, '#5c6770');
+      }
+    }
+    
+    // Lin Dan: "Court Sense" check
+    if (p.courtSenseShots && p.courtSenseShots > 0) {
+      p.courtSenseShots--;
+    }
+
     // Rodrigo Flair: consecutive DIFFERENT shot types stack; a repeat resets.
     if(id === 'FLAIR'){
-      if(p.lastShotKind && p.lastShotKind !== kind) p.flairStacks = Math.min(3,(p.flairStacks||0)+1);
-      else p.flairStacks = 0;
+      if (p.aireLibreTimer && p.aireLibreTimer > 0) {
+        p.flairStacks = Math.min(3, (p.flairStacks||0)+1);
+      } else if(p.lastShotKind && p.lastShotKind !== kind) {
+        p.flairStacks = Math.min(3,(p.flairStacks||0)+1);
+      } else {
+        p.flairStacks = 0;
+      }
     }
     // Jordan Follow-Through: a smash opens/refreshes a 2s +power window that chains.
     if(id === 'FOLLOW_THROUGH' && kind === 'smash') p.followThroughUntil = now + 2.0;
@@ -4379,6 +4643,9 @@
     if(p.staminaDebuffTimer > 0){
       p.staminaDebuffTimer -= dt;
       if(p.staminaDebuffTimer <= 0) p.staminaDebuffTimer = 0;
+    }
+    if (p.burnoutTimer && p.burnoutTimer > 0) {
+      return; // Priya Burnout completely halts stamina regeneration!
     }
     const maxS = maxStaminaFor(p);
     if(p.stamina == null) p.stamina = maxS;
@@ -4699,6 +4966,10 @@
     if(e.code === keyBindings.p1Hit && isHumanControlled(left)) startCharge(left, now);
     if(e.code === keyBindings.p2Hit && isHumanControlled(right)) startCharge(right, now);
 
+    // ultimate skill charge (Shift button)
+    if((e.code === keyBindings.p1Ult || e.code === 'ShiftLeft') && isHumanControlled(left)) startUltCharge(left, now);
+    if((e.code === keyBindings.p2Ult || e.code === 'ShiftRight') && isHumanControlled(right)) startUltCharge(right, now);
+
     // advanced controls — manual attack angle (no-op unless Advanced Controls is on)
     if(e.code === keyBindings.p1AngleUp) adjustAttackAngle(left, ATTACK_ANGLE_STEP);
     if(e.code === keyBindings.p1AngleDown) adjustAttackAngle(left, -ATTACK_ANGLE_STEP);
@@ -4716,6 +4987,8 @@
     }
     if(e.code === keyBindings.p1Hit && isHumanControlled(left)) releaseHit(left, now);
     if(e.code === keyBindings.p2Hit && isHumanControlled(right)) releaseHit(right, now);
+    if((e.code === keyBindings.p1Ult || e.code === 'ShiftLeft') && isHumanControlled(left)) releaseUltCharge(left, now);
+    if((e.code === keyBindings.p2Ult || e.code === 'ShiftRight') && isHumanControlled(right)) releaseUltCharge(right, now);
   });
 
   // ---------- mobile touch controls ----------
@@ -4932,10 +5205,20 @@
   function tryJump(p, now){
     if(state !== 'rally' && state !== 'serve') return;
     if(p.onGround){
-      p.vy = JUMP_VELOCITY * heightJumpMult(p.character); // taller = higher apex (Part 4)
+      let mult = heightJumpMult(p.character);
+      if (p.character && p.character.id === 'lindan' && p.legendTimer && p.legendTimer > 0) {
+        mult *= 1.25; // legend high jump!
+      }
+      if (p.character && p.character.id === 'jordan' && p.craterTimer && p.craterTimer > 0) {
+        mult *= 1.15; // Jordan jumps higher during Crater
+      }
+      p.vy = JUMP_VELOCITY * mult;
       p.onGround = false;
       p.jumpsUsed = 1;
       spendStamina(p, GameConstants.STAMINA.COST.jump); // Part 5.1 — jump costs but is not locked
+    } else if (p.character && p.character.id === 'kenji' && p.freefallTimer && p.freefallTimer > 0) {
+      p.vy = JUMP_VELOCITY * heightJumpMult(p.character) * 0.95; // repeated freefall jumps
+      spendStamina(p, GameConstants.STAMINA.COST.jump * 0.7);
     } else if (p.transform && p.transform.type === 'ANCHOR' && (!p.jumpsUsed || p.jumpsUsed < 2)) {
       p.vy = JUMP_VELOCITY * heightJumpMult(p.character);
       p.jumpsUsed = (p.jumpsUsed || 1) + 1;
@@ -5254,6 +5537,15 @@
   // ever acts through the same channels a human has: movement keys, tryJump, dash fields,
   // startCharge/releaseHit — never by writing positions or velocities directly.
   function runAI(p, opp, ai, dt, now){
+    // If opponent has active Cleopatra flashing, disrupt AI positioning/reactions!
+    if (opp.transform && opp.transform.type === 'CLEOPATRA' && opp.cleopatraIsFlashing && Math.random() < 0.65) {
+      ai.stateLabel = 'blinded';
+      // keep holding whatever we had, or zero them out to stall
+      const km = AI_KEYMAP[p.side];
+      keys[km.moveLeft] = false;
+      keys[km.moveRight] = false;
+      return;
+    }
     const diff = AI_PROFILES[aiDifficulty];
     const persona = aiPersonaFor(p.character);
     const km = AI_KEYMAP[p.side];
@@ -5645,6 +5937,19 @@
     p.chargeStart = now;
   }
 
+  function startUltCharge(p, now){
+    if(state !== 'rally' && state !== 'serve') return;
+    if(!Simulation.canSpendMomentum(p)) return; // Shift only activates setup when ultimate bar is full
+    if(p.ultCharging) return;
+    p.ultCharging = true;
+    p.ultChargeStart = now;
+  }
+
+  function releaseUltCharge(p, now){
+    if(!p.ultCharging) return;
+    p.ultCharging = false;
+  }
+
   // returns true when this release actually made contact with the shuttle (a real hit or
   // a one-touch-rule fault both count as contact) — false for a charge that was released
   // into thin air, e.g. into wide of/too far from the shuttle. This lets the caller (the AI)
@@ -5668,17 +5973,18 @@
     if(now - p.lastHitTime < HIT_COOLDOWN * (p.nextCooldownMult || 1)) return false;
 
     // ---- Ultimate spend detection (MOMENTUM_SPEC Part 1.3-1.5, Phase 3) ----
-    // Only at PEAK. Humans express intent through input timing (overhold =
-    // Rage Art, dash-cancel = Rage Drive); the AI sets p.aiUltIntent directly
-    // since it can't reproduce those exact input windows.
+    // Only at PEAK. Humans express intent through holding Shift to setup ultimate
+    // before striking with Hit button (Space / Enter).
     let spend = null;
     if(Simulation.canSpendMomentum(p)){
       if(isHumanControlled(p)){
-        const rawElapsed = now - p.chargeStart; // pre-clamp elapsed charge (Part 1.5)
-        if(rawElapsed >= chargeTimeFor(p.character) + GameConstants.MOMENTUM.ART_OVERHOLD_TIME) spend = 'art';
-        else if((now - p.lastDashTime) <= DASH_WINDOW) spend = 'drive';
+        if((now - p.lastDashTime) <= DASH_WINDOW) {
+          spend = 'drive';
+        } else if(p.ultCharging || p.ultPrimed || (p.ultChargeProgress && p.ultChargeProgress >= 0.7)) {
+          spend = 'art';
+        }
       } else {
-        spend = p.aiUltIntent || null;
+        spend = p.aiUltIntent || 'art';
       }
       // Stamina cost gate (Part 1.3 / Part 5.1): Rage Drive needs 20, Rage Art 30.
       // Without the stamina the ultimate can't fire — the meter is kept for later.
@@ -5724,6 +6030,7 @@
 
           p.lastHitTime = now;
           p.lastSwingTime = now;
+          shuttle.rainShuttles = shuttle.rainShuttles.filter(s => !s.hit && s !== hitItem);
           return true; // Decoy popped, real shuttle continues falling
         } else {
           // Hit real shuttle!
@@ -6035,9 +6342,144 @@
       let bannerId = mech && mech.art && mech.art.id;
       let xformType = (spend === 'art' && artType === 'transformation') ? (mech && mech.art && mech.art.id) : null;
       if(!p.onGround){
-        // Airborne ultimate: execute mid-air 1.5x 5-star smash trajectory
         const id = effectiveUltId(p);
-        if(id === 'rodrigo') holdShuttle(spend === 'art' ? 0.20 : 0.08);
+        const opp = p.side === 'left' ? right : left;
+        if(id === 'cristiano'){
+          p.bicycleKickTimer = 0.65;
+          timeScale = 0.15; // slow down time first for dramatic backflip setup
+          holdShuttle(0.32); // freeze shuttle mid-air in front of feet until contact
+          shuttle.resumeTimeScale = true;
+          shuttle.cristianoUltScoredBy = p.side;
+          shuttle.cristianoUltKind = 'bicycle';
+          ultLaunchToward(ultAwayFromOpponentX(p), 270);
+          shuttle.kind = 'smash';
+          shuttle.hitByMaxPower = true;
+          shuttle.ultFastDrop = 2.2;
+          playSound('subbass');
+          triggerShake(22, 0.5);
+          triggerStinger('CRISTIANO', 'SIUUUU! BICYCLE KICK', '#ff5a2a', 1.8);
+        }
+        else if(id === 'maya'){
+          // Air Ult: "Sight Line" (reticle fake)
+          holdShuttle(0.40);
+          const startX = p.side === 'left' ? NET_X + 130 : NET_X - 130;
+          const targetX = p.side === 'left' ? COURT_RIGHT - 60 : COURT_LEFT + 60;
+          shuttle.sightLineReticle = { x: startX, targetX: targetX, timer: 0.40, maxTime: 0.40 };
+          
+          ultLaunchToward(startX, 150); // fast scorching flat float
+          shuttle.kind = 'float';
+          shuttle.hitByMaxPower = true;
+          triggerShake(12, 0.35);
+          triggerStinger('MAYA', 'SIGHT LINE', '#c084fc', 1.8);
+        }
+        else if(id === 'jordan'){
+          // Air Ult: "Hammer Drop"
+          holdShuttle(0.20);
+          shuttle.kind = 'smash';
+          shuttle.vx = dir * 150; // short horizontal travel
+          shuttle.vy = 850; // extreme downward gravity/speed
+          shuttle.hitByMaxPower = true;
+          p.craterTimer = 8.0; // Air Buff Crater
+          triggerShake(18, 0.4);
+          triggerStinger('JORDAN', 'HAMMER DROP', '#5b9bff', 1.8);
+        }
+        else if(id === 'kenji'){
+          // Air Ult: "Hang Time"
+          holdShuttle(0.15);
+          ultLaunchToward(p.side === 'left' ? COURT_RIGHT - 30 : COURT_LEFT + 30, 1800); // extreme high clear
+          shuttle.kind = 'clear';
+          p.freefallTimer = 10.0; // Air Buff Freefall
+          triggerShake(10, 0.3);
+          triggerStinger('KENJI', 'HANG TIME', '#34d399', 1.8);
+        }
+        else if(id === 'amara'){
+          // Air Ult: "Solar Judgment"
+          holdShuttle(0.40); // freeze shuttle mid-air for dramatic windup
+          timeScale = 0.15; // slow down time first for dramatic windup
+          p.solarJudgmentSunTimer = 1.8; // trigger blinding sun animation
+          
+          // Trajectory randomized towards the opponent's side
+          const targetX = p.side === 'left'
+            ? NET_X + 100 + Math.random() * (COURT_RIGHT - NET_X - 140)
+            : COURT_LEFT + 40 + Math.random() * (NET_X - COURT_LEFT - 140);
+          
+          ultLaunchToward(targetX, 100, 1.8); // fast downward arc smash trajectory
+          shuttle.kind = 'smash';
+          shuttle.hitByMaxPower = true;
+          
+          // Activate Cleopatra transform (duration 20s, stats maxed to 5, and turns on Cleopatra dress/armor!)
+          activateTransform(p, 'CLEOPATRA', performance.now() / 1000);
+          
+          triggerShake(16, 0.45);
+          triggerStinger('AMARA', 'SOLAR JUDGMENT', '#fbbf24', 1.8);
+        }
+        else if(id === 'sofia'){
+          // Air Ult: "Ghost Step"
+          holdShuttle(0.15);
+          ultLaunchToward(p.side === 'left' ? COURT_RIGHT - 40 : COURT_LEFT + 40, 100);
+          shuttle.kind = 'float';
+          shuttle.hitByMaxPower = true;
+          opp.ai.nextDecisionAt = (performance.now() / 1000) + 0.15; // Deception reaction delay
+          p.flutterTimer = 8.0; // Air Buff Flutter
+          triggerShake(12, 0.3);
+          triggerStinger('SOFIA', 'GHOST STEP', '#f472b6', 1.8);
+        }
+        else if(id === 'diego'){
+          // Air Ult: "El Mazo"
+          holdShuttle(0.15);
+          shuttle.kind = 'smash';
+          shuttle.vx = dir * 1200;
+          shuttle.vy = 80;
+          shuttle.hitByMaxPower = true;
+          triggerShake(24, 0.5);
+          triggerStinger('DIEGO', 'EL MAZO', '#ff4444', 1.8);
+        }
+        else if(id === 'priya'){
+          // Air Ult: "Afterburner"
+          holdShuttle(0.10);
+          shuttle.kind = 'smash';
+          shuttle.vx = dir * 750;
+          shuttle.vy = 650;
+          shuttle.hitByMaxPower = true;
+          p.burnoutTimer = 8.0; // Air Buff Burnout
+          triggerShake(20, 0.45);
+          triggerStinger('PRIYA', 'AFTERBURNER', '#ff2d6b', 1.8);
+        }
+        else if(id === 'liam'){
+          // Air Ult: "Aerial Answer"
+          holdShuttle(0.35);
+          p.vy = 0; // hang longer in air
+          ultLaunchToward(p.side === 'left' ? COURT_RIGHT - 30 : COURT_LEFT + 30, 800);
+          shuttle.kind = 'clear';
+          p.recoveryStanceTimer = 10.0; // Air Buff Recovery Stance
+          triggerShake(12, 0.3);
+          triggerStinger('LIAM', 'AERIAL ANSWER', '#5c6770', 1.8);
+        }
+        else if(id === 'rodrigo'){
+          // Air Ult: "Volea Fantasma"
+          holdShuttle(0.30);
+          shuttle.kind = 'dink';
+          shuttle.vx = dir * 140;
+          shuttle.vy = 220;
+          p.aireLibreTimer = 8.0; // Air Buff Aire Libre
+          triggerShake(10, 0.25);
+          triggerStinger('RODRIGO', 'VOLEA FANTASMA', '#facc15', 1.8);
+        }
+        else if(id === 'lindan'){
+          // Air Ult: "Dian Sha"
+          holdShuttle(0.20);
+          p.dianShaTimer = 0.45;
+          shuttle.kind = 'smash';
+          shuttle.vx = dir * 750;
+          shuttle.vy = 650;
+          shuttle.hitByMaxPower = true;
+          p.onAnotherLevelTimer = 12.0; // Air Buff On Another Level
+          triggerShake(20, 0.45);
+          triggerStinger('LIN DAN', 'DIAN SHA', '#ffd54a', 1.8);
+        }
+        else if(id === 'rodrigo_old') {
+          holdShuttle(spend === 'art' ? 0.20 : 0.08);
+        }
       } else {
         if(spend === 'art') ultArtEffect(p); else ultDriveEffect(p);
       }
@@ -6146,6 +6588,20 @@
     shuttle.active = false;
     shuttle.kind = 'float';
     shuttle.held = false; shuttle.holdTimer = 0; shuttle.ultMarker = null; // clear ultimate deception state
+    shuttle.isKnuckleball = false;
+    shuttle.cristianoUltScoredBy = null;
+    shuttle.cristianoUltKind = null;
+    shuttle.sightLineReticle = null;
+    shuttle.puppeteerRealX = undefined;
+    shuttle.puppeteerPauseTimer = 0;
+    shuttle.puppeteerHesitated = false;
+    shuttle.priyaIgnitionTrail = false;
+    shuttle.diegoScatter = false;
+    shuttle.hideMarkerBeforeCrossNet = false;
+    shuttle.noDrag = false;
+    shuttle.jordanSkip = false;
+    shuttle.isUltimateShot = false;
+    shuttle.isShermanRain = false; shuttle.rainShuttles = [];
     shuttle.ultFx = null; // clear ult signature trail flavour
     shuttle.ultFastDrop = null;
     shuttle.ultSmashArc = false;
@@ -6157,6 +6613,9 @@
     trail.length = 0;
     left.charging = false;
     right.charging = false;
+    left.ultCharging = false; right.ultCharging = false;
+    left.ultPrimed = false; right.ultPrimed = false;
+    left.ultChargeProgress = 0; right.ultChargeProgress = 0;
     left.swingTimer = 0;
     right.swingTimer = 0;
     refillStamina(left); refillStamina(right); // full stamina refill between points (Part 5.1)
@@ -6176,6 +6635,8 @@
   // reason is one of the RALLY_RESULT_LABELS keys (see above); optional and defaulting to
   // UNKNOWN_FAULT purely as a safety net — every current call site passes an explicit one.
   function awardPoint(sideThatScores, reason){
+    shuttle.isShermanRain = false;
+    shuttle.rainShuttles = [];
     // Track local stats
     const faultySide = sideThatScores === 'left' ? 'right' : 'left';
     if (reason === 'DOUBLE_HIT') {
@@ -6239,6 +6700,31 @@
     pointPauseTimer = POINT_PAUSE_DURATION;
     pointCelebrateSide = sideThatScores; // winner celebrates, loser slumps (drawPlayer faces)
     state = 'pointPause';
+
+    // Cristiano Ultimate Point Scored — SIUUUU! Celebration
+    const scorerP = sideThatScores === 'left' ? left : right;
+    if(shuttle.cristianoUltScoredBy === sideThatScores && scorerP.character && scorerP.character.id === 'cristiano'){
+      scorerP.siuuuTimer = 2.4;
+      triggerStinger('CRISTIANO', 'SIUUUUUUUUUU! ⚽🔥', '#ff5a2a', 2.2);
+      playSound('subbass');
+      triggerShake(22, 0.55);
+      const cx = scorerP.x + PLAYER_W/2;
+      for(let k = 0; k < 32; k++){
+        const a = Math.random() * Math.PI * 2;
+        const spd = Math.random() * 260 + 70;
+        particles.push({
+          x: cx,
+          y: GROUND_Y - 20,
+          vx: Math.cos(a) * spd,
+          vy: Math.sin(a) * spd - 50,
+          color: Math.random() < 0.4 ? '#ff5a2a' : (Math.random() < 0.4 ? '#ffd700' : '#ffffff'),
+          size: Math.random() * 6 + 2,
+          alpha: 1.0,
+          decay: 2.5,
+          gravity: 100
+        });
+      }
+    }
 
     // Play cheer/point chime
     playSound('point');
@@ -8557,6 +9043,69 @@
       p.vy = 0;
       p.onGround = true;
     }
+
+    // Constant ultimate setup charging duration across all characters (~0.6896s)
+    const ULT_CHARGE_TIME = 0.8 / statMult(4, CHARGE_SPEED_LINEAR, CHARGE_SPEED_KICKER);
+    if(p.ultCharging && Simulation.canSpendMomentum(p)){
+      const nowSec = performance.now()/1000;
+      const elapsed = nowSec - p.ultChargeStart;
+      const progress = Math.min(1, elapsed / ULT_CHARGE_TIME);
+      p.ultChargeProgress = progress;
+      if (progress >= 1.0) {
+        p.ultPrimed = true;
+      }
+    } else if (!p.ultPrimed) {
+      p.ultChargeProgress = 0;
+    }
+
+    if(p.bicycleKickTimer > 0){
+      p.bicycleKickTimer = Math.max(0, p.bicycleKickTimer - dt);
+    }
+    if(p.siuuuTimer > 0){
+      p.siuuuTimer = Math.max(0, p.siuuuTimer - dt);
+    }
+    if(p.dianShaTimer > 0) p.dianShaTimer = Math.max(0, p.dianShaTimer - dt);
+    if(p.todoGasTimer > 0) p.todoGasTimer = Math.max(0, p.todoGasTimer - dt);
+    if(p.driftTimer > 0) p.driftTimer = Math.max(0, p.driftTimer - dt);
+    if(p.flutterTimer > 0) p.flutterTimer = Math.max(0, p.flutterTimer - dt);
+    if(p.engañoTimer > 0) p.engañoTimer = Math.max(0, p.engañoTimer - dt);
+    if(p.aireLibreTimer > 0) p.aireLibreTimer = Math.max(0, p.aireLibreTimer - dt);
+    if(p.legendTimer > 0) p.legendTimer = Math.max(0, p.legendTimer - dt);
+    if(p.onAnotherLevelTimer > 0) p.onAnotherLevelTimer = Math.max(0, p.onAnotherLevelTimer - dt);
+    if(p.secondGearTimer > 0) p.secondGearTimer = Math.max(0, p.secondGearTimer - dt);
+    if(p.freefallTimer > 0) p.freefallTimer = Math.max(0, p.freefallTimer - dt);
+    if(p.craterTimer > 0) p.craterTimer = Math.max(0, p.craterTimer - dt);
+    if(p.burnoutTimer > 0) p.burnoutTimer = Math.max(0, p.burnoutTimer - dt);
+    if(p.lightFeetTimer > 0) p.lightFeetTimer = Math.max(0, p.lightFeetTimer - dt);
+    if(p.inTheZoneTimer > 0) p.inTheZoneTimer = Math.max(0, p.inTheZoneTimer - dt);
+    if(p.recoveryStanceTimer > 0) p.recoveryStanceTimer = Math.max(0, p.recoveryStanceTimer - dt);
+
+    if(p.solarJudgmentSunTimer > 0) p.solarJudgmentSunTimer = Math.max(0, p.solarJudgmentSunTimer - dt);
+
+    if (p.transform && p.transform.type === 'CLEOPATRA') {
+      if (!p.cleopatraFlashTimer) {
+        p.cleopatraFlashTimer = 0;
+        p.cleopatraNextFlashAt = Math.random() * 2.5 + 1.5; // flash every 1.5 - 4 seconds
+        p.cleopatraFlashDuration = 0.35 + Math.random() * 0.25; // lasts 0.35 - 0.6 seconds
+      }
+      p.cleopatraFlashTimer += dt;
+      if (p.cleopatraFlashTimer >= p.cleopatraNextFlashAt) {
+        p.cleopatraIsFlashing = true;
+        p.cleopatraFlashActiveTimer = p.cleopatraFlashDuration;
+        p.cleopatraFlashTimer = 0;
+        p.cleopatraNextFlashAt = Math.random() * 2.5 + 1.5;
+        p.cleopatraFlashDuration = 0.35 + Math.random() * 0.25;
+      }
+      if (p.cleopatraIsFlashing) {
+        p.cleopatraFlashActiveTimer -= dt;
+        if (p.cleopatraFlashActiveTimer <= 0) {
+          p.cleopatraIsFlashing = false;
+        }
+      }
+    } else {
+      p.cleopatraIsFlashing = false;
+      p.cleopatraFlashTimer = null;
+    }
   }
 
   // Simulates one candidate dink flight from the ACTUAL hit point (startX px behind the
@@ -8693,6 +9242,49 @@
   function updateShuttle(dt){
     if(!shuttle.active) return;
 
+    // Maya Sight Line timing hold
+    if (shuttle.sightLineReticle) {
+      shuttle.sightLineReticle.timer -= dt;
+      if (shuttle.sightLineReticle.timer <= 0) {
+        const tX = shuttle.sightLineReticle.targetX;
+        shuttle.sightLineReticle = null;
+        ultLaunchToward(tX, 90, 1.1); // super fast flat drive
+        shuttle.hitByMaxPower = true;
+        playSound('smash');
+        triggerShake(14, 0.38);
+      }
+      return; // Freeze update while sightLine is active
+    }
+
+    // Amara Puppeteer timing hold and re-launch
+    if (shuttle.puppeteerRealX !== undefined && shuttle.puppeteerPauseTimer > 0) {
+      shuttle.puppeteerPauseTimer -= dt;
+      shuttle.vx = 0;
+      shuttle.vy = 0;
+      if (shuttle.puppeteerPauseTimer <= 0) {
+        shuttle.puppeteerPauseTimer = 0;
+        shuttle.puppeteerHesitated = true;
+        const targetX = shuttle.puppeteerRealX;
+        ultLaunchToward(targetX, 420, 2.0); // drop into forecourt
+        playSound('smash');
+        triggerShake(12, 0.35);
+        for (let k = 0; k < 12; k++) {
+          particles.push({
+            x: shuttle.x,
+            y: shuttle.y,
+            vx: (Math.random() - 0.5) * 200,
+            vy: (Math.random() - 0.5) * 200,
+            color: '#22d3ee',
+            size: Math.random() * 4 + 1.5,
+            alpha: 1.0,
+            decay: 2.0,
+            gravity: 20
+          });
+        }
+      }
+      return; // Freeze flight update while paused
+    }
+
     // La Pausa hold (Part 6): the struck shuttle hangs frozen in mid-air, then
     // releases with its stored velocity — a pure timing deception, no gravity or
     // collision while held.
@@ -8701,8 +9293,57 @@
       if(shuttle.holdTimer <= 0){
         shuttle.vx = shuttle.pendingVx; shuttle.vy = shuttle.pendingVy;
         shuttle.held = false;
+        if(shuttle.resumeTimeScale) {
+          timeScale = 1.0; // time resumes to regular speed once feet hit shuttlecock
+          shuttle.resumeTimeScale = false;
+          playSound('smash');
+          triggerShake(18, 0.4);
+          for(let k = 0; k < 20; k++){
+            particles.push({
+              x: shuttle.x,
+              y: shuttle.y,
+              vx: (Math.random() - 0.5) * 380,
+              vy: (Math.random() - 0.5) * 380,
+              color: Math.random() < 0.5 ? '#ff5a2a' : '#ffd700',
+              size: Math.random() * 5 + 2,
+              alpha: 1.0,
+              decay: 3.5,
+              gravity: 0
+            });
+          }
+        }
       }
       return;
+    }
+
+    // Priya Ignition / Afterburner trail particles
+    if (shuttle.priyaIgnitionTrail && Math.random() < 0.8) {
+      particles.push({
+        x: shuttle.x + (Math.random() - 0.5) * 12,
+        y: shuttle.y + (Math.random() - 0.5) * 12,
+        vx: (Math.random() - 0.5) * 80,
+        vy: (Math.random() - 0.5) * 80,
+        color: Math.random() < 0.6 ? '#ff2d6b' : '#facc15',
+        size: Math.random() * 5 + 2,
+        alpha: 1.0,
+        decay: 4.0,
+        gravity: -15
+      });
+    }
+
+    // Diego Scatter particles
+    if (shuttle.diegoScatter && Math.random() < 0.6) {
+      particles.push({
+        x: shuttle.x + (Math.random() - 0.5) * 16,
+        y: shuttle.y + (Math.random() - 0.5) * 16,
+        vx: (Math.random() - 0.5) * 100,
+        vy: (Math.random() - 0.5) * 100,
+        color: '#ff4444',
+        size: Math.random() * 4 + 1.5,
+        alpha: 0.8,
+        decay: 3.0,
+        gravity: 0
+      });
     }
 
     const _prevX = shuttle.x, _prevY = shuttle.y;
@@ -8711,6 +9352,8 @@
 
     if(shuttle.isShermanRain && shuttle.rainShuttles && shuttle.rainShuttles.length > 0){
       let realItem = null;
+      const nextRainShuttles = [];
+
       for(let i = 0; i < shuttle.rainShuttles.length; i++){
         const item = shuttle.rainShuttles[i];
         if(item.hit) continue;
@@ -8721,6 +9364,14 @@
         item.vx -= HORIZONTAL_DRAG * item.vx * dt;
         item.x += item.vx * dt;
         item.y += item.vy * dt;
+
+        // Clamp x strictly inside opponent's court bounds
+        if(item.minX !== undefined && item.maxX !== undefined){
+          if(item.x < item.minX){ item.x = item.minX; item.vx = 0; }
+          if(item.x > item.maxX){ item.x = item.maxX; item.vx = 0; }
+        }
+
+        // Dynamically orient shuttlecock angle according to its velocity vector
         item.angle = Math.atan2(item.vy, item.vx) - Math.PI / 2;
 
         if(Math.random() < 0.25){
@@ -8733,10 +9384,15 @@
           playSound('net');
         }
 
-        if(item.isReal){
-          realItem = item;
+        if(!item.hit){
+          nextRainShuttles.push(item);
+          if(item.isReal){
+            realItem = item;
+          }
         }
       }
+
+      shuttle.rainShuttles = nextRainShuttles;
 
       if(realItem){
         shuttle.x = realItem.x;
@@ -8750,10 +9406,43 @@
     } else {
       shuttle.vy += gravity*dt;
       if(shuttle.vy > terminalVy) shuttle.vy = terminalVy;
-      shuttle.vx -= HORIZONTAL_DRAG * shuttle.vx * dt;
+      if(!shuttle.noDrag){
+        shuttle.vx -= HORIZONTAL_DRAG * shuttle.vx * dt;
+      }
 
       shuttle.x += shuttle.vx*dt;
       shuttle.y += shuttle.vy*dt;
+
+      if(shuttle.isKnuckleball){
+        const nowT = performance.now() * 0.001;
+        // Fast, highly unpredictable multi-frequency up-and-down & lateral wobble physics
+        const wobbleX = (Math.sin(nowT * 38) * 340 + Math.cos(nowT * 54) * 220) * (shuttle.knuckleballDir || 1);
+        const wobbleY = (Math.sin(nowT * 52) * 520 + Math.cos(nowT * 31) * 380); // violent erratic up & down shifts!
+        shuttle.vx += wobbleX * dt;
+        shuttle.vy += wobbleY * dt;
+
+        // Occasional sudden upward lift or sharp plummet (knuckleball dip)
+        const shiftPhase = Math.sin(nowT * 26);
+        if(shiftPhase > 0.82){
+          shuttle.vy -= 900 * dt; // sudden upwards lift
+        } else if(shiftPhase < -0.82){
+          shuttle.vy += 1200 * dt; // sudden downwards drop
+        }
+
+        if(Math.random() < 0.85){
+          particles.push({
+            x: shuttle.x + (Math.random() - 0.5) * 14,
+            y: shuttle.y + (Math.random() - 0.5) * 14,
+            vx: (Math.random() - 0.5) * 140,
+            vy: (Math.random() - 0.5) * 140,
+            color: Math.random() < 0.4 ? '#ff5a2a' : (Math.random() < 0.4 ? '#ffd700' : '#ffffff'),
+            size: Math.random() * 5 + 2,
+            alpha: 1.0,
+            decay: 3.5,
+            gravity: -10
+          });
+        }
+      }
     }
 
     // Max-power smash dive: a 5-star power character's smash flies fast and flat enough that
@@ -8845,10 +9534,59 @@
 
     // ground collision -> point
     if(shuttle.y + SHUTTLE_RADIUS >= GROUND_Y){
+      if (shuttle.jordanSkip) {
+        shuttle.jordanSkip = false;
+        shuttle.vy = -800;
+        shuttle.vx = (lastHitBy === 'left' ? 1 : -1) * 150;
+        shuttle.kind = 'clear';
+        shuttle.noDrag = false;
+        playSound('smash');
+        triggerShake(20, 0.45);
+        for (let k = 0; k < 20; k++) {
+          particles.push({
+            x: shuttle.x,
+            y: GROUND_Y - 5,
+            vx: (Math.random() - 0.5) * 250,
+            vy: -Math.random() * 350 - 50,
+            color: '#5b9bff',
+            size: Math.random() * 5 + 2,
+            alpha: 1.0,
+            decay: 2.5,
+            gravity: 100
+          });
+        }
+        return;
+      }
+
+      if (shuttle.isUltimateShot && lastHitBy && (shuttle.kind === 'smash' || shuttle.noDrag)) {
+        const hitterP = lastHitBy === 'left' ? left : right;
+        if (hitterP.character && hitterP.character.id === 'jordan') {
+          // Trigger Jordan's massive crater!
+          triggerShake(28, 0.7);
+          playSound('subbass');
+          // Add massive crater particle cracks at shuttle.x!
+          for (let k = 0; k < 25; k++) {
+            particles.push({
+              x: shuttle.x + (Math.random() - 0.5) * 80,
+              y: GROUND_Y,
+              vx: (Math.random() - 0.5) * 160,
+              vy: -Math.random() * 250 - 50,
+              color: '#5c6770',
+              size: Math.random() * 6 + 2,
+              alpha: 1.0,
+              decay: 2.0,
+              gravity: 120
+            });
+          }
+        }
+      }
+
       spawnHitParticles(shuttle.x, GROUND_Y, 10, false, '#94a3b8');
       playSound('point');
       shuttle.y = GROUND_Y - SHUTTLE_RADIUS;
       shuttle.active = false;
+      shuttle.isShermanRain = false;
+      shuttle.rainShuttles = [];
       if(shuttle.x < COURT_LEFT || shuttle.x > COURT_RIGHT){
         // out of bounds: fault on whoever hit it last, point to the other side
         const faultSide = lastHitBy;
@@ -9347,6 +10085,18 @@
   function _rgbHex(r,g,b){return '#'+[r,g,b].map(function(v){v=Math.max(0,Math.min(255,v|0));return (v<16?'0':'')+v.toString(16);}).join('');}
   function _shade(hex,f){var c=_hexToRgb(hex);if(f<0){f=-f;return _rgbHex(c[0]*(1-f),c[1]*(1-f),c[2]*(1-f));}return _rgbHex(c[0]+(255-c[0])*f,c[1]+(255-c[1])*f,c[2]+(255-c[2])*f);}
   function pixPalette(ch){
+    if (ch.isCleopatra) {
+      return {
+        _:null, O:'#0b0d14',
+        K:ch.skin, k:_shade(ch.skin,-0.28),
+        H:'#161513', h:'#fbbf24', // Black hair with gold highlights/shade
+        S:'#f8fafc', s:'#e2e8f0', // Crisp white linen dress with light grey shading
+        T:'#fbbf24', // Royal gold collar
+        P:'#f8fafc', p:'#e2e8f0', // White skirt/lower dress
+        E:'#fbbf24', // Gold sandals
+        J:'#fbbf24', j:'#d97706'  // Gold chestpiece/armor
+      };
+    }
     return { _:null, O:'#0b0d14',
       K:ch.skin, k:_shade(ch.skin,-0.28),
       H:ch.hair, h:_shade(ch.hair,-0.35),
@@ -9472,6 +10222,7 @@
     }
   }
   function drawPixRacket(px,x,y,ang,ch,isFurry){
+    if(ch.id === 'cristiano' || ch.racketType === 'none') return;
     var pal=pixPalette(ch), dx=Math.sin(ang),dy=Math.cos(ang);
     if(isFurry){
       // Fursona Unleashed: big cat paw racket
@@ -9536,8 +10287,10 @@
     }
     // front leg
     _pxleg(px,hipX+1,hipY+yo,ang.legFront,8,3,'P','K','E');
-    // torso — jacket (open, with a shirt placket down the middle) or plain shirt
-    if(hasJkt){
+    // torso — Cleopatra dress, jacket (open, with a shirt placket down the middle) or plain shirt
+    if(ch.isCleopatra){
+      _pxmap(px,OX+3,shY+yo,['sSSTSSs','SSTTTSS','SSSSSSS','STTTTTS','SSSSSSS','sSSSSSs','sSSSSSs','SSTTTSS','TTtTtTT'],pal);
+    } else if(hasJkt){
       _pxmap(px,OX+3,shY+yo,['jJJSJJj','JJJSJJJ','JJJSJJJ','JTTSTTJ','JJJSJJJ','jJJSJJj','jJJSJJj','PPPPPPP','PPpPpPP'],pal);
     } else {
       _pxmap(px,OX+3,shY+yo,['sSSSSSs','SSSSSSS','SSSSSSS','STTTTTS','SSSSSSS','sSSSSSs','sSSSSSs','PPPPPPP','PPpPpPP'],pal);
@@ -9550,6 +10303,20 @@
     var hx=OX+3, hy=(shY-8)+yo;
     _pxmap(px,hx,hy,HEAD_SKIN,pal);
     if(ch.cap) drawPixCap(px,hx,hy,ch); else drawPixHair(px,hx,hy,ch);
+    if(ch.isCleopatra){
+      // Beautiful golden diadem/crown with central red gem
+      px(hx+1, hy, '#fbbf24');
+      px(hx+2, hy, '#fbbf24');
+      px(hx+3, hy, '#fbbf24');
+      px(hx+4, hy, '#ef4444'); // Ruby gem in center
+      px(hx+5, hy, '#fbbf24');
+      px(hx+6, hy, '#fbbf24');
+      px(hx+2, hy-1, '#fbbf24');
+      px(hx+5, hy-1, '#fbbf24');
+      // Gold collar base
+      px(hx+3, hy+7, '#fbbf24');
+      px(hx+4, hy+7, '#fbbf24');
+    }
     if(ch.longNose){ px(hx+8,hy+4,'K');px(hx+9,hy+4,'K');px(hx+9,hy+5,'k'); }
     drawPixFace(px,hx+1,hy,expr,t,ch.glasses);
     // Fursona Unleashed — ginger cat ears, whiskers + a pink nose over the head
@@ -9654,7 +10421,9 @@
     c.fillRect(-3, 0, 6, ARM_LEN);
     c.translate(0, ARM_LEN);
 
-    if (ch.racketType === 'fish') {
+    if (ch.racketType === 'none' || ch.id === 'cristiano') {
+      // no racket
+    } else if (ch.racketType === 'fish') {
       // fish racket
       c.fillStyle = '#6ab8cd'; // blueish fish
       c.beginPath();
@@ -10135,6 +10904,540 @@
     ctx.restore();
   }
 
+  function drawEgyptianCourtSide(side) {
+    const minX = side === 'left' ? COURT_LEFT : NET_X;
+    const maxX = side === 'left' ? NET_X : COURT_RIGHT;
+    const width = maxX - minX;
+    const cx = (minX + maxX) / 2;
+    const now = performance.now() * 0.001;
+
+    ctx.save();
+    
+    // Create clipping region to keep things on Amara's half of the court
+    ctx.beginPath();
+    ctx.rect(minX, 0, width, GROUND_Y);
+    ctx.clip();
+
+    // 1. Beautiful Egyptian Sunset Sky Gradient in background
+    const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
+    skyGrad.addColorStop(0, '#1e1b4b');   // Deep indigo sky at top
+    skyGrad.addColorStop(0.3, '#4c1d95'); // Mystic purple
+    skyGrad.addColorStop(0.65, '#9a3412'); // Warm terracotta orange
+    skyGrad.addColorStop(0.85, '#f59e0b'); // Golden sand glow
+    skyGrad.addColorStop(1, '#fef08a');    // Radiant light sand at ground
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(minX, 0, width, GROUND_Y);
+
+    // 2. Heat shimmer wave layers
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = '#f59e0b';
+    for (let i = 0; i < 3; i++) {
+      const shift = now * 1.5 + i * Math.PI / 1.5;
+      ctx.beginPath();
+      ctx.moveTo(minX, GROUND_Y);
+      for (let x = minX; x <= maxX; x += 20) {
+        const y = GROUND_Y - 40 - i * 15 + Math.sin((x / 30) + shift) * 8;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(maxX, GROUND_Y);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1.0;
+
+    // 3. Draw Parallax Desert Dunes
+    // Far dune (darker copper)
+    ctx.fillStyle = '#b45309';
+    ctx.beginPath();
+    ctx.moveTo(minX, GROUND_Y);
+    ctx.quadraticCurveTo(minX + width * 0.35, GROUND_Y - 45, minX + width * 0.7, GROUND_Y - 12);
+    ctx.quadraticCurveTo(minX + width * 0.85, GROUND_Y - 8, maxX, GROUND_Y);
+    ctx.closePath();
+    ctx.fill();
+
+    // Near dune (vibrant sand yellow with subtle shade)
+    const duneGrad = ctx.createLinearGradient(minX, GROUND_Y - 35, maxX, GROUND_Y);
+    duneGrad.addColorStop(0, '#f59e0b');
+    duneGrad.addColorStop(0.5, '#ea580c');
+    duneGrad.addColorStop(1, '#d97706');
+    ctx.fillStyle = duneGrad;
+    ctx.beginPath();
+    ctx.moveTo(minX, GROUND_Y);
+    ctx.quadraticCurveTo(minX + width * 0.2, GROUND_Y - 10, minX + width * 0.5, GROUND_Y - 25);
+    ctx.quadraticCurveTo(minX + width * 0.8, GROUND_Y - 38, maxX, GROUND_Y);
+    ctx.closePath();
+    ctx.fill();
+
+    // 4. Draw Pyramids
+    // A companion smaller pyramid in the background (faded)
+    const p2W = 120;
+    const p2H = 75;
+    const p2Y = GROUND_Y - 5;
+    const p2X = cx + (side === 'left' ? -90 : 90);
+    
+    ctx.shadowBlur = 0;
+    // Faded Companion Left side (lit)
+    ctx.fillStyle = 'rgba(245, 158, 11, 0.65)';
+    ctx.beginPath();
+    ctx.moveTo(p2X, p2Y - p2H);
+    ctx.lineTo(p2X - p2W / 2, p2Y);
+    ctx.lineTo(p2X, p2Y);
+    ctx.closePath();
+    ctx.fill();
+
+    // Faded Companion Right side (shaded)
+    ctx.fillStyle = 'rgba(120, 53, 15, 0.65)';
+    ctx.beginPath();
+    ctx.moveTo(p2X, p2Y - p2H);
+    ctx.lineTo(p2X, p2Y);
+    ctx.lineTo(p2X + p2W / 2, p2Y);
+    ctx.closePath();
+    ctx.fill();
+
+    // The Grand majestic Giza Pyramid
+    const pyrW = 220;
+    const pyrH = 140;
+    const pyrY = GROUND_Y - 8;
+    const pyrX = cx + (side === 'left' ? -25 : 25);
+    
+    // Grand Pyramid Lit side
+    const litGrad = ctx.createLinearGradient(pyrX - pyrW/2, pyrY, pyrX, pyrY - pyrH);
+    litGrad.addColorStop(0, '#f59e0b');
+    litGrad.addColorStop(1, '#fef08a');
+    ctx.fillStyle = litGrad;
+    ctx.beginPath();
+    ctx.moveTo(pyrX, pyrY - pyrH);
+    ctx.lineTo(pyrX - pyrW / 2, pyrY);
+    ctx.lineTo(pyrX, pyrY);
+    ctx.closePath();
+    ctx.fill();
+
+    // Grand Pyramid Shaded side
+    const shadeGrad = ctx.createLinearGradient(pyrX, pyrY, pyrX + pyrW/2, pyrY);
+    shadeGrad.addColorStop(0, '#9a3412');
+    shadeGrad.addColorStop(1, '#7c2d12');
+    ctx.fillStyle = shadeGrad;
+    ctx.beginPath();
+    ctx.moveTo(pyrX, pyrY - pyrH);
+    ctx.lineTo(pyrX, pyrY);
+    ctx.lineTo(pyrX + pyrW / 2, pyrY);
+    ctx.closePath();
+    ctx.fill();
+
+    // Horizontal brick layers for Grand Pyramid
+    ctx.strokeStyle = '#451a03';
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.45;
+    const tiersCount = 14;
+    for (let h = 1; h < tiersCount; h++) {
+      const frac = h / tiersCount;
+      const y = pyrY - pyrH * frac;
+      const w = pyrW * (1 - frac);
+      ctx.beginPath();
+      ctx.moveTo(pyrX - w / 2, y);
+      ctx.lineTo(pyrX + w / 2, y);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1.0;
+
+    // 5. Draw a highly stylized Eye of Horus or winged sun symbol in the sky
+    const eyeX = cx + (side === 'left' ? 40 : -40);
+    const eyeY = 55;
+    ctx.save();
+    ctx.shadowColor = '#fbbf24';
+    ctx.shadowBlur = 8;
+    ctx.strokeStyle = 'rgba(251, 191, 36, 0.75)';
+    ctx.lineWidth = 2.5;
+    
+    // Draw Horus Eye outline
+    ctx.beginPath();
+    ctx.ellipse(eyeX, eyeY, 16, 7, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    // Pupil
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath();
+    ctx.arc(eyeX, eyeY, 5, 0, Math.PI * 2);
+    ctx.fill();
+    // Tear mark lines (Egyptian look)
+    ctx.beginPath();
+    ctx.moveTo(eyeX - 8, eyeY + 4);
+    ctx.quadraticCurveTo(eyeX - 10, eyeY + 12, eyeX - 6, eyeY + 16);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(eyeX + 4, eyeY + 6);
+    ctx.quadraticCurveTo(eyeX + 12, eyeY + 8, eyeX + 8, eyeY + 18);
+    ctx.stroke();
+    ctx.restore();
+
+    // 6. Draw lush beautiful Oasis with reeds and multiple palm trees!
+    const oasisX = cx + (side === 'left' ? 85 : -85);
+    const oasisY = GROUND_Y - 2;
+
+    // Oval lagoon pool:
+    const oGrad = ctx.createRadialGradient(oasisX, oasisY, 2, oasisX, oasisY, 55);
+    oGrad.addColorStop(0, '#22d3ee'); // Glowing bright turquoise cyan
+    oGrad.addColorStop(0.3, '#06b6d4');
+    oGrad.addColorStop(0.7, '#0891b2');
+    oGrad.addColorStop(1, 'rgba(8, 145, 178, 0)');
+    ctx.fillStyle = oGrad;
+    ctx.beginPath();
+    ctx.ellipse(oasisX, oasisY, 55, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Water shine overlay ripples
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(oasisX + Math.sin(now)*5, oasisY + 2, 28, 4, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Papyrus reeds growing around the oasis
+    ctx.fillStyle = '#047857'; // Forest green
+    for (let i = 0; i < 6; i++) {
+      const rx = oasisX - 45 + i * 15 + Math.sin(now * 3 + i) * 2;
+      const ry = oasisY - 4 - Math.cos(i) * 5;
+      const rh = 12 + i * 3;
+      ctx.beginPath();
+      ctx.moveTo(rx, oasisY);
+      ctx.quadraticCurveTo(rx - 2, ry - rh/2, rx - 3, ry - rh);
+      ctx.lineTo(rx - 1, ry - rh);
+      ctx.quadraticCurveTo(rx, ry - rh/2, rx, oasisY);
+      ctx.fill();
+    }
+
+    // Three Palm Trees with textured curved trunks & swaying leaves
+    const palmConfigs = [
+      { dx: -18, dy: -48, scale: 1.0, rotDir: 1, color: '#10b981' },
+      { dx: 14, dy: -36, scale: 0.75, rotDir: -1, color: '#059669' },
+      { dx: -4, dy: -28, scale: 0.6, rotDir: 0.5, color: '#047857' }
+    ];
+
+    palmConfigs.forEach((cfg) => {
+      const px = oasisX + cfg.dx;
+      const py = oasisY;
+      const th = 70 * cfg.scale;
+      
+      // Draw trunk using textured rings
+      ctx.lineWidth = 3.5 * cfg.scale;
+      ctx.strokeStyle = '#78350f'; // Warm brown trunk
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      // Curved trunk
+      const tx = px + (cfg.rotDir * 18 * cfg.scale);
+      const ty = py - th;
+      ctx.quadraticCurveTo(px + (cfg.rotDir * 8 * cfg.scale), py - th/2, tx, ty);
+      ctx.stroke();
+
+      // Swaying palm fronds
+      ctx.save();
+      ctx.translate(tx, ty);
+      ctx.fillStyle = cfg.color;
+      const leafCount = 7;
+      for (let j = 0; j < leafCount; j++) {
+        const leafAngle = (j * Math.PI * 2 / leafCount) + Math.sin(now * 1.8 + j) * 0.12;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 26 * cfg.scale, 7 * cfg.scale, leafAngle, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Glowing dates/coconuts
+      ctx.fillStyle = '#fbbf24';
+      ctx.beginPath(); ctx.arc(-2 * cfg.scale, 2 * cfg.scale, 4 * cfg.scale, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(3 * cfg.scale, -1 * cfg.scale, 3 * cfg.scale, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    });
+
+    // 7. Floating Golden Magic particles: Rising Glowing Scarabs & Ancient Runes
+    // Generates a magic dust effect moving upwards
+    for (let i = 0; i < 8; i++) {
+      const rx = minX + ((i * 59 + Math.sin(now + i) * 35) % width);
+      const ry = GROUND_Y - ((now * 45 + i * 50) % GROUND_Y);
+      const alpha = Math.sin((ry / GROUND_Y) * Math.PI) * 0.8;
+      
+      if (alpha > 0) {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = '#fef08a';
+        ctx.shadowColor = '#fbbf24';
+        ctx.shadowBlur = 6;
+        
+        // Draw miniature glowing diamonds/runes
+        ctx.beginPath();
+        ctx.moveTo(rx, ry - 3);
+        ctx.lineTo(rx + 3, ry);
+        ctx.lineTo(rx, ry + 3);
+        ctx.lineTo(rx - 3, ry);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  function drawOpponentBlindingFlash(oppSide) {
+    const minX = oppSide === 'left' ? COURT_LEFT : NET_X;
+    const maxX = oppSide === 'left' ? NET_X : COURT_RIGHT;
+    const width = maxX - minX;
+    const cx = (minX + maxX) / 2;
+    const now = performance.now();
+
+    ctx.save();
+    
+    // Create clipping region to keep things on opponent's half of the court
+    ctx.beginPath();
+    ctx.rect(minX, 0, width, GROUND_Y);
+    ctx.clip();
+
+    // 1. Core pulsing stroboscopic gold flash
+    const pulseSpeed = 24; // fast and rhythmic
+    const alphaBase = 0.65 + Math.sin(now * 0.001 * pulseSpeed) * 0.20;
+    
+    const flashGrad = ctx.createLinearGradient(minX, 0, maxX, 0);
+    flashGrad.addColorStop(0, `rgba(254, 240, 138, ${alphaBase * 0.85})`); // soft gold-yellow
+    flashGrad.addColorStop(0.5, `rgba(255, 255, 255, ${alphaBase})`);    // bright white core
+    flashGrad.addColorStop(1, `rgba(254, 240, 138, ${alphaBase * 0.85})`);
+    ctx.fillStyle = flashGrad;
+    ctx.fillRect(minX, 0, width, GROUND_Y);
+
+    // 2. Draw vertical pillar columns of high-intensity divine laser rays
+    ctx.globalCompositeOperation = 'lighter';
+    const cols = 5;
+    for (let i = 0; i < cols; i++) {
+      const colX = minX + (width / (cols + 1)) * (i + 1) + Math.sin(now * 0.002 + i) * 15;
+      const colW = 16 + Math.sin(now * 0.005 + i * 2) * 8;
+      const colAlpha = 0.4 + Math.sin(now * 0.01 + i) * 0.25;
+      
+      const colGrad = ctx.createLinearGradient(colX - colW/2, 0, colX + colW/2, 0);
+      colGrad.addColorStop(0, 'rgba(251, 191, 36, 0)');
+      colGrad.addColorStop(0.5, `rgba(255, 255, 255, ${colAlpha})`);
+      colGrad.addColorStop(1, 'rgba(251, 191, 36, 0)');
+      
+      ctx.fillStyle = colGrad;
+      ctx.fillRect(colX - colW/2, 0, colW, GROUND_Y);
+    }
+
+    // 3. Draw flashing ancient Egyptian hieroglyphic silhouettes in gold!
+    // This is incredibly aesthetic and adds amazing flavor to "Cleopatra's curse" blinding flash!
+    ctx.fillStyle = `rgba(217, 119, 6, ${alphaBase * 0.35})`; // amber hieroglyphics
+    ctx.font = 'bold 24px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // We can draw beautiful stylized glyph characters like ☥ (Ankh), 👁 (Eye of Ra), 𓋹, 𓀀, etc.
+    const glyphs = ['☥', '👁', '𓋹', '𓁢', '𓃠', '𓆣', '𓉔', '𓏠', '☥'];
+    const rows = 3, itemsPerRow = 4;
+    for (let r = 0; r < rows; r++) {
+      for (let c_idx = 0; c_idx < itemsPerRow; c_idx++) {
+        const gx = minX + (width / (itemsPerRow + 1)) * (c_idx + 1) + Math.sin(now * 0.001 + r * 10) * 10;
+        const gy = 60 + r * 70 + Math.cos(now * 0.001 + c_idx * 5) * 8;
+        const glyph = glyphs[(r * itemsPerRow + c_idx) % glyphs.length];
+        
+        ctx.save();
+        ctx.translate(gx, gy);
+        ctx.rotate(Math.sin(now * 0.001 + r - c_idx) * 0.15);
+        ctx.fillText(glyph, 0, 0);
+        ctx.restore();
+      }
+    }
+
+    // 4. Draw powerful lens flares radiating across the court
+    ctx.strokeStyle = `rgba(255, 255, 255, ${alphaBase * 0.75})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    // Horizontal flare lines crossing through the center of player's court
+    ctx.moveTo(minX, GROUND_Y / 2);
+    ctx.lineTo(maxX, GROUND_Y / 2);
+    ctx.stroke();
+
+    // Additional diagonal beams
+    ctx.strokeStyle = `rgba(253, 224, 71, ${alphaBase * 0.4})`;
+    for (let i = 0; i < 3; i++) {
+      const angle = (i * Math.PI / 3) + (now * 0.0004);
+      const rx1 = cx - Math.cos(angle) * 200;
+      const ry1 = (GROUND_Y / 2) - Math.sin(angle) * 200;
+      const rx2 = cx + Math.cos(angle) * 200;
+      const ry2 = (GROUND_Y / 2) + Math.sin(angle) * 200;
+      ctx.beginPath();
+      ctx.moveTo(rx1, ry1);
+      ctx.lineTo(rx2, ry2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  function drawSolarJudgmentSun(p) {
+    const minX = p.side === 'left' ? COURT_LEFT : NET_X;
+    const maxX = p.side === 'left' ? NET_X : COURT_RIGHT;
+    const width = maxX - minX;
+    const cx = (minX + maxX) / 2;
+    const cy = 100; // High up in the sky
+
+    const progress = p.solarJudgmentSunTimer / 1.8; // Fades out from 1.0 down to 0
+    if (progress <= 0) return;
+
+    ctx.save();
+
+    // ==========================================
+    // 1. AMAZING WINGED SOLAR DISC (EGYPTIAN DEITY DECORATION)
+    // ==========================================
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = progress;
+
+    // Wing gradient
+    const wingGrad = ctx.createLinearGradient(cx - 160, cy, cx + 160, cy);
+    wingGrad.addColorStop(0, 'rgba(217, 119, 6, 0.05)');  // copper orange
+    wingGrad.addColorStop(0.3, '#d97706');               // golden amber
+    wingGrad.addColorStop(0.5, '#fef08a');               // bright gold
+    wingGrad.addColorStop(0.7, '#d97706');
+    wingGrad.addColorStop(1, 'rgba(217, 119, 6, 0.05)');
+    
+    // Draw left wing
+    ctx.fillStyle = wingGrad;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.bezierCurveTo(cx - 50, cy - 35, cx - 110, cy - 25, cx - 160, cy - 5); // top curve
+    ctx.bezierCurveTo(cx - 120, cy + 25, cx - 70, cy + 30, cx, cy + 5);      // bottom curve
+    ctx.closePath();
+    ctx.fill();
+
+    // Draw right wing
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.bezierCurveTo(cx + 50, cy - 35, cx + 110, cy - 25, cx + 160, cy - 5);
+    ctx.bezierCurveTo(cx + 120, cy + 25, cx + 70, cy + 30, cx, cy + 5);
+    ctx.closePath();
+    ctx.fill();
+
+    // Add gold feather details
+    ctx.strokeStyle = '#fef08a';
+    ctx.lineWidth = 1.5;
+    for (let f = 1; f <= 5; f++) {
+      const spread = f * 30;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.quadraticCurveTo(cx - spread/2, cy + 15, cx - spread, cy + 5 - f*2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.quadraticCurveTo(cx + spread/2, cy + 15, cx + spread, cy + 5 - f*2);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // ==========================================
+    // 2. HIGH-INTENSITY GEOMETRIC SUN AND SOLAR RAYS
+    // ==========================================
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Massive corona glow
+    const corona = ctx.createRadialGradient(cx, cy, 5, cx, cy, 140);
+    corona.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+    corona.addColorStop(0.2, `rgba(254, 240, 138, ${progress})`); // white-gold
+    corona.addColorStop(0.6, `rgba(249, 115, 22, ${progress * 0.75})`); // radiant orange
+    corona.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = corona;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 140, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Center Sun core (White-hot yellow)
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#fbbf24';
+    ctx.shadowBlur = 30;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 32, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0; // reset
+
+    // Draw Aten-style sunrays ending in tiny hands pointing down/out!
+    const rayCount = 18;
+    ctx.strokeStyle = `rgba(254, 240, 138, ${progress * 0.85})`;
+    for (let i = 0; i < rayCount; i++) {
+      // we only care about rays pointing generally downward/outward (from 0 to PI)
+      const angle = (i * Math.PI * 2 / rayCount) + (performance.now() * 0.0006);
+      const isDownward = Math.sin(angle) > -0.2; // mostly pointing down
+      const length = isDownward ? (130 + Math.sin(performance.now() * 0.008 + i) * 15) : 80;
+      
+      const rx1 = cx + Math.cos(angle) * 32;
+      const ry1 = cy + Math.sin(angle) * 32;
+      const rx2 = cx + Math.cos(angle) * length;
+      const ry2 = cy + Math.sin(angle) * length;
+      
+      // Draw geometric tapered rays (narrow triangle)
+      ctx.fillStyle = `rgba(254, 240, 138, ${progress * 0.18})`;
+      ctx.beginPath();
+      ctx.moveTo(rx1 - Math.sin(angle)*3, ry1 + Math.cos(angle)*3);
+      ctx.lineTo(rx1 + Math.sin(angle)*3, ry1 - Math.cos(angle)*3);
+      ctx.lineTo(rx2, ry2);
+      ctx.closePath();
+      ctx.fill();
+
+      // Ray outline line
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(rx1, ry1);
+      ctx.lineTo(rx2, ry2);
+      ctx.stroke();
+
+      // Aten's little solar hand!
+      if (isDownward) {
+        ctx.fillStyle = `rgba(254, 240, 138, ${progress * 0.9})`;
+        ctx.beginPath();
+        ctx.arc(rx2, ry2, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        // Tiny little ray finger lines
+        ctx.lineWidth = 1;
+        for (let f = -1; f <= 1; f++) {
+          const fa = angle + f * 0.25;
+          ctx.beginPath();
+          ctx.moveTo(rx2, ry2);
+          ctx.lineTo(rx2 + Math.cos(fa) * 5, ry2 + Math.sin(fa) * 5);
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.restore();
+
+    // ==========================================
+    // 3. ULTRA BLINDING SOLAR GLARE ON AMARA'S COURT SIDE
+    // ==========================================
+    // "like almost blind Amara's side, making the opponent truly guess the shuttlecock projection"
+    // We draw an extremely thick, saturated golden white glare overlay over Amara's half of the court
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(minX, 0, width, GROUND_Y);
+    ctx.clip();
+
+    const blindingAlpha = progress * 0.94; // Extremely intense blinding light!
+    
+    // Multi-stage radial glare originating from the sun and wash out the entire half-court
+    const glare = ctx.createRadialGradient(cx, cy, 20, cx, GROUND_Y * 0.6, GROUND_Y * 0.9);
+    glare.addColorStop(0, `rgba(255, 255, 255, ${blindingAlpha})`);
+    glare.addColorStop(0.2, `rgba(254, 240, 138, ${blindingAlpha})`);
+    glare.addColorStop(0.5, `rgba(245, 158, 11, ${blindingAlpha * 0.65})`);
+    glare.addColorStop(0.9, `rgba(254, 240, 138, ${blindingAlpha * 0.15})`);
+    glare.addColorStop(1.0, 'rgba(0, 0, 0, 0)');
+    
+    ctx.fillStyle = glare;
+    ctx.fillRect(minX, 0, width, GROUND_Y);
+
+    // Add extra pure-white overlay band over the racket impact zone to absolutely blind the swing
+    const washGrad = ctx.createLinearGradient(minX, cy, maxX, cy + 200);
+    washGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    washGrad.addColorStop(0.5, `rgba(255, 255, 255, ${blindingAlpha * 0.55})`);
+    washGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = washGrad;
+    ctx.fillRect(minX, 0, width, GROUND_Y);
+
+    ctx.restore();
+
+    ctx.restore();
+  }
+
   let divinePhantomHits = [];
 
   function spawnDivinePhantomHit(x, y, dir) {
@@ -10214,6 +11517,18 @@
     const amenPlayer = (left && left.transform && left.transform.type === 'AMEN') ? left : ((right && right.transform && right.transform.type === 'AMEN') ? right : null);
     if (amenPlayer) {
       drawAngelicCourtSide(amenPlayer.side);
+    }
+
+    const cleopatraPlayer = (left && left.transform && left.transform.type === 'CLEOPATRA') ? left : ((right && right.transform && right.transform.type === 'CLEOPATRA') ? right : null);
+    if (cleopatraPlayer) {
+      drawEgyptianCourtSide(cleopatraPlayer.side);
+      if (cleopatraPlayer.cleopatraIsFlashing) {
+        const oppSide = cleopatraPlayer.side === 'left' ? 'right' : 'left';
+        drawOpponentBlindingFlash(oppSide);
+      }
+      if (cleopatraPlayer.solarJudgmentSunTimer > 0) {
+        drawSolarJudgmentSun(cleopatraPlayer);
+      }
     }
 
     // outer boundary (doubles line) — full-resolution on the main ctx, on TOP of the
@@ -10438,34 +11753,65 @@
   };
   function ultTrailColor(p){
     const id = effectiveUltId(p);
+    const air = !p.onGround;
+    if (air) {
+      const airColors = {
+        cristiano: '#ff5a2a', // Air: Bicycle Kick Vortex
+        maya: '#d8b4fe',      // Air: purple-magenta / Sight Line
+        jordan: '#3b82f6',     // Air: cobalt-blue / Hammer Drop
+        kenji: '#059669',      // Air: deep emerald / Hang Time
+        amara: '#06b6d4',      // Air: neon cyan / Crosshairs
+        sofia: '#ec4899',      // Air: hot pink / Ghost Step
+        diego: '#dc2626',      // Air: dark crimson / El Mazo
+        priya: '#ff2d6b',      // Air: neon fuchsia / Afterburner
+        liam: '#475569',       // Air: slate / Aerial Answer
+        rodrigo: '#eab308',    // Air: pure yellow / Volea Fantasma
+        lindan: '#eab308',     // Air: gold-yellow / Dian Sha
+      };
+      if (airColors[id]) return airColors[id];
+    } else {
+      const groundColors = {
+        cristiano: '#f97316', // Ground: Knuckleball Orange
+        maya: '#a855f7',      // Ground: violet Blueprint
+        jordan: '#60a5fa',     // Ground: light sky blue Full Stop
+        kenji: '#10b981',      // Ground: bright mint green Sprint Return
+        amara: '#22d3ee',      // Ground: cyan Puppeteer
+        sofia: '#db2777',      // Ground: rose magenta Feint Royale
+        diego: '#ef4444',      // Ground: safety red Scatter Shot
+        priya: '#f43f5e',      // Ground: cherry crimson Ignition
+        liam: '#64748b',       // Ground: dark silver The Answer
+        rodrigo: '#facc15',    // Ground: neon yellow La Pausa
+        lindan: '#facc15',     // Ground: amber gold Authoritative Clear
+      };
+      if (groundColors[id]) return groundColors[id];
+    }
     return ULT_TRAIL_COLORS[id] || (p.character && p.character.shirt) || (p.side==='left'?'#3b82f6':'#ec4899');
   }
 
-  // Intense particle charging & aura effect when ultimate skill is loaded and player is charging a hit
+  // Intense particle charging & aura effect when ultimate skill is loaded and player is setting up/charging
   function drawUltChargingFx(p, cx, groundY){
-    if(!p.charging) return;
-    const nowSec = performance.now()/1000;
-    const rawElapsed = nowSec - p.chargeStart;
-    const chargeTime = chargeTimeFor(p.character);
-    const frac = rawElapsed / chargeTime;
     const hasUlt = Simulation.canSpendMomentum(p);
-    if(!hasUlt || frac < 0.65) return;
+    if(!hasUlt) return;
+    if(!p.ultCharging && !p.charging && !p.ultPrimed) return;
 
+    const nowSec = performance.now()/1000;
     const ultCol = ultTrailColor(p);
-    const isFullPower = rawElapsed >= chargeTime;
+    const isFullPower = p.ultCharging || p.ultPrimed || (p.charging && (nowSec - p.chargeStart) >= chargeTimeFor(p.character)*0.5);
+
+    if(!isFullPower) return;
 
     // 1. Spawn vibrant charging particles in the character's signature color
-    const spawnRate = isFullPower ? 4 : 1;
+    const spawnRate = p.ultCharging ? 4 : 2;
     for(let k = 0; k < spawnRate; k++){
       const ang = Math.random() * Math.PI * 2;
-      const spd = isFullPower ? (Math.random() * 160 + 60) : (Math.random() * 70 + 20);
+      const spd = Math.random() * 160 + 60;
       particles.push({
-        x: cx + (Math.random() - 0.5) * (isFullPower ? 44 : 26),
+        x: cx + (Math.random() - 0.5) * 44,
         y: p.y + PLAYER_H * (0.15 + Math.random() * 0.75),
         vx: Math.cos(ang) * spd * 0.45,
-        vy: -Math.abs(Math.sin(ang) * spd) - (isFullPower ? 75 : 30),
+        vy: -Math.abs(Math.sin(ang) * spd) - 75,
         color: Math.random() > 0.25 ? ultCol : '#ffffff',
-        size: isFullPower ? (Math.random() * 5.5 + 2.5) : (Math.random() * 3 + 1.2),
+        size: Math.random() * 5.5 + 2.5,
         alpha: 1.0,
         decay: Math.random() * 2.5 + 2.0,
         gravity: -160
@@ -10477,8 +11823,8 @@
     ctx.globalCompositeOperation = 'lighter';
 
     const pulse = 0.5 + 0.5 * Math.sin(nowSec * 16);
-    const glowRad = isFullPower ? (58 + 6 * pulse) : (36 + 4 * pulse);
-    const auraAlpha = isFullPower ? (0.75 + 0.25 * pulse) : 0.35;
+    const glowRad = 58 + 6 * pulse;
+    const auraAlpha = 0.75 + 0.25 * pulse;
 
     // Radial aura sphere
     const g = ctx.createRadialGradient(cx, p.y + PLAYER_H*0.45, 4, cx, p.y + PLAYER_H*0.45, glowRad);
@@ -10516,6 +11862,35 @@
         ctx.arc(cx, p.y + PLAYER_H*0.45, 36, startA, startA + Math.PI * 0.75);
         ctx.stroke();
       }
+
+      // Cristiano Special Toggled Ultimate Visuals (Grounded Free Kick vs Airborne Bicycle Kick)
+      if(p.character && p.character.id === 'cristiano'){
+        if(p.onGround){
+          // Grounded Knuckleball Free Kick: Golden soccer target ring on pitch
+          ctx.strokeStyle = '#ffd700';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.ellipse(cx, GROUND_Y + 3, 42 + 6*pulse, 12 + 3*pulse, 0, 0, Math.PI*2);
+          ctx.stroke();
+
+          ctx.fillStyle = '#ff5a2a';
+          ctx.font = '700 10px "Space Grotesk", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('⚽ KNUCKLEBALL FREE KICK', cx, p.y - 28 + Math.sin(nowSec*10)*3);
+        } else {
+          // Airborne Bicycle Kick: Electric cyan/fire acrobat vortex in mid-air
+          ctx.strokeStyle = '#6ef3ff';
+          ctx.lineWidth = 3.5;
+          ctx.beginPath();
+          ctx.arc(cx, p.y + PLAYER_H*0.5, 48 + 8*pulse, 0, Math.PI*2);
+          ctx.stroke();
+
+          ctx.fillStyle = '#6ef3ff';
+          ctx.font = '800 11px "Space Grotesk", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('⚡ BICYCLE KICK (SIUUUU!)', cx, p.y - 32 + Math.sin(nowSec*12)*3);
+        }
+      }
     }
 
     ctx.restore();
@@ -10546,6 +11921,42 @@
       armFront = -1.0;
     }
 
+    if(ch.id === 'cristiano'){
+      if(p.swingTimer > 0){
+        const t = 1 - p.swingTimer/SWING_DURATION;
+        const arc = Math.sin(Math.min(1, Math.max(0,t)) * Math.PI);
+        const isSmash = (p.swingPowerFrac || 0) >= 0.5 || (!p.onGround && (p.swingPowerFrac || 0) >= 0.35);
+        if(isSmash){
+          // HEADBUTT / HEADER animation!
+          legFront = 0.3 - 0.6 * arc;
+          legBack = -0.3 + 0.5 * arc;
+          armFront = -1.2 + 1.6 * arc;
+          armBack = -1.0 + 1.4 * arc;
+        } else {
+          // FOOT KICK animation!
+          legFront = -0.4 + 2.2 * arc;
+          legBack = -0.5 - 0.3 * arc;
+          armFront = 0.5 - 0.8 * arc;
+          armBack = -0.5 + 0.8 * arc;
+        }
+      } else if(p.charging){
+        const frac = Math.min(1, (nowSec - p.chargeStart) / chargeTimeFor(p.character));
+        if(frac >= 0.5){
+          // Charging smash: Headbutt prep (head & torso arched back)
+          legFront = -0.5 * frac;
+          legBack = 0.4 * frac;
+          armFront = -1.0 * frac;
+          armBack = -0.8 * frac;
+        } else {
+          // Charging hit: Foot kick prep (front leg cocked back)
+          legFront = -1.2 * frac;
+          legBack = 0.5 * frac;
+          armFront = 0.4 * frac;
+          armBack = -0.4 * frac;
+        }
+      }
+    }
+
     if(!p.onGround){
       legFront = -0.6; legBack = 0.35;
     }
@@ -10570,13 +11981,31 @@
     ctx.fill();
     ctx.restore();
 
-    const facing = p.side === 'left' ? 1 : -1;
+    let facing = p.side === 'left' ? 1 : -1;
+    const isCristianoUltReady = (ch.id === 'cristiano') && ((p.ultCharging && p.ultChargeProgress >= 0.7) || p.momentumTier === 2);
+
     // PIXEL_REVAMP Phase 1 — reactive face expression from live player state
     let pixExpr = 'idle';
     if(pointCelebrateSide){ pixExpr = (p.side === pointCelebrateSide) ? 'elated' : 'dejected'; }
+    else if(p.bicycleKickTimer > 0){ pixExpr = 'smash'; }
+    else if(isCristianoUltReady){ pixExpr = 'focused'; }
     else if(p.swingTimer > 0){ pixExpr = !p.onGround ? 'smash' : 'focused'; }
-    else if(p.charging){ pixExpr = 'focused'; }
+    else if(p.charging || p.ultCharging){ pixExpr = 'focused'; }
     else if(!p.onGround){ pixExpr = 'strain'; }
+
+    if (p.character && p.character.id === 'maya' && p.mayaFlowState && Math.random() < 0.15) {
+      particles.push({
+        x: p.x + Math.random() * PLAYER_W,
+        y: p.y + Math.random() * PLAYER_H,
+        vx: (Math.random() - 0.5) * 40,
+        vy: -Math.random() * 60,
+        color: '#ffd700',
+        size: Math.random() * 3 + 1,
+        alpha: 0.9,
+        decay: 1.5,
+        gravity: -5
+      });
+    }
 
     if (p.transform && p.transform.type === 'AMEN' && p.swingTimer <= 0 && !p.charging) {
       pixExpr = 'closed';
@@ -10650,7 +12079,138 @@
       ctx.restore();
     }
 
-    if (p.absoluteZoneFlash > 0) {
+    if (p.siuuuTimer && p.siuuuTimer > 0) {
+      // Cristiano Ultimate Scoring Point Celebration — SIUUUU!
+      const elapsed = 2.4 - p.siuuuTimer;
+      ctx.save();
+      if (elapsed < 0.45) {
+        // Phase 1: Run & Jump up
+        const jumpProgress = elapsed / 0.45;
+        const jumpY = Math.sin(jumpProgress * Math.PI) * 48;
+        const runX = cx + facing * (jumpProgress * 28);
+        drawHumanoid(ctx, runX, groundY - jumpY, heightVisualScale(ch), ch, {
+          legFront: 0.8, legBack: -0.6, armFront: -0.8, armBack: -0.8, expr: 'elated'
+        }, facing);
+      } else if (elapsed < 0.85) {
+        // Phase 2: Mid-Air 360 Spin
+        const spinProgress = (elapsed - 0.45) / 0.4;
+        const spinAngle = spinProgress * Math.PI * 2 * facing;
+        const peakY = Math.sin(spinProgress * Math.PI) * 58;
+        ctx.translate(cx + facing * 25, groundY - PLAYER_H/2 - peakY);
+        ctx.rotate(spinAngle);
+        drawHumanoid(ctx, 0, PLAYER_H/2, heightVisualScale(ch), ch, {
+          legFront: 0.5, legBack: 0.5, armFront: 0.7, armBack: 0.7, expr: 'elated'
+        }, facing);
+      } else {
+        // Phase 3: Land in Legendary SIUUUU Power Stance!
+        const landX = cx + facing * 25;
+        const stanceTime = elapsed - 0.85;
+
+        // Expanding fiery shockwave on ground
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 90, 42, ' + Math.max(0, 0.75 - stanceTime * 0.4) + ')';
+        ctx.beginPath();
+        ctx.ellipse(landX, GROUND_Y + 3, 30 + stanceTime * 35, 9 + stanceTime * 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // Continuous golden/fiery sparks
+        if (Math.random() < 0.75) {
+          particles.push({
+            x: landX + (Math.random() - 0.5) * 45,
+            y: GROUND_Y - 5,
+            vx: (Math.random() - 0.5) * 90,
+            vy: -Math.random() * 140 - 50,
+            color: Math.random() < 0.5 ? '#ff5a2a' : '#ffd700',
+            size: Math.random() * 4.5 + 2,
+            alpha: 1.0,
+            decay: 2.8,
+            gravity: -30
+          });
+        }
+
+        // Floating SIUUUU! Banner above head
+        ctx.save();
+        ctx.font = '900 24px "Space Grotesk", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffd700';
+        ctx.shadowColor = '#ff5a2a';
+        ctx.shadowBlur = 15;
+        ctx.fillText('SIUUUU!', landX, groundY - PLAYER_H - 24 + Math.sin(stanceTime * 12) * 3);
+        ctx.restore();
+
+        // SIUUU Power Stance: wide legs, chest proud, both arms thrust backward and down!
+        drawHumanoid(ctx, landX, groundY, heightVisualScale(ch), ch, {
+          legFront: 1.3,
+          legBack: -1.3,
+          armFront: 1.5,
+          armBack: 1.5,
+          expr: 'elated'
+        }, -facing); // Turned around facing the crowd!
+      }
+      ctx.restore();
+    } else if (p.bicycleKickTimer > 0) {
+      // Cristiano Airborne Bicycle Kick backflip rotation
+      const rotFrac = 1 - p.bicycleKickTimer / 0.45;
+      const rotAngle = rotFrac * Math.PI * 2 * (p.side === 'left' ? -1 : 1);
+      ctx.save();
+      ctx.translate(cx, groundY - PLAYER_H/2);
+      ctx.rotate(rotAngle);
+
+      if (Math.random() < 0.7) {
+        particles.push({
+          x: cx + (Math.random() - 0.5) * 24,
+          y: groundY - PLAYER_H/2 + (Math.random() - 0.5) * 24,
+          vx: (Math.random() - 0.5) * 140,
+          vy: -Math.random() * 90 - 20,
+          color: Math.random() < 0.5 ? '#ff5a2a' : '#ffd700',
+          size: Math.random() * 4 + 2,
+          alpha: 0.9,
+          decay: 2.5,
+          gravity: -40
+        });
+      }
+
+      drawHumanoid(ctx, 0, PLAYER_H/2, heightVisualScale(ch), ch, {
+        legFront: -1.2,
+        legBack: 1.0,
+        armFront: 0.8,
+        armBack: -0.6,
+        expr: 'smash'
+      }, facing);
+      ctx.restore();
+    } else if (p.dianShaTimer > 0) {
+      // Lin Dan's Dian Sha behind-the-back rotation
+      const rotFrac = 1 - p.dianShaTimer / 0.45;
+      const rotAngle = rotFrac * Math.PI * 2 * (p.side === 'left' ? 1 : -1);
+      ctx.save();
+      ctx.translate(cx, groundY - PLAYER_H/2);
+      ctx.rotate(rotAngle);
+      
+      // Spawn golden flare particles
+      if (Math.random() < 0.7) {
+        particles.push({
+          x: cx + (Math.random() - 0.5) * 20,
+          y: groundY - PLAYER_H/2 + (Math.random() - 0.5) * 20,
+          vx: (Math.random() - 0.5) * 120,
+          vy: -Math.random() * 80 - 10,
+          color: '#ffd54a',
+          size: Math.random() * 4 + 1.5,
+          alpha: 0.9,
+          decay: 2.2,
+          gravity: -20
+        });
+      }
+
+      drawHumanoid(ctx, 0, PLAYER_H/2, heightVisualScale(ch), ch, {
+        legFront: -0.8,
+        legBack: 0.8,
+        armFront: 1.2, // racket arm flung behind back
+        armBack: -1.0,
+        expr: 'smash'
+      }, facing);
+      ctx.restore();
+    } else if (p.absoluteZoneFlash > 0) {
       ctx.save();
       ctx.shadowColor = '#ffffff';
       ctx.shadowBlur = 25;
@@ -10895,6 +12455,7 @@
     _shutReady = true;
   }
   function drawShuttle(){
+    if (shuttle.isShermanRain) return;
     if(!_shutReady) buildShuttleSprite();
     ctx.save();
     ctx.translate(shuttle.x, shuttle.y);
@@ -10999,19 +12560,65 @@
     ctx.textBaseline = 'middle';
     // track
     ctx.fillStyle = 'rgba(8,12,28,0.82)';
-    ctx.strokeStyle = 'rgba(255,255,255,0.14)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = (p.ultCharging || tier === 2) ? (tier === 2 ? '#ffd700' : '#6ef3ff') : 'rgba(255,255,255,0.14)';
+    ctx.lineWidth = (p.ultCharging || tier === 2) ? 1.8 : 1;
     ctx.beginPath(); ctx.roundRect(x, y, w, h, h/2); ctx.fill(); ctx.stroke();
     // fill (grows from the inner anchor outward)
     if(frac > 0){
       const fw = w * frac;
       const fx = dir < 0 ? (anchorX - fw) : anchorX;
       let col;
-      if(tier === 2){ const pulse = 0.5 + 0.5*Math.sin(nowSec*6); col = 'rgba(255,'+Math.round(60+130*pulse)+',50,1)'; }
-      else if(tier === 1) col = 'rgba(255,66,48,0.95)';
-      else col = 'rgba(255,96,74,0.85)';
+      if(tier === 2){
+        const pulse = 0.5 + 0.5*Math.sin(nowSec*8);
+        col = 'rgba(255,'+Math.round(180+75*pulse)+',30,1)';
+      } else if(tier === 1) {
+        col = 'rgba(255,66,48,0.95)';
+      } else {
+        col = 'rgba(255,96,74,0.85)';
+      }
       ctx.fillStyle = col;
       ctx.beginPath(); ctx.roundRect(fx, y, fw, h, h/2); ctx.fill();
+
+      // If ultimate bar is full and player is holding Shift (setting up) or primed, draw cyan setup overlay
+      if((tier === 2 || frac >= 1.0) && (p.ultCharging || p.ultPrimed || p.ultChargeProgress > 0)){
+        const setupFrac = p.ultPrimed ? 1.0 : (p.ultChargeProgress || 0);
+        const setupW = w * setupFrac;
+        const setupFx = dir < 0 ? (anchorX - setupW) : anchorX;
+        ctx.fillStyle = 'rgba(110, 243, 255, 0.9)';
+        ctx.beginPath(); ctx.roundRect(setupFx, y, setupW, h, h/2); ctx.fill();
+
+        // Particle sparks at setup charge tip
+        const setupTipX = dir < 0 ? setupFx : setupFx + setupW;
+        if(Math.random() < 0.65){
+          particles.push({
+            x: setupTipX + (Math.random() - 0.5) * 6,
+            y: y + h/2 + (Math.random() - 0.5) * 4,
+            vx: (dir < 0 ? -1 : 1) * (Math.random() * 30 + 10),
+            vy: (Math.random() - 0.5) * 20 - 10,
+            color: Math.random() < 0.5 ? '#6ef3ff' : '#ffd700',
+            size: Math.random() * 3 + 1.2,
+            alpha: 0.95,
+            decay: 2.2,
+            gravity: -15
+          });
+        }
+      } else if(tier === 2 || frac >= 1.0){
+        // Idle full meter particles
+        const tipX = dir < 0 ? fx : fx + fw;
+        if(Math.random() < 0.7){
+          particles.push({
+            x: tipX + (Math.random() - 0.5) * 10,
+            y: y + h/2 + (Math.random() - 0.5) * 6,
+            vx: (Math.random() - 0.5) * 50,
+            vy: (Math.random() - 0.5) * 30 - 15,
+            color: Math.random() < 0.5 ? '#ffd700' : '#f43f5e',
+            size: Math.random() * 3.5 + 1.5,
+            alpha: 0.95,
+            decay: 2.5,
+            gravity: -25
+          });
+        }
+      }
     }
     // tier-1 boundary tick at 50%
     const midX = dir < 0 ? anchorX - w*0.5 : anchorX + w*0.5;
@@ -11022,12 +12629,27 @@
     ctx.fillStyle = sideColor;
     ctx.beginPath(); ctx.roundRect(dir<0 ? anchorX-2 : anchorX, y, 2, h, 1); ctx.fill();
     // PEAK / ready prompt
-    if(tier === 2){
-      const pulse = 0.5 + 0.5*Math.sin(nowSec*5);
+    if(tier === 2 || frac >= 1.0){
+      const pulse = 0.5 + 0.5*Math.sin(nowSec*6);
       ctx.font = '800 9px "Space Grotesk", sans-serif';
       ctx.textAlign = dir < 0 ? 'right' : 'left';
-      ctx.fillStyle = 'rgba(255,'+Math.round(180+70*pulse)+',90,1)';
-      ctx.fillText('★ PEAK — ULT READY', dir<0 ? anchorX : anchorX, y + h + 7);
+      if(p.character && p.character.id === 'cristiano'){
+        ctx.fillStyle = '#6ef3ff';
+        if(!p.onGround){
+          ctx.fillText(p.ultPrimed ? '⚡ BICYCLE KICK READY — HIT TO LAUNCH' : (p.ultCharging ? '⚡ BICYCLE KICK SETUP...' : '★ ULT READY — JUMP + SHIFT FOR BICYCLE KICK'), dir<0 ? anchorX : anchorX, y + h + 7);
+        } else {
+          ctx.fillText(p.ultPrimed ? '⚽ KNUCKLEBALL READY — HIT TO LAUNCH' : (p.ultCharging ? '⚽ KNUCKLEBALL SETUP...' : '★ ULT READY — HOLD SHIFT FOR KNUCKLEBALL'), dir<0 ? anchorX : anchorX, y + h + 7);
+        }
+      } else if(p.ultPrimed || (p.ultChargeProgress && p.ultChargeProgress >= 1.0)) {
+        ctx.fillStyle = '#6ef3ff';
+        ctx.fillText('⚡ ULT PRIMED — PRESS HIT TO LAUNCH', dir<0 ? anchorX : anchorX, y + h + 7);
+      } else if(p.ultCharging) {
+        ctx.fillStyle = '#6ef3ff';
+        ctx.fillText('⚡ SETTING UP ULT...', dir<0 ? anchorX : anchorX, y + h + 7);
+      } else {
+        ctx.fillStyle = 'rgba(255,'+Math.round(180+70*pulse)+',90,1)';
+        ctx.fillText('★ ULT READY — HOLD SHIFT TO SETUP', dir<0 ? anchorX : anchorX, y + h + 7);
+      }
     }
     ctx.restore();
   }
@@ -11087,8 +12709,52 @@
   // the flight; Maya's Called Shot is honest (green from the start). The marker is
   // information only — the opponent is never moved or aimed for them (Part 0.2).
   function drawUltMarker(){
+    if (shuttle.sightLineReticle && shuttle.active) {
+      const ret = shuttle.sightLineReticle;
+      const progress = 1 - ret.timer / ret.maxTime;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(216,180,254, 0.45)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(shuttle.x, shuttle.y);
+      ctx.lineTo(ret.targetX, GROUND_Y);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(216,180,254, 0.85)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(ret.targetX, GROUND_Y, 24 * progress, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(ret.targetX, GROUND_Y, 8, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(216,180,254, 0.5)';
+      ctx.fill();
+      ctx.restore();
+    }
+
+    if (shuttle.puppeteerRealX !== undefined && shuttle.active) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(34,211,238, 0.35)';
+      ctx.lineWidth = 1.0;
+      ctx.setLineDash([2, 3]);
+      // Draw a string from shuttle upwards to the ceiling, indicating strings
+      ctx.beginPath();
+      ctx.moveTo(shuttle.x, shuttle.y);
+      ctx.lineTo(shuttle.x, 0);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     const mk = shuttle.ultMarker;
     if(!mk || !shuttle.active || shuttle.held) return;
+
+    if (shuttle.hideMarkerBeforeCrossNet) {
+      const isPastNet = shuttle.hitterSide === 'left' ? (shuttle.x >= NET_X) : (shuttle.x <= NET_X);
+      if (!isPastNet) return; // Hide it!
+    }
+
     const denom = mk.realX - mk.startX;
     const prog = Math.abs(denom) < 1 ? 1 : Math.max(0, Math.min(1, (shuttle.x - mk.startX) / denom));
     const showReal = prog >= mk.revealFrac;

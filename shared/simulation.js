@@ -218,7 +218,9 @@
       p.moReturnStreak = (ctx.event === 'smash') ? 0 : (p.moReturnStreak || 0) + 1;
       p.moLastKind = ctx.event;
     } else if (!clean) {
-      p.moStreak = 0; p.moVarStreak = 0;
+      if (!(p.character && p.character.id === 'diego')) {
+        p.moStreak = 0; p.moVarStreak = 0;
+      }
     }
 
     var gain = weightForTags(weights, tags);       // base 1.0 * weight
@@ -248,6 +250,9 @@
     p.momentumTier = 0;
     p.moPeakEmitted = false;
     p.moStreak = 0; p.moVarStreak = 0; // spending is a hard reset of the run
+    p.ultCharging = false;
+    p.ultPrimed = false;
+    p.ultChargeProgress = 0;
   }
 
   // Point resolution bonuses (Part 2.2/2.3): Lin Dan +2.0 on a point won, stacked;
