@@ -35,7 +35,7 @@ const { Room } = require('./Room.js');
 const { RoomManager } = require('./RoomManager.js');
 const Lobby = require('./Lobby.js');
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const PROJECT_ROOT = path.join(__dirname, '..'); // where index.html / shared / client live
 
 // ---------------------------------------------------------------------------

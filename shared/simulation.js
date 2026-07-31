@@ -168,6 +168,7 @@
   }
 
   function addMomentum(p, gain, ctx) {
+    if (p.transform) return 0; // cannot gain momentum during active ultimate transform buff
     if (!(gain > 0)) return 0;
     // gain is the WEIGHT-based amount (the value the 1.15 ceiling governs); the
     // meter climbs by gain * FILL_RATE so a ~1.0-weight character peaks in ~30
@@ -244,7 +245,7 @@
   // Only the resource half lives here so both sims agree on WHEN a spend is legal
   // and that it zeroes the meter. The shot/cinematic effect is applied by each
   // sim's releaseHit. Stamina cost (Part 5) is not wired yet — Phase 5.
-  function canSpendMomentum(p) { return (p.momentum || 0) >= MO.MAX; }
+  function canSpendMomentum(p) { return !p.transform && (p.momentum || 0) >= MO.MAX; }
   function spendMomentum(p) {
     p.momentum = 0;
     p.momentumTier = 0;

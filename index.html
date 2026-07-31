@@ -247,29 +247,44 @@
     scrollbar-color: rgba(255,255,255,0.1) transparent;
   }
 
-  /* Compact layout for character and court selection to prevent scrollbars */
+  /* Fullscreen layout for character and court selection to maximize screen space */
+  #charSelectOverlay, #bgSelectOverlay {
+    padding: 0 !important;
+    background: radial-gradient(circle at center, rgba(16, 18, 32, 0.99) 0%, rgba(6, 7, 14, 1) 100%) !important;
+    backdrop-filter: none !important;
+  }
+
   #charSelectOverlay .panel, #bgSelectOverlay .panel {
-    padding: 16px 24px !important;
-    gap: 8px !important;
-    max-width: 1100px !important;
-    width: 96% !important;
-    max-height: 98% !important;
+    padding: 18px 36px !important;
+    gap: 10px !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
     overflow-y: auto !important;
+    justify-content: space-around !important;
+    align-items: center !important;
   }
   
   #charSelectOverlay h2, #bgSelectOverlay h2 {
     font-size: 24px !important;
-    margin-bottom: 2px !important;
+    margin-bottom: 4px !important;
+    letter-spacing: 2px !important;
   }
   
   #charSelectOverlay p.subtle, #bgSelectOverlay p.subtle {
-    font-size: 11px !important;
+    font-size: 14px !important;
     margin-bottom: 0 !important;
+    opacity: 0.7 !important;
   }
 
   .cardGrid {
-    gap: 10px !important;
-    margin-top: 4px !important;
+    gap: 20px !important;
+    margin-top: 14px !important;
   }
 
   .charCard {
@@ -314,16 +329,36 @@
     height: 6px !important;
   }
   
-  /* Compact background map card thumbnails */
+  /* Background map card thumbnails for full screen */
   .bgGrid {
-    gap: 12px !important;
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 20px !important;
+    width: 100% !important;
+    max-width: 1050px !important;
+    margin: 16px auto 0 auto !important;
+  }
+  
+  .bgCard {
+    padding: 14px !important;
+    border-radius: 14px !important;
+    border: 2px solid rgba(255, 255, 255, 0.1) !important;
+    background: rgba(255, 255, 255, 0.03) !important;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+  .bgCard:hover {
+    transform: translateY(-4px) !important;
+    border-color: var(--accent) !important;
+    box-shadow: 0 12px 30px rgba(255, 79, 107, 0.3) !important;
   }
   
   .bgCard canvas {
     width: 100% !important;
     height: auto !important;
-    aspect-ratio: 4 / 3 !important;
-    border-radius: 4px;
+    aspect-ratio: 16 / 9 !important;
+    border-radius: 8px !important;
+    display: block;
   }
 
   /* Split Menu Overlay Styles */
@@ -1569,13 +1604,17 @@
 
   /* TEKKEN CHARACTER SELECT OVERLAY STYLES */
   .tekken-panel {
-    max-width: 1000px !important;
-    width: 95% !important;
-    padding: 20px 24px !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    height: 100% !important;
+    padding: 16px 28px !important;
     gap: 8px !important;
-    background: linear-gradient(180deg, rgba(16, 16, 26, 0.98) 0%, rgba(8, 8, 12, 0.98) 100%) !important;
-    border: 3px solid rgba(255, 255, 255, 0.08) !important;
-    box-shadow: 0 25px 60px rgba(0,0,0,0.85) !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
   }
   
   .tekken-matchup-header {
@@ -1583,10 +1622,12 @@
     justify-content: space-between;
     align-items: center;
     width: 100%;
-    border-bottom: 2px solid rgba(255, 255, 255, 0.08);
-    padding-bottom: 12px;
-    margin-bottom: 8px;
-    gap: 16px;
+    max-width: 1000px;
+    margin: 0 auto;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+    gap: 14px;
   }
   
   .tekken-profile {
@@ -1600,11 +1641,11 @@
   .profile-label {
     font-size: 10px;
     font-weight: 800;
-    padding: 3px 12px;
+    padding: 3px 10px;
     border-radius: 4px;
     color: white;
-    letter-spacing: 1.5px;
-    margin-bottom: 8px;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
     text-transform: uppercase;
   }
   
@@ -1619,10 +1660,9 @@
   }
   
   .profile-canvas-wrapper {
-    /* Frameless: the pixel character floats in the space, no box/border.
-       Sized compact so the whole select screen fits without scrolling. */
-    width: 118px;
-    height: 130px;
+    /* Frameless: the pixel character floats cleanly in full screen */
+    width: 110px;
+    height: 125px;
     border: none;
     background: none;
     box-shadow: none;
@@ -1643,19 +1683,19 @@
 
   /* selected: a soft glow that hugs the character silhouette (no rectangle) */
   .p1-profile.active .profile-canvas-wrapper {
-    filter: drop-shadow(0 0 9px rgba(239, 68, 68, 0.6));
+    filter: drop-shadow(0 0 12px rgba(239, 68, 68, 0.7));
   }
   .p2-profile.active .profile-canvas-wrapper {
-    filter: drop-shadow(0 0 9px rgba(59, 130, 246, 0.6));
+    filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.7));
   }
   
   .profile-name {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 800;
     letter-spacing: 1px;
     color: #fff;
-    margin-top: 6px;
+    margin-top: 4px;
     text-shadow: 0 2px 8px rgba(0,0,0,0.7);
     text-transform: uppercase;
     text-align: center;
@@ -1673,27 +1713,27 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    width: 38%;
-    gap: 8px;
+    width: 40%;
+    gap: 6px;
   }
   
   .vs-badge {
-    font-size: 24px;
+    font-size: 22px;
     font-weight: 900;
     color: #ef4444;
-    text-shadow: 0 0 15px rgba(239, 68, 68, 0.8);
+    text-shadow: 0 0 12px rgba(239, 68, 68, 0.8);
     font-style: italic;
     font-family: 'Space Grotesk', sans-serif;
-    letter-spacing: 2px;
+    letter-spacing: 1.5px;
   }
   
   .attribute-display {
     width: 100%;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 6px;
     background: rgba(0,0,0,0.55);
-    padding: 12px 16px;
+    padding: 8px 12px;
     border-radius: 8px;
     border: 1px solid rgba(255,255,255,0.06);
   }
@@ -1703,17 +1743,17 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    gap: 10px;
+    gap: 8px;
   }
   
   .attr-label-center {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 800;
     color: rgba(255,255,255,0.85);
-    letter-spacing: 1.5px;
+    letter-spacing: 1px;
     text-align: center;
-    width: 90px;
+    width: 75px;
     text-transform: uppercase;
   }
   
@@ -1721,19 +1761,19 @@
     display: flex;
     gap: 4px;
     justify-content: flex-end;
-    width: 75px;
+    width: 70px;
   }
   
   .attr-pips-right {
     display: flex;
     gap: 4px;
     justify-content: flex-start;
-    width: 75px;
+    width: 70px;
   }
   
   .attr-pip {
-    width: 8px;
-    height: 8px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     background-color: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.2);
@@ -1757,16 +1797,17 @@
   .tekken-grid {
     display: grid;
     grid-template-columns: repeat(8, 1fr);
-    gap: 8px;
+    gap: 12px;
     width: 100%;
-    margin: 8px 0;
+    max-width: 1000px;
+    margin: 8px auto;
   }
   
   .tekken-grid-box {
     aspect-ratio: 1;
-    border: 2px solid rgba(255, 255, 255, 0.08);
-    border-radius: 8px;
-    background: rgba(255,255,255,0.02);
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    background: rgba(255,255,255,0.03);
     cursor: pointer;
     transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     overflow: hidden;
@@ -1786,28 +1827,28 @@
   .tekken-grid-box:hover {
     border-color: #ef4444;
     transform: scale(1.08);
-    box-shadow: 0 0 15px rgba(239, 68, 68, 0.5);
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.55);
     z-index: 10;
   }
   
   .tekken-grid-box.selected-left {
     border-color: #ef4444;
-    background: rgba(239, 68, 68, 0.12);
-    box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.15);
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.55);
   }
   
   .tekken-grid-box.selected-right {
     border-color: #3b82f6;
-    background: rgba(59, 130, 246, 0.12);
-    box-shadow: 0 0 12px rgba(59, 130, 246, 0.4);
+    background: rgba(59, 130, 246, 0.15);
+    box-shadow: 0 0 16px rgba(59, 130, 246, 0.55);
   }
   
   .tekken-grid-box.random-box {
     background: radial-gradient(circle at center, #181824, #08080f);
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 28px;
+    font-size: 32px;
     font-weight: 800;
-    color: rgba(255,255,255,0.25);
+    color: rgba(255,255,255,0.3);
     text-shadow: 0 0 10px rgba(255,255,255,0.1);
   }
   
@@ -1820,7 +1861,7 @@
     display: flex;
     justify-content: center;
     width: 100%;
-    margin-top: 8px;
+    margin-top: 6px;
   }
   
   .tekken-confirm-btn {
@@ -1831,11 +1872,11 @@
     color: #fff;
     background: linear-gradient(135deg, #ef4444 0%, #991b1b 100%);
     border: none;
-    border-radius: 6px;
-    padding: 10px 32px;
+    border-radius: 8px;
+    padding: 10px 36px;
     cursor: pointer;
     transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+    box-shadow: 0 4px 16px rgba(239, 68, 68, 0.35);
     text-transform: uppercase;
   }
   
@@ -1905,61 +1946,140 @@
     pointer-events: none; /* only the buttons themselves are interactive */
     display: none;
     font-family: 'Space Grotesk', sans-serif;
-    -webkit-user-select: none;
-    user-select: none;
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+    -ms-user-select: none !important;
+    user-select: none !important;
+    -webkit-touch-callout: none !important;
+    -webkit-tap-highlight-color: transparent !important;
   }
   #touchControls.visible { display: block; }
+
+  #footer, #creditRow {
+    display: none !important;
+  }
 
   .touchCluster {
     position: absolute;
     bottom: calc(18px + env(safe-area-inset-bottom, 0px));
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 14px;
     pointer-events: none;
   }
-  #touchLeftCluster { left: calc(18px + env(safe-area-inset-left, 0px)); }
-  #touchRightCluster { right: calc(18px + env(safe-area-inset-right, 0px)); }
+  #touchLeftCluster {
+    left: calc(18px + env(safe-area-inset-left, 0px));
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  .touchHorizGroup {
+    display: flex;
+    flex-direction: row;
+    gap: 28px;
+    pointer-events: none;
+  }
+  #touchRightCluster {
+    right: calc(18px + env(safe-area-inset-right, 0px));
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 12px;
+  }
+  .touchAngleGroup {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+  }
 
   .touchBtn {
     pointer-events: auto;
     touch-action: none;
     -webkit-touch-callout: none;
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+    -ms-user-select: none !important;
+    user-select: none !important;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    width: 64px;
-    height: 64px;
+    width: 66px;
+    height: 66px;
     border-radius: 50%;
-    background: rgba(10, 15, 30, 0.55);
-    border: 2px solid rgba(255, 255, 255, 0.28);
+    background: rgba(10, 15, 30, 0.65);
+    border: 2px solid rgba(255, 255, 255, 0.32);
     color: #f8fafc;
-    font-size: 22px;
-    font-weight: 700;
-    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
-    backdrop-filter: blur(6px);
-    transition: transform 0.1s ease, background 0.1s ease, border-color 0.1s ease;
+    font-size: 20px;
+    font-weight: 800;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.4), inset 0 1px 1px rgba(255,255,255,0.2);
+    backdrop-filter: blur(8px);
+    transition: transform 0.1s ease, background 0.1s ease, border-color 0.1s ease, box-shadow 0.1s ease;
     -webkit-tap-highlight-color: transparent;
     padding: 0;
   }
-  .touchBtn:active, .touchBtn.pressed {
-    transform: scale(0.9);
-    background: rgba(255, 79, 107, 0.35);
-    border-color: rgba(255, 79, 107, 0.7);
+  .touchBtn * {
+    pointer-events: none;
+    -webkit-user-select: none !important;
+    user-select: none !important;
   }
-  .touchJumpBtn { font-size: 20px; opacity: 0.9; }
+  .touchBtn:active, .touchBtn.pressed {
+    transform: scale(0.92);
+    background: rgba(255, 79, 107, 0.4);
+    border-color: rgba(255, 79, 107, 0.85);
+    box-shadow: 0 0 18px rgba(255, 79, 107, 0.5);
+  }
+  .touchJumpBtn {
+    width: 68px;
+    height: 68px;
+    background: rgba(15, 23, 42, 0.75);
+    border-color: rgba(96, 165, 250, 0.6);
+    color: #60a5fa;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.4), 0 0 12px rgba(96, 165, 250, 0.2);
+  }
+  .touchJumpBtn:active, .touchJumpBtn.pressed {
+    background: rgba(59, 130, 246, 0.5);
+    border-color: #ffffff;
+    box-shadow: 0 0 22px rgba(96, 165, 250, 0.7);
+  }
+  .touchUltBtn {
+    width: 72px;
+    height: 72px;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    background: rgba(250, 204, 21, 0.22);
+    border-color: rgba(250, 204, 21, 0.65);
+    color: #fef08a;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.4), 0 0 16px rgba(250, 204, 21, 0.25);
+  }
+  .touchUltBtn:active, .touchUltBtn.pressed {
+    background: rgba(250, 204, 21, 0.55);
+    border-color: #ffffff;
+    box-shadow: 0 0 26px rgba(250, 204, 21, 0.8);
+  }
+  .touchUltIcon {
+    font-size: 18px;
+    line-height: 1;
+  }
+  .touchBtnLabel {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 1px;
+  }
   .touchHitBtn {
     width: 84px;
     height: 84px;
-    font-size: 14px;
+    font-size: 15px;
     letter-spacing: 1.5px;
-    background: rgba(255, 79, 107, 0.22);
-    border-color: rgba(255, 79, 107, 0.55);
+    background: rgba(255, 79, 107, 0.25);
+    border-color: rgba(255, 79, 107, 0.65);
+    color: #ffffff;
   }
   .touchHitBtn.pressed {
     background: linear-gradient(135deg, var(--accent) 0%, #ff1c40 100%);
     border-color: #fff;
-    box-shadow: 0 0 24px rgba(255, 79, 107, 0.55);
+    box-shadow: 0 0 26px rgba(255, 79, 107, 0.7);
   }
   .touchAngleBtn {
     width: 50px;
@@ -1979,21 +2099,34 @@
     position: fixed;
     top: calc(14px + env(safe-area-inset-top, 0px));
     z-index: 600;
-    width: 42px;
-    height: 42px;
-    border-radius: 10px;
-    background: rgba(10, 15, 30, 0.6);
-    border: 1.5px solid rgba(255, 255, 255, 0.25);
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: rgba(10, 15, 30, 0.65);
+    border: 1.5px solid rgba(255, 255, 255, 0.28);
     color: #f8fafc;
     font-size: 18px;
     align-items: center;
     justify-content: center;
     -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+    -ms-user-select: none !important;
+    user-select: none !important;
+    -webkit-touch-callout: none !important;
     touch-action: none;
     padding: 0;
     cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    backdrop-filter: blur(8px);
+  }
+  .touchCornerBtn * {
+    pointer-events: none;
+    -webkit-user-select: none !important;
+    user-select: none !important;
   }
   .touchCornerBtn.visible { display: flex; }
+  .touchCornerBtn:active { transform: scale(0.92); background: rgba(255, 79, 107, 0.35); }
   .touchCornerBtn:active { transform: scale(0.92); background: rgba(255, 79, 107, 0.35); }
 
   #touchFullscreenBtn { right: calc(14px + env(safe-area-inset-right, 0px)); }
@@ -2492,7 +2625,7 @@
         </div>
 
         <!-- TEKKEN GRID IN THE MIDDLE -->
-        <h2 id="charSelectTitle" style="text-align: center; font-size: 15px !important; letter-spacing: 2px; text-transform: uppercase; margin-top: 4px !important; margin-bottom: 2px !important;">CHOOSE THE FIGHTER</h2>
+        <h2 id="charSelectTitle" style="text-align: center; font-size: 13px !important; letter-spacing: 2px; text-transform: uppercase; margin-top: 4px !important; margin-bottom: 2px !important;">CHOOSE THE FIGHTER</h2>
         <div class="tekken-grid" id="charGrid"></div>
 
         <!-- CONFIRMATION BUTTON AT THE BOTTOM -->
@@ -2588,27 +2721,39 @@
     </div>
   </div>
 
-  <div id="footer">
-    <span>ground touch ends the rally — jump to smash, hold to charge for a stronger hit — serve must land between the painted lines</span>
-    <span id="modeHint">2-player · Esc to pause</span>
-  </div>
-  <div id="creditRow">Created by: Rence Joseph Marquez</div>
+  <span id="modeHint" style="display:none;"></span>
 </div>
 </div>
 
 <!-- Mobile touch controls — siblings of #wrap on purpose, see the CSS comment above
-     #touchControls for why. Movement + jump sit under the left thumb, hit (and, in
-     Advanced Controls, the attack-angle buttons flanking it) sit under the right thumb. -->
+     #touchControls for why. Movement + jump sit under the left thumb, hit + ult (and, in
+     Advanced Controls, the attack-angle buttons flanking them) sit under the right thumb. -->
 <div id="touchControls">
   <div id="touchLeftCluster" class="touchCluster">
-    <button id="touchMoveLeft" class="touchBtn" aria-label="Move left">◀</button>
-    <button id="touchJump" class="touchBtn touchJumpBtn" aria-label="Jump / Smash">▲</button>
-    <button id="touchMoveRight" class="touchBtn" aria-label="Move right">▶</button>
+    <button id="touchJump" class="touchBtn touchJumpBtn" aria-label="Jump / Smash" title="Jump / Smash">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><polyline points="18 15 12 9 6 15"></polyline></svg>
+    </button>
+    <div class="touchHorizGroup">
+      <button id="touchMoveLeft" class="touchBtn" aria-label="Move left" title="Move left">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><polyline points="15 18 9 12 15 6"></polyline></svg>
+      </button>
+      <button id="touchMoveRight" class="touchBtn" aria-label="Move right" title="Move right">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><polyline points="9 18 15 12 9 6"></polyline></svg>
+      </button>
+    </div>
   </div>
   <div id="touchRightCluster" class="touchCluster">
-    <button id="touchAngleUp" class="touchBtn touchAngleBtn hidden" aria-label="Angle up">▲</button>
-    <button id="touchHit" class="touchBtn touchHitBtn" aria-label="Hold to charge, release to hit">HIT</button>
-    <button id="touchAngleDown" class="touchBtn touchAngleBtn hidden" aria-label="Angle down">▼</button>
+    <div class="touchAngleGroup">
+      <button id="touchAngleUp" class="touchBtn touchAngleBtn hidden" aria-label="Angle up">▲</button>
+      <button id="touchAngleDown" class="touchBtn touchAngleBtn hidden" aria-label="Angle down">▼</button>
+    </div>
+    <button id="touchUlt" class="touchBtn touchUltBtn" aria-label="Charge Ultimate" title="Charge Ultimate">
+      <span class="touchUltIcon" style="pointer-events:none;">⚡</span>
+      <span class="touchBtnLabel" style="pointer-events:none;">ULT</span>
+    </button>
+    <button id="touchHit" class="touchBtn touchHitBtn" aria-label="Hold to charge, release to hit" title="Hit">
+      <span class="touchBtnLabel" style="pointer-events:none;">HIT</span>
+    </button>
   </div>
 </div>
 <button id="touchPauseBtn" class="touchCornerBtn" aria-label="Pause">⏸</button>
@@ -2765,11 +2910,8 @@
   // side of the net and has a little clearance from it, we steepen its descent so it comes down
   // inside the court instead of sailing long — see the dive step inside updateShuttle().
   const SMASH_MAXPOWER_DIVE_DIST = 45;          // px past the net (opponent's side) before the dive kicks in
-  const SMASH_MAXPOWER_DIVE_GRAVITY = 1900;     // stronger, CONSTANT downward acceleration applied for the
-                                                 // rest of the flight once triggered — replaces normal gravity
-                                                 // outright (rather than a one-off velocity kick) so the extra
-                                                 // pull is steady the whole way down, not a sudden snap
-  const SMASH_MAXPOWER_DIVE_TERMINAL_VY = 900;  // fall-speed safety cap while diving — set high enough that
+  const SMASH_MAXPOWER_DIVE_GRAVITY = 950;      // milder downward acceleration (reduced from 1900) to keep curve natural
+  const SMASH_MAXPOWER_DIVE_TERMINAL_VY = 900;  // fall-speed safety cap while diving
                                                  // it's essentially never reached in normal play, so the
                                                  // constant acceleration above is what actually shapes the dive
   const SWING_DURATION = 0.28;   // duration of the visual racket-swing animation
@@ -2928,7 +3070,7 @@
   // multiplier (see powerMultFor call in the 'smash' branch of releaseHit) — this is
   // deliberately left untouched so 5★ Power smashes keep their existing punch and the
   // existing max-power dive logic keeps seeing the speeds it was tuned around.
-  function powerMultFor(ch){ return statMult(ch && ch.stats && ch.stats.power, 0.12, 0.03); }
+  function powerMultFor(ch){ return statMult(ch && ch.stats && ch.stats.power, 0.16, 0.04); }
   // power, REGULAR hits only (the underhand "float" return and the serve — see their
   // call sites below): a much gentler set of coefficients than powerMultFor above, so a
   // max-power (5) character's ordinary rally shots land inside the court instead of
@@ -3958,8 +4100,38 @@
   }
 
   function clampUltShotInBounds(p){
-    if(shuttle.kind === 'dink' || shuttle.ultFastDrop) return;
+    if(shuttle.kind === 'dink' || shuttle.ultFastDrop || shuttle.allowOverchargeOut) return;
     ensureUltInBoundsAndClearsNet(p);
+  }
+
+  // Regular smash in-bounds clamp: keeps 4-star and below (and 5-star) smashes from sailing
+  // out past the baseline when hit with high charge from court, without artificially lifting vy.
+  function ensureSmashInBounds(p){
+    if(shuttle.kind !== 'smash' || shuttle.allowOverchargeOut) return;
+    const dir = p.side === 'left' ? 1 : -1;
+    const g = currentShuttleGravity(), vy = shuttle.vy;
+    const disc = vy*vy - 2*g*(shuttle.y - GROUND_Y);
+    if(disc >= 0){
+      const tLand = (-vy + Math.sqrt(disc)) / g;
+      if(tLand > 0){
+        const drag = HORIZONTAL_DRAG;
+        const landX = shuttle.x + (shuttle.vx / drag) * (1 - Math.exp(-drag * tLand));
+        
+        // Baseline landing target inside court
+        const outer = dir > 0 ? (COURT_RIGHT - 55) : (COURT_LEFT + 55);
+        
+        let targetX = landX;
+        if(dir > 0 && landX > outer){
+          targetX = outer;
+        } else if(dir < 0 && landX < outer){
+          targetX = outer;
+        }
+        
+        if(targetX !== landX){
+          shuttle.vx = (targetX - shuttle.x) * drag / (1 - Math.exp(-drag * tLand));
+        }
+      }
+    }
   }
 
   // La Pausa / mid-swing hitch: freeze the struck shuttle in mid-air, then release
@@ -4423,16 +4595,21 @@
     p.character = cfg.stats
       ? Object.assign({}, base, { stats: Object.assign({}, base.stats, cfg.stats) })
       : base;
-    p.transform = { type: type, expiry: now + cfg.dur, dur: cfg.dur, label: cfg.label };
+    p.transform = { type: type, remain: cfg.dur, dur: cfg.dur, label: cfg.label };
     if (type === 'CLEOPATRA') {
       p.character.isCleopatra = true;
     }
   }
-  function tickTransform(p, now){
-    if(p.transform && now >= p.transform.expiry){
-      p.character = p.baseCharacter || p.character;
-      p.baseCharacter = null;
-      p.transform = null;
+  function tickTransform(p, dt){
+    if(p.transform){
+      if(state === 'rally'){
+        p.transform.remain = Math.max(0, p.transform.remain - dt);
+      }
+      if(p.transform.remain <= 0){
+        p.character = p.baseCharacter || p.character;
+        p.baseCharacter = null;
+        p.transform = null;
+      }
     }
   }
   // Extra reach granted while a "wall"-type transform is active, added to reachFor()
@@ -4650,7 +4827,7 @@
     const maxS = maxStaminaFor(p);
     if(p.stamina == null) p.stamina = maxS;
     if(p.stamina > maxS) p.stamina = maxS;
-    if(p.onGround && !p.charging){
+    if(p.onGround){
       p.stamina = Math.min(maxS, p.stamina + staminaRegenFor(p.character)*dt);
     }
   }
@@ -5063,12 +5240,23 @@
     if(isHumanControlled(left)) tryJump(left, performance.now()/1000);
   });
 
+  bindHoldButton(document.getElementById('touchUlt'),
+    function(){ if(isHumanControlled(left)) startUltCharge(left, performance.now()/1000); },
+    function(){ if(isHumanControlled(left)) releaseUltCharge(left, performance.now()/1000); });
+
   bindHoldButton(document.getElementById('touchHit'),
     function(){ if(isHumanControlled(left)) startCharge(left, performance.now()/1000); },
     function(){ if(isHumanControlled(left)) releaseHit(left, performance.now()/1000); });
 
   bindTapButton(touchAngleUpBtn, function(){ adjustAttackAngle(left, ATTACK_ANGLE_STEP); });
   bindTapButton(touchAngleDownBtn, function(){ adjustAttackAngle(left, -ATTACK_ANGLE_STEP); });
+
+  // Prevent selection/magnifier/callouts on all mobile touch buttons
+  document.querySelectorAll('.touchBtn, .touchCornerBtn').forEach(function(btn){
+    ['selectstart', 'dragstart', 'contextmenu'].forEach(function(evName){
+      btn.addEventListener(evName, function(e){ e.preventDefault(); });
+    });
+  });
 
   // iPhone/iPod Safari (and any WebKit-based iOS browser, since they all share
   // WebKit under Apple's rules) never expose requestFullscreen on anything but a
@@ -5694,16 +5882,23 @@
     // Height (Part 4): mirror the contact reach/window the AI actually has, so it
     // doesn't plan swings it can't make (or ignore ones it can). Passive Root reach
     // is included too, since a planted Mateo really can reach further.
+    let nearReach = false;
+    let inReach = false;
     const aiReach = reachFor(p.character) + heightReachBonus(p.character) + transformReachBonus(p) + passiveReachBonus(p) + aiReachEdge(p);
-    // Loose window: commit to a plan / start positioning. Widened from +40 to +160 so the
-    // AI decides its shot while an incoming ball is still HIGH — the old tight window meant
-    // it only committed once the shuttle was horizontally close (hence already descended
-    // low), so a smashable lob was routinely no longer "a high ball" by decision time and
-    // got played as a defensive float instead of a smash. (Headless sim: this lifts Expert
-    // jump-smash success on lobbed balls from ~55% to ~80%.) The tight `inReach` below
-    // still governs the actual swing, so nothing reaches across the net early.
-    const nearReach = dx <= aiReach + 160;  // loose window: start planning
-    const inReach = dx <= aiReach;          // tight window: actually allowed to swing
+
+    if (p.transform && p.transform.type === 'AMEN') {
+      const beams = getAngelicLightBeams(p.side);
+      const hitBeam = beams.find(b => Math.abs(shuttle.x - b.x) <= b.radius);
+      if (dx <= aiReach || hitBeam) {
+        inReach = true;
+        nearReach = true;
+      } else {
+        nearReach = dx <= aiReach + 160;
+      }
+    } else {
+      nearReach = dx <= aiReach + 160;  // loose window: start planning
+      inReach = dx <= aiReach;          // tight window: actually allowed to swing
+    }
     // never reach across the net for a shuttle still on the opponent's side — if it
     // hasn't crossed over, the smart move is to leave it alone and let it fall (which
     // scores the point automatically), not chase it
@@ -6048,8 +6243,31 @@
     const headX = p.x + PLAYER_W/2;
     const headY = p.y;
     const dx = Math.abs(shuttle.x - headX);
-    // Anchor/Blockade/Rally-Lock transforms (Part 6) + Mateo Root passive (Part 3) extend reach
-    if(dx > reachFor(p.character) + transformReachBonus(p) + passiveReachBonus(p) + heightReachBonus(p.character) + aiReachEdge(p)){ Simulation.applyMomentumWhiff(p, {maxCharge: moMaxCharge, now: now}); if(spend==='art') rageArtWhiff(p, now); return false; }
+
+    let isDivineBeamHit = false;
+    let inReach = false;
+    const physReach = reachFor(p.character) + transformReachBonus(p) + passiveReachBonus(p) + heightReachBonus(p.character) + aiReachEdge(p);
+
+    if (p.transform && p.transform.type === 'AMEN') {
+      if (dx <= physReach) {
+        inReach = true;
+      } else {
+        const beams = getAngelicLightBeams(p.side);
+        const hitBeam = beams.find(b => Math.abs(shuttle.x - b.x) <= b.radius);
+        if (hitBeam) {
+          inReach = true;
+          isDivineBeamHit = true;
+        }
+      }
+    } else {
+      inReach = (dx <= physReach);
+    }
+
+    if (!inReach) {
+      Simulation.applyMomentumWhiff(p, {maxCharge: moMaxCharge, now: now});
+      if(spend==='art') rageArtWhiff(p, now);
+      return false;
+    }
 
     // Height (Part 4): tall players reach higher overhead, short players dig lower.
     let smashTop = headY - 90 - heightTopExtend(p.character);
@@ -6092,6 +6310,9 @@
     // on the ground it's always an underhand-style return; in the air, a charge of
     // 50% or more turns it into a smash — below that it's a softer underhand return
     let kind = isNetDink ? 'dink' : ((!p.onGround && chargeFrac >= 0.5) ? 'smash' : 'float');
+    if (p.transform && p.transform.type === 'AMEN' && chargeFrac >= 0.5) {
+      kind = 'smash';
+    }
     let power = MIN_POWER_MULT + (MAX_POWER_MULT - MIN_POWER_MULT) * chargeFrac;
 
     // ---- Ultimate shot type/power (per character — MOMENTUM_SPEC Part 6) ----
@@ -6169,49 +6390,110 @@
     const dir = p.side === 'left' ? 1 : -1;
 
     if(kind === 'smash'){
-      // the closer to the net the smash is hit, the less room the shuttle has to travel,
-      // so ease the speed back near the net — full power is kept for smashes taken from
-      // further back, and the reduction is capped so it's never too drastic
       const distFromNet = Math.abs(headX - NET_X);
       const halfCourt = (COURT_RIGHT - COURT_LEFT)/2;
       const netProximityFrac = Math.max(0, Math.min(1, distFromNet / halfCourt));
       const netSpeedScale = SMASH_NET_SLOWDOWN + (1 - SMASH_NET_SLOWDOWN) * netProximityFrac;
-      const star5Speed = SMASH_BASE_SPEED * (power || 1.0) * netSpeedScale * 1.25;
-      let speed = SMASH_BASE_SPEED * power * netSpeedScale * powerMultFor(p.character);
-      if (spend === 'art') speed *= 1.25;
-
-      if (spend && !p.onGround) {
-        // Airborne ultimate smash: 1.5x speed for 5-star power characters, standard 1.0x 5-star smash speed for others
-        const is5StarPower = !!(p.character && p.character.stats && p.character.stats.power === 5);
-        speed = is5StarPower ? (star5Speed * 1.5) : star5Speed;
-      }
-
-      // the steep "safety" angle below only kicks in when the hit is taken right up against
-      // the net (within NET_CLOSE_RANGE) — anywhere further back than that, smashes keep
-      // their normal flatter angle regardless of how far from the net they were
       const netCloseFrac = Math.max(0, Math.min(1, 1 - distFromNet / NET_CLOSE_RANGE));
-      // Height (Part 4): taller players get a steeper downward smash angle.
-      const angleDeg = SMASH_BACK_ANGLE + (SMASH_NET_STEEP_ANGLE - SMASH_BACK_ANGLE) * netCloseFrac + heightSmashSteepen(p.character);
-      // manual attack angle only ever applies to human players with Advanced Controls on —
-      // AI keeps the default angleDeg untouched. Positive angle flattens/lifts the smash
-      // (subtracted from the downward angle); negative steepens it.
-      const manualOffsetSmash = (advancedControlsEnabled && isHumanControlled(p)) ? p.attackAngle : 0;
-      const angle = (angleDeg - manualOffsetSmash) * Math.PI/180;
-      shuttle.vx = dir * speed * Math.cos(angle);
-      shuttle.vy = speed * Math.sin(angle);
-      shuttle.ultSmashArc = false;
-      shuttle.kind = 'smash';
-      // flag this flight for the max-power dive adjustment in updateShuttle()
-      shuttle.hitByMaxPower = !!(p.character && p.character.stats && p.character.stats.power === 5) || !!spend;
-      shuttle.hitDir = dir;
-      shuttle.maxPowerDiveApplied = false;
-      shuttle.dinkDiveApplied = false;
-      shuttle.netCollisionResolved = false;
-      triggerShake(9, SHAKE_SMASH_DURATION);
-      
-      // Smash audio and juice sparks
-      playSound('smash');
-      spawnHitParticles(shuttle.x, shuttle.y, 20, true, p.side === 'left' ? '#3b82f6' : '#ec4899');
+
+      if (p.transform && p.transform.type === 'AMEN') {
+        if (chargeFrac > 0.88) {
+          // Overcharged Heaven Power Smash: Excess divine force can launch past baseline out of bounds!
+          shuttle.allowOverchargeOut = true;
+          let speed = SMASH_BASE_SPEED * 1.55;
+          const overAngleDeg = 12; // shallow launch angle rocket
+          const angle = overAngleDeg * Math.PI / 180;
+          shuttle.vx = dir * speed * Math.cos(angle);
+          shuttle.vy = speed * Math.sin(angle);
+          shuttle.kind = 'smash';
+          shuttle.hitByMaxPower = true;
+          shuttle.hitDir = dir;
+          shuttle.maxPowerDiveApplied = false;
+          shuttle.dinkDiveApplied = false;
+          shuttle.netCollisionResolved = false;
+          triggerShake(16, 0.4);
+          spawnFloatText(shuttle.x, shuttle.y - 18, 'OVERCHARGED HEAVEN SMASH! 💥✝', '#ff4444');
+          playSound('smash');
+          spawnHitParticles(shuttle.x, shuttle.y, 25, true, '#ffd700');
+        } else {
+          // Controlled Heaven Power Smash: Steeper downward trajectory prevents going out of bounds even on high lob hits!
+          shuttle.allowOverchargeOut = false;
+          let speed = SMASH_BASE_SPEED * (0.95 + 0.3 * chargeFrac);
+          const steepAngleDeg = 36 + netCloseFrac * 10 + (chargeFrac - 0.5) * 22;
+          const angle = steepAngleDeg * Math.PI / 180;
+          shuttle.vx = dir * speed * Math.cos(angle);
+          shuttle.vy = speed * Math.sin(angle);
+          shuttle.kind = 'smash';
+          shuttle.hitByMaxPower = true;
+          shuttle.hitDir = dir;
+          shuttle.maxPowerDiveApplied = false;
+          shuttle.dinkDiveApplied = false;
+          shuttle.netCollisionResolved = false;
+          triggerShake(12, 0.32);
+          spawnFloatText(shuttle.x, shuttle.y - 18, 'HEAVEN SMASH! ⚡✝', '#ffd700');
+          playSound('smash');
+          spawnHitParticles(shuttle.x, shuttle.y, 20, true, '#ffd700');
+        }
+      } else {
+        const star5Speed = SMASH_BASE_SPEED * (power || 1.0) * netSpeedScale * 1.25;
+        let speed = SMASH_BASE_SPEED * power * netSpeedScale * powerMultFor(p.character);
+        if (spend === 'art') speed *= 1.25;
+
+        if (spend && !p.onGround) {
+          // Airborne ultimate smash: 1.5x speed for 5-star power characters, standard 1.0x 5-star smash speed for others
+          const is5StarPower = !!(p.character && p.character.stats && p.character.stats.power === 5);
+          speed = is5StarPower ? (star5Speed * 1.5) : star5Speed;
+        }
+
+        // Height (Part 4): taller players get a steeper downward smash angle.
+        const baseAngleDeg = SMASH_BACK_ANGLE + (SMASH_NET_STEEP_ANGLE - SMASH_BACK_ANGLE) * netCloseFrac + heightSmashSteepen(p.character);
+        
+        const chargeArcOffset = (1 - Math.min(1, Math.max(0.5, chargeFrac))) * 12;
+        const chargeSpeedScale = 0.75 + 0.25 * chargeFrac;
+        speed *= chargeSpeedScale;
+
+        const angleDeg = baseAngleDeg - chargeArcOffset;
+
+        const manualOffsetSmash = (advancedControlsEnabled && isHumanControlled(p)) ? p.attackAngle : 0;
+        const angle = (angleDeg - manualOffsetSmash) * Math.PI/180;
+        shuttle.vx = dir * speed * Math.cos(angle);
+        shuttle.vy = speed * Math.sin(angle);
+        shuttle.ultSmashArc = false;
+        shuttle.kind = 'smash';
+        shuttle.hitByMaxPower = !!(p.character && p.character.stats && p.character.stats.power === 5) || !!spend;
+        shuttle.hitDir = dir;
+        shuttle.maxPowerDiveApplied = false;
+        shuttle.dinkDiveApplied = false;
+        shuttle.netCollisionResolved = false;
+        
+        // DYNAMIC JUICE & SHAKE BASED ON CHARGE METER FULLNESS
+        if (chargeFrac >= 0.95) {
+          triggerShake(14, 0.35);
+          spawnFloatText(shuttle.x, shuttle.y - 15, 'MAX CHARGE SMASH! ⚡', '#ffce54');
+          for(let k = 0; k < 14; k++){
+            const a = (k / 14) * Math.PI * 2;
+            particles.push({
+              x: shuttle.x,
+              y: shuttle.y,
+              vx: Math.cos(a) * 200,
+              vy: Math.sin(a) * 200,
+              color: Math.random() > 0.3 ? '#ffce54' : '#ffffff',
+              size: Math.random() * 4.5 + 2,
+              alpha: 1.0,
+              decay: 3.5,
+              gravity: 0
+            });
+          }
+        } else if (chargeFrac >= 0.75) {
+          triggerShake(10, 0.28);
+          spawnFloatText(shuttle.x, shuttle.y - 12, 'POWER SMASH!', '#38bdf8');
+        } else {
+          triggerShake(6, 0.22);
+        }
+        
+        playSound('smash');
+        spawnHitParticles(shuttle.x, shuttle.y, 20, true, p.side === 'left' ? '#3b82f6' : '#ec4899');
+      }
     } else if(kind === 'dink'){
       // A realistic net shot: a short, gentle arc that barely clears the net, then a
       // Control-scaled dive pulls it down quickly on the opponent's side. Every character
@@ -6495,6 +6777,8 @@
         triggerShake(15, 0.4);
         if (xformType === 'AMEN') {
           playSound('bell');
+          const oppSide = p.side === 'left' ? 'right' : 'left';
+          spawnBenjaminSmokeBombBurst(oppSide);
         } else {
           playSound('smash');
         }
@@ -6505,9 +6789,8 @@
         playSound('smash');
         spawnHitParticles(shuttle.x, shuttle.y, 16, true, col);
       }
-    } else if (shuttle.hitByMaxPower) {
-      // Regular max-power smashes (e.g. during Fursona Unleashed) can also sail out from deep court
-      clampUltShotInBounds(p);
+    } else if (kind === 'smash') {
+      ensureSmashInBounds(p);
     }
     return true;
   }
@@ -9065,46 +9348,47 @@
       p.siuuuTimer = Math.max(0, p.siuuuTimer - dt);
     }
     if(p.dianShaTimer > 0) p.dianShaTimer = Math.max(0, p.dianShaTimer - dt);
-    if(p.todoGasTimer > 0) p.todoGasTimer = Math.max(0, p.todoGasTimer - dt);
-    if(p.driftTimer > 0) p.driftTimer = Math.max(0, p.driftTimer - dt);
-    if(p.flutterTimer > 0) p.flutterTimer = Math.max(0, p.flutterTimer - dt);
-    if(p.engañoTimer > 0) p.engañoTimer = Math.max(0, p.engañoTimer - dt);
-    if(p.aireLibreTimer > 0) p.aireLibreTimer = Math.max(0, p.aireLibreTimer - dt);
-    if(p.legendTimer > 0) p.legendTimer = Math.max(0, p.legendTimer - dt);
-    if(p.onAnotherLevelTimer > 0) p.onAnotherLevelTimer = Math.max(0, p.onAnotherLevelTimer - dt);
-    if(p.secondGearTimer > 0) p.secondGearTimer = Math.max(0, p.secondGearTimer - dt);
-    if(p.freefallTimer > 0) p.freefallTimer = Math.max(0, p.freefallTimer - dt);
-    if(p.craterTimer > 0) p.craterTimer = Math.max(0, p.craterTimer - dt);
-    if(p.burnoutTimer > 0) p.burnoutTimer = Math.max(0, p.burnoutTimer - dt);
-    if(p.lightFeetTimer > 0) p.lightFeetTimer = Math.max(0, p.lightFeetTimer - dt);
-    if(p.inTheZoneTimer > 0) p.inTheZoneTimer = Math.max(0, p.inTheZoneTimer - dt);
-    if(p.recoveryStanceTimer > 0) p.recoveryStanceTimer = Math.max(0, p.recoveryStanceTimer - dt);
+    if(state === 'rally'){
+      if(p.todoGasTimer > 0) p.todoGasTimer = Math.max(0, p.todoGasTimer - dt);
+      if(p.driftTimer > 0) p.driftTimer = Math.max(0, p.driftTimer - dt);
+      if(p.flutterTimer > 0) p.flutterTimer = Math.max(0, p.flutterTimer - dt);
+      if(p.engañoTimer > 0) p.engañoTimer = Math.max(0, p.engañoTimer - dt);
+      if(p.aireLibreTimer > 0) p.aireLibreTimer = Math.max(0, p.aireLibreTimer - dt);
+      if(p.legendTimer > 0) p.legendTimer = Math.max(0, p.legendTimer - dt);
+      if(p.onAnotherLevelTimer > 0) p.onAnotherLevelTimer = Math.max(0, p.onAnotherLevelTimer - dt);
+      if(p.secondGearTimer > 0) p.secondGearTimer = Math.max(0, p.secondGearTimer - dt);
+      if(p.freefallTimer > 0) p.freefallTimer = Math.max(0, p.freefallTimer - dt);
+      if(p.craterTimer > 0) p.craterTimer = Math.max(0, p.craterTimer - dt);
+      if(p.burnoutTimer > 0) p.burnoutTimer = Math.max(0, p.burnoutTimer - dt);
+      if(p.lightFeetTimer > 0) p.lightFeetTimer = Math.max(0, p.lightFeetTimer - dt);
+      if(p.inTheZoneTimer > 0) p.inTheZoneTimer = Math.max(0, p.inTheZoneTimer - dt);
+      if(p.recoveryStanceTimer > 0) p.recoveryStanceTimer = Math.max(0, p.recoveryStanceTimer - dt);
 
-    if(p.solarJudgmentSunTimer > 0) p.solarJudgmentSunTimer = Math.max(0, p.solarJudgmentSunTimer - dt);
+      if(p.solarJudgmentSunTimer > 0) p.solarJudgmentSunTimer = Math.max(0, p.solarJudgmentSunTimer - dt);
 
-    if (p.transform && p.transform.type === 'CLEOPATRA') {
-      if (!p.cleopatraFlashTimer) {
-        p.cleopatraFlashTimer = 0;
-        p.cleopatraNextFlashAt = Math.random() * 2.5 + 1.5; // flash every 1.5 - 4 seconds
-        p.cleopatraFlashDuration = 0.35 + Math.random() * 0.25; // lasts 0.35 - 0.6 seconds
-      }
-      p.cleopatraFlashTimer += dt;
-      if (p.cleopatraFlashTimer >= p.cleopatraNextFlashAt) {
-        p.cleopatraIsFlashing = true;
-        p.cleopatraFlashActiveTimer = p.cleopatraFlashDuration;
-        p.cleopatraFlashTimer = 0;
-        p.cleopatraNextFlashAt = Math.random() * 2.5 + 1.5;
-        p.cleopatraFlashDuration = 0.35 + Math.random() * 0.25;
-      }
-      if (p.cleopatraIsFlashing) {
-        p.cleopatraFlashActiveTimer -= dt;
-        if (p.cleopatraFlashActiveTimer <= 0) {
-          p.cleopatraIsFlashing = false;
+      if (p.transform && p.transform.type === 'CLEOPATRA') {
+        if (!p.cleopatraFlashTimer) {
+          p.cleopatraFlashTimer = 0;
+          p.cleopatraNextFlashAt = Math.random() * 2.5 + 1.5; // flash every 1.5 - 4 seconds
+          p.cleopatraFlashDuration = 0.35 + Math.random() * 0.25; // lasts 0.35 - 0.6 seconds
+        }
+        p.cleopatraFlashTimer += dt;
+        if (p.cleopatraFlashTimer >= p.cleopatraNextFlashAt) {
+          p.cleopatraIsFlashing = true;
+          p.cleopatraFlashActiveTimer = p.cleopatraFlashDuration;
+          p.cleopatraFlashTimer = 0;
+          p.cleopatraNextFlashAt = Math.random() * 2.5 + 1.5;
+          p.cleopatraFlashDuration = 0.35 + Math.random() * 0.25;
+        }
+        if (p.cleopatraIsFlashing) {
+          p.cleopatraFlashActiveTimer -= dt;
+          if (p.cleopatraFlashActiveTimer <= 0) {
+            p.cleopatraIsFlashing = false;
+          }
         }
       }
     } else {
       p.cleopatraIsFlashing = false;
-      p.cleopatraFlashTimer = null;
     }
   }
 
@@ -9667,8 +9951,8 @@
             pointPauseTimer -= simDt;
             if(pointPauseTimer <= 0) setupServe();
           }
-          tickTransform(left, nowSec);  // expire timed transformation ultimates (Part 6)
-          tickTransform(right, nowSec);
+          tickTransform(left, simDt);  // expire timed transformation ultimates (Part 6)
+          tickTransform(right, simDt);
           applyPassiveMomentumTrickle(left, simDt);  // Cristiano Spotlight (Part 3)
           applyPassiveMomentumTrickle(right, simDt);
           regenStamina(left, simDt);  // Stamina regen while grounded & idle (Part 5.1)
@@ -10824,6 +11108,146 @@
     ec.setTransform(1, 0, 0, 1, 0, 0);
   }
 
+  function getAngelicLightBeams(side) {
+    const minX = side === 'left' ? COURT_LEFT : NET_X;
+    const maxX = side === 'left' ? NET_X : COURT_RIGHT;
+    const width = maxX - minX;
+    const now = performance.now() * 0.001;
+    const beamCount = 6;
+    const beams = [];
+    for (let i = 0; i < beamCount; i++) {
+      const bx = minX + (width / (beamCount + 1)) * (i + 1) + Math.sin(now * 1.2 + i * 1.5) * 18;
+      const bw = 24 + Math.sin(now * 2 + i) * 8;
+      beams.push({ x: bx, width: bw, radius: (bw / 2) + 36 });
+    }
+    return beams;
+  }
+
+  let benjaminOppRain = [];
+  function initBenjaminOpponentEffects() {
+    benjaminOppRain = [];
+    for (let i = 0; i < 35; i++) {
+      benjaminOppRain.push({
+        xFrac: Math.random(),
+        yFrac: Math.random(),
+        speed: 350 + Math.random() * 250,
+        len: 12 + Math.random() * 14
+      });
+    }
+  }
+  initBenjaminOpponentEffects();
+
+  function spawnBenjaminSmokeBombBurst(oppSide) {
+    const minX = oppSide === 'left' ? COURT_LEFT : NET_X;
+    const maxX = oppSide === 'left' ? NET_X : COURT_RIGHT;
+    const width = maxX - minX;
+    const centerX = (minX + maxX) / 2;
+    const groundY = GROUND_Y;
+
+    for (let i = 0; i < 40; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 60 + Math.random() * 220;
+      particles.push({
+        x: centerX + (Math.random() - 0.5) * 80,
+        y: groundY - 20 + (Math.random() - 0.5) * 30,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 40,
+        color: Math.random() < 0.5 ? '#1e293b' : (Math.random() < 0.5 ? '#475569' : '#0f172a'),
+        size: Math.random() * 12 + 6,
+        alpha: 0.9,
+        decay: 1.2,
+        gravity: -10
+      });
+    }
+    rings.push({
+      x: centerX,
+      y: groundY - 15,
+      radius: 10,
+      maxRadius: width * 0.45,
+      color: '#334155',
+      alpha: 0.85,
+      speed: 280
+    });
+    playSound('subbass');
+    spawnFloatText(centerX, groundY - 60, 'SMOKE BOMB RAIN! ☁️🌧️', '#94a3b8');
+  }
+
+  function drawBenjaminSmokeAndRainOpponentSide(oppSide, dt) {
+    const minX = oppSide === 'left' ? COURT_LEFT : NET_X;
+    const maxX = oppSide === 'left' ? NET_X : COURT_RIGHT;
+    const width = maxX - minX;
+    const now = performance.now() * 0.001;
+
+    ctx.save();
+
+    // 1. Dark Smoky Fog Vignette on Opponent's Side
+    const oppGlow = ctx.createLinearGradient(minX, 0, maxX, GROUND_Y);
+    oppGlow.addColorStop(0, 'rgba(15, 23, 42, 0.45)');
+    oppGlow.addColorStop(0.6, 'rgba(30, 41, 59, 0.55)');
+    oppGlow.addColorStop(1, 'rgba(15, 15, 25, 0.65)');
+    ctx.fillStyle = oppGlow;
+    ctx.fillRect(minX, 0, width, GROUND_Y + 40);
+
+    // 2. Rolling Smoky Fog Clouds on Ground
+    const smokePuffsCount = 7;
+    for (let i = 0; i < smokePuffsCount; i++) {
+      const px = minX + (width / (smokePuffsCount - 1)) * i + Math.sin(now * 1.5 + i * 1.2) * 20;
+      const py = GROUND_Y - 18 + Math.cos(now * 1.8 + i) * 8;
+      const rad = 45 + Math.sin(now * 2 + i * 0.8) * 12;
+
+      const sGrad = ctx.createRadialGradient(px, py, 5, px, py, rad);
+      sGrad.addColorStop(0, 'rgba(30, 41, 59, 0.70)');
+      sGrad.addColorStop(0.5, 'rgba(51, 65, 85, 0.45)');
+      sGrad.addColorStop(1, 'rgba(15, 23, 42, 0.0)');
+
+      ctx.fillStyle = sGrad;
+      ctx.beginPath();
+      ctx.arc(px, py, rad, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 3. Low-lying Ash/Smoke Particles
+    for (let i = 0; i < 12; i++) {
+      const px = minX + ((i * 53 + Math.sin(now * 2 + i) * 30) % width);
+      const py = GROUND_Y - ((now * 25 + i * 40) % 90);
+      const alpha = Math.sin((py / GROUND_Y) * Math.PI) * 0.5;
+      if (alpha > 0) {
+        ctx.fillStyle = `rgba(148, 163, 184, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(px, py, 2 + (i % 3), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // 4. Heavy Rain Falling on Opponent's Court
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.65)';
+    ctx.lineWidth = 1.5;
+    const actualDt = dt || 0.016;
+    for (let i = 0; i < benjaminOppRain.length; i++) {
+      const r = benjaminOppRain[i];
+      r.yFrac += (r.speed * actualDt) / GROUND_Y;
+      if (r.yFrac > 1) {
+        r.yFrac = 0;
+        r.xFrac = Math.random();
+      }
+      const rx = minX + r.xFrac * width;
+      const ry = r.yFrac * GROUND_Y;
+      ctx.beginPath();
+      ctx.moveTo(rx, ry);
+      ctx.lineTo(rx - 3, ry + r.len);
+      ctx.stroke();
+
+      if (ry >= GROUND_Y - 15) {
+        ctx.strokeStyle = 'rgba(203, 213, 225, 0.35)';
+        ctx.beginPath();
+        ctx.ellipse(rx, GROUND_Y + 2, 6, 2, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
+  }
+
   function drawAngelicCourtSide(side) {
     const minX = side === 'left' ? COURT_LEFT : NET_X;
     const maxX = side === 'left' ? NET_X : COURT_RIGHT;
@@ -10843,10 +11267,11 @@
 
     // 2. Divine Sunbeams / Rays descending from heaven
     ctx.globalCompositeOperation = 'lighter';
-    const beamCount = 6;
-    for (let i = 0; i < beamCount; i++) {
-      const bx = minX + (width / (beamCount + 1)) * (i + 1) + Math.sin(now * 1.2 + i * 1.5) * 18;
-      const bw = 24 + Math.sin(now * 2 + i) * 8;
+    const beams = getAngelicLightBeams(side);
+    for (let i = 0; i < beams.length; i++) {
+      const b = beams[i];
+      const bx = b.x;
+      const bw = b.width;
       const beamGrad = ctx.createLinearGradient(bx, 0, bx + (side === 'left' ? 15 : -15), GROUND_Y);
       beamGrad.addColorStop(0, 'rgba(255, 255, 230, 0.38)');
       beamGrad.addColorStop(0.6, 'rgba(255, 215, 0, 0.20)');
@@ -11517,6 +11942,8 @@
     const amenPlayer = (left && left.transform && left.transform.type === 'AMEN') ? left : ((right && right.transform && right.transform.type === 'AMEN') ? right : null);
     if (amenPlayer) {
       drawAngelicCourtSide(amenPlayer.side);
+      const oppSide = amenPlayer.side === 'left' ? 'right' : 'left';
+      drawBenjaminSmokeAndRainOpponentSide(oppSide, 0.016);
     }
 
     const cleopatraPlayer = (left && left.transform && left.transform.type === 'CLEOPATRA') ? left : ((right && right.transform && right.transform.type === 'CLEOPATRA') ? right : null);
@@ -11682,45 +12109,9 @@
     ctx.restore();
   }
 
-  // Active-transformation indicator (MOMENTUM_SPEC Part 6): while a timed Art is
-  // running, ring the player in a bright band with the transform's name and a
-  // shrinking arc that counts the remaining duration down. Purely cosmetic —
-  // reads p.transform, never writes it.
   function drawTransformIndicator(p, cx){
-    if(!p.transform) return;
-    const nowSec = performance.now()/1000;
-    const remain = Math.max(0, p.transform.expiry - nowSec);
-    const frac = Math.max(0, Math.min(1, remain / p.transform.dur));
-    const cy = p.y + PLAYER_H*0.45;
-    const col = p.side === 'left' ? '#60a5fa' : '#f472b6';
-    ctx.save();
-    // pulsing outline band
-    const pulse = 0.5 + 0.5*Math.sin(nowSec*7);
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.strokeStyle = col;
-    ctx.globalAlpha = 0.45 + 0.35*pulse;
-    ctx.lineWidth = 2.4;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, PLAYER_W*0.62, PLAYER_H*0.62, 0, 0, Math.PI*2);
-    ctx.stroke();
-    ctx.restore();
-    // duration arc above the head
-    const ax = cx, ay = p.y - 18, ar = 11;
-    ctx.save();
-    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(ax, ay, ar, 0, Math.PI*2); ctx.stroke();
-    ctx.strokeStyle = col;
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(ax, ay, ar, -Math.PI/2, -Math.PI/2 + Math.PI*2*frac); ctx.stroke();
-    ctx.restore();
-    // label
-    ctx.save();
-    ctx.font = '700 10px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = col;
-    ctx.fillText(p.transform.label, cx, p.y - 34);
-    ctx.restore();
+    // Circles around player body/head removed per requested clean look.
+    // Active transformation status is displayed directly on the draining Ultimate status bar.
   }
 
   // Phase 1 instrumentation (MOMENTUM_SPEC Part 0.3 / Part 8): the moment a side
@@ -12253,7 +12644,7 @@
         const fillGrad = ctx.createLinearGradient(gaugeX, 0, gaugeX + fillW, 0);
         const baseColor = ultPrimed ? pCol : (p.side === 'left' ? '#3b82f6' : '#ec4899');
         fillGrad.addColorStop(0, baseColor);
-        fillGrad.addColorStop(1, ultPrimed ? '#ffffff' : '#ffce54'); // glowing tip
+        fillGrad.addColorStop(1, ultPrimed ? '#ffffff' : '#ffce54');
         
         ctx.fillStyle = fillGrad;
         if (ultPrimed) {
@@ -12551,104 +12942,177 @@
   // centre, in every mode. The aura on the body is still the primary "pressure"
   // cue (Part 1.1); this is the precise readout and the "ultimate ready" prompt.
   function drawMomentumOneBar(p, anchorX, y, w, h, dir, sideColor){
-    const m = Math.max(0, Math.min(GameConstants.MOMENTUM.MAX, p.momentum || 0));
-    const frac = m / GameConstants.MOMENTUM.MAX;
-    const tier = p.momentumTier || 0;
     const nowSec = performance.now()/1000;
+    let frac = 0;
+    let isFull = false;
+    let isDraining = false;
+    let remainSec = 0;
+
+    if (p.transform && (p.transform.remain > 0 || p.transform.expiry !== undefined)) {
+      isDraining = true;
+      remainSec = Math.max(0, p.transform.remain !== undefined ? p.transform.remain : (p.transform.expiry - nowSec));
+      const dur = p.transform.dur || 20.0;
+      frac = Math.max(0, Math.min(1, remainSec / dur));
+    } else {
+      const m = Math.max(0, Math.min(GameConstants.MOMENTUM.MAX, p.momentum || 0));
+      frac = m / GameConstants.MOMENTUM.MAX;
+      const tier = p.momentumTier || 0;
+      isFull = (tier === 2 || frac >= 1.0 || p.ultCharging || p.ultPrimed);
+    }
+
     const x = dir < 0 ? anchorX - w : anchorX;      // track origin
+
     ctx.save();
     ctx.textBaseline = 'middle';
-    // track
-    ctx.fillStyle = 'rgba(8,12,28,0.82)';
-    ctx.strokeStyle = (p.ultCharging || tier === 2) ? (tier === 2 ? '#ffd700' : '#6ef3ff') : 'rgba(255,255,255,0.14)';
-    ctx.lineWidth = (p.ultCharging || tier === 2) ? 1.8 : 1;
-    ctx.beginPath(); ctx.roundRect(x, y, w, h, h/2); ctx.fill(); ctx.stroke();
-    // fill (grows from the inner anchor outward)
+    
+    // Outer track pill with dark glass fill and vibrant glowing outline when active/full/draining
+    ctx.fillStyle = 'rgba(8,12,28,0.88)';
+    ctx.strokeStyle = (p.ultCharging || isFull || isDraining) ? '#ffd700' : 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = (isFull || isDraining) ? 2.5 : 1.5;
+    ctx.beginPath(); 
+    ctx.roundRect(x, y, w, h, h/2); 
+    ctx.fill(); 
+    ctx.stroke();
+
+    // Inner track groove line for high contrast
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(x + 1, y + 1, w - 2, h - 2, (h-2)/2);
+    ctx.stroke();
+
+    // Fill (grows from the inner anchor outward)
     if(frac > 0){
       const fw = w * frac;
       const fx = dir < 0 ? (anchorX - fw) : anchorX;
-      let col;
-      if(tier === 2){
-        const pulse = 0.5 + 0.5*Math.sin(nowSec*8);
-        col = 'rgba(255,'+Math.round(180+75*pulse)+',30,1)';
-      } else if(tier === 1) {
-        col = 'rgba(255,66,48,0.95)';
-      } else {
-        col = 'rgba(255,96,74,0.85)';
+      
+      // ONE COLOR ONLY (solid warm orange-y fill as requested)
+      ctx.fillStyle = '#ff5030';
+      if(isFull || isDraining){
+        ctx.shadowColor = '#ffd700';
+        ctx.shadowBlur = 12;
       }
-      ctx.fillStyle = col;
-      ctx.beginPath(); ctx.roundRect(fx, y, fw, h, h/2); ctx.fill();
+      ctx.beginPath(); 
+      ctx.roundRect(fx, y, fw, h, h/2); 
+      ctx.fill();
 
       // If ultimate bar is full and player is holding Shift (setting up) or primed, draw cyan setup overlay
-      if((tier === 2 || frac >= 1.0) && (p.ultCharging || p.ultPrimed || p.ultChargeProgress > 0)){
+      if(isFull && (p.ultCharging || p.ultPrimed || p.ultChargeProgress > 0)){
         const setupFrac = p.ultPrimed ? 1.0 : (p.ultChargeProgress || 0);
         const setupW = w * setupFrac;
         const setupFx = dir < 0 ? (anchorX - setupW) : anchorX;
-        ctx.fillStyle = 'rgba(110, 243, 255, 0.9)';
-        ctx.beginPath(); ctx.roundRect(setupFx, y, setupW, h, h/2); ctx.fill();
+        
+        const setupGrad = ctx.createLinearGradient(setupFx, 0, setupFx + setupW, 0);
+        setupGrad.addColorStop(0, '#00bfff');
+        setupGrad.addColorStop(1, '#6ef3ff');
+        ctx.fillStyle = setupGrad;
+        ctx.shadowColor = '#6ef3ff';
+        ctx.shadowBlur = 14;
+        ctx.beginPath(); 
+        ctx.roundRect(setupFx, y, setupW, h, h/2); 
+        ctx.fill();
+      }
 
-        // Particle sparks at setup charge tip
-        const setupTipX = dir < 0 ? setupFx : setupFx + setupW;
-        if(Math.random() < 0.65){
-          particles.push({
-            x: setupTipX + (Math.random() - 0.5) * 6,
-            y: y + h/2 + (Math.random() - 0.5) * 4,
-            vx: (dir < 0 ? -1 : 1) * (Math.random() * 30 + 10),
-            vy: (Math.random() - 0.5) * 20 - 10,
-            color: Math.random() < 0.5 ? '#6ef3ff' : '#ffd700',
-            size: Math.random() * 3 + 1.2,
-            alpha: 0.95,
-            decay: 2.2,
-            gravity: -15
-          });
-        }
-      } else if(tier === 2 || frac >= 1.0){
-        // Idle full meter particles
+      // ---------- FIERY TIP & PARTICLE EFFECT (ACTIVE WHEN FULL OR DRAINING ULT) ----------
+      if(isFull || (isDraining && frac > 0.01)){
         const tipX = dir < 0 ? fx : fx + fw;
-        if(Math.random() < 0.7){
+        const tipY = y + h / 2;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+
+        // 1. Fiery Radial Glow Sphere at Bar Tip
+        const fireRad = 15 + Math.sin(nowSec * 20) * 3;
+        const fireGrad = ctx.createRadialGradient(tipX, tipY, 2, tipX, tipY, fireRad);
+        fireGrad.addColorStop(0, '#ffffff');
+        fireGrad.addColorStop(0.3, '#ffea00');
+        fireGrad.addColorStop(0.75, '#ff3300');
+        fireGrad.addColorStop(1, 'rgba(255, 69, 0, 0)');
+        ctx.fillStyle = fireGrad;
+        ctx.beginPath();
+        ctx.arc(tipX, tipY, fireRad, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 2. Animated Flame & Plasma Tongues Attached to Tip
+        for (let i = 0; i < 4; i++) {
+          const angle = Math.sin(nowSec * 24 + i * 1.8) * 0.4;
+          const len = 16 * (0.8 + 0.4 * Math.sin(nowSec * 30 + i * 2.2));
+          const endX = tipX + dir * Math.cos(angle) * len;
+          const endY = tipY + Math.sin(angle) * len * 0.6;
+
+          ctx.strokeStyle = i % 2 === 0 ? '#ffffff' : '#ffea00';
+          ctx.lineWidth = 3 - (i * 0.5);
+          ctx.beginPath();
+          ctx.moveTo(tipX, tipY);
+          ctx.quadraticCurveTo(
+            tipX + dir * len * 0.5,
+            tipY + Math.sin(nowSec * 35 + i) * 6,
+            endX,
+            endY
+          );
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        // 3. Continuous Ember Particles Spawning at Bar Tip into World Particles
+        if (Math.random() < 0.85) {
           particles.push({
-            x: tipX + (Math.random() - 0.5) * 10,
-            y: y + h/2 + (Math.random() - 0.5) * 6,
-            vx: (Math.random() - 0.5) * 50,
-            vy: (Math.random() - 0.5) * 30 - 15,
-            color: Math.random() < 0.5 ? '#ffd700' : '#f43f5e',
+            x: tipX + (Math.random() - 0.5) * 4,
+            y: tipY + (Math.random() - 0.5) * (h * 0.7),
+            vx: dir * (Math.random() * 50 + 20),
+            vy: (Math.random() - 0.5) * 25 - 8,
+            color: Math.random() > 0.4 ? '#ffd700' : '#ff3300',
             size: Math.random() * 3.5 + 1.5,
             alpha: 0.95,
-            decay: 2.5,
-            gravity: -25
+            decay: Math.random() * 3.5 + 2.5,
+            gravity: -12
           });
         }
       }
     }
-    // tier-1 boundary tick at 50%
-    const midX = dir < 0 ? anchorX - w*0.5 : anchorX + w*0.5;
-    ctx.strokeStyle = 'rgba(255,255,255,0.30)';
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(midX, y+1); ctx.lineTo(midX, y+h-1); ctx.stroke();
-    // side-colour cap on the inner edge, to tie the bar to its player
+
+    // Tier 1 boundary tick at 50% (only show when not draining active ult)
+    if (!isDraining) {
+      const midX = dir < 0 ? anchorX - w * 0.5 : anchorX + w * 0.5;
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(midX, y + 2); ctx.lineTo(midX, y + h - 2); ctx.stroke();
+    }
+
+    // Side-color cap on the inner anchor edge
     ctx.fillStyle = sideColor;
-    ctx.beginPath(); ctx.roundRect(dir<0 ? anchorX-2 : anchorX, y, 2, h, 1); ctx.fill();
-    // PEAK / ready prompt
-    if(tier === 2 || frac >= 1.0){
+    ctx.beginPath(); ctx.roundRect(dir < 0 ? anchorX - 3 : anchorX, y, 3, h, 1.5); ctx.fill();
+
+    // PEAK / ready / active prompt under the bar
+    const promptY = y + h + 15;
+    if (isDraining) {
+      ctx.font = '800 11px "Space Grotesk", sans-serif';
+      ctx.textAlign = dir < 0 ? 'right' : 'left';
+      ctx.fillStyle = '#ffd700';
+      ctx.shadowColor = 'rgba(0,0,0,0.9)';
+      ctx.shadowBlur = 4;
+      const labelText = (p.transform && p.transform.label) ? p.transform.label.toUpperCase() : 'ULTIMATE BUFF';
+      ctx.fillText(`⚡ ${labelText} (${remainSec.toFixed(1)}s)`, dir < 0 ? anchorX : anchorX, promptY);
+    } else if (isFull) {
       const pulse = 0.5 + 0.5*Math.sin(nowSec*6);
-      ctx.font = '800 9px "Space Grotesk", sans-serif';
+      ctx.font = '800 11px "Space Grotesk", sans-serif';
       ctx.textAlign = dir < 0 ? 'right' : 'left';
       if(p.character && p.character.id === 'cristiano'){
         ctx.fillStyle = '#6ef3ff';
         if(!p.onGround){
-          ctx.fillText(p.ultPrimed ? '⚡ BICYCLE KICK READY — HIT TO LAUNCH' : (p.ultCharging ? '⚡ BICYCLE KICK SETUP...' : '★ ULT READY — JUMP + SHIFT FOR BICYCLE KICK'), dir<0 ? anchorX : anchorX, y + h + 7);
+          ctx.fillText(p.ultPrimed ? '⚡ BICYCLE KICK READY — HIT TO LAUNCH' : (p.ultCharging ? '⚡ BICYCLE KICK SETUP...' : '★ ULT READY — JUMP + SHIFT FOR BICYCLE KICK'), dir<0 ? anchorX : anchorX, promptY);
         } else {
-          ctx.fillText(p.ultPrimed ? '⚽ KNUCKLEBALL READY — HIT TO LAUNCH' : (p.ultCharging ? '⚽ KNUCKLEBALL SETUP...' : '★ ULT READY — HOLD SHIFT FOR KNUCKLEBALL'), dir<0 ? anchorX : anchorX, y + h + 7);
+          ctx.fillText(p.ultPrimed ? '⚽ KNUCKLEBALL READY — HIT TO LAUNCH' : (p.ultCharging ? '⚽ KNUCKLEBALL SETUP...' : '★ ULT READY — HOLD SHIFT FOR KNUCKLEBALL'), dir<0 ? anchorX : anchorX, promptY);
         }
       } else if(p.ultPrimed || (p.ultChargeProgress && p.ultChargeProgress >= 1.0)) {
         ctx.fillStyle = '#6ef3ff';
-        ctx.fillText('⚡ ULT PRIMED — PRESS HIT TO LAUNCH', dir<0 ? anchorX : anchorX, y + h + 7);
+        ctx.fillText('⚡ ULT PRIMED — PRESS HIT TO LAUNCH', dir<0 ? anchorX : anchorX, promptY);
       } else if(p.ultCharging) {
         ctx.fillStyle = '#6ef3ff';
-        ctx.fillText('⚡ SETTING UP ULT...', dir<0 ? anchorX : anchorX, y + h + 7);
+        ctx.fillText('⚡ SETTING UP ULT...', dir<0 ? anchorX : anchorX, promptY);
       } else {
         ctx.fillStyle = 'rgba(255,'+Math.round(180+70*pulse)+',90,1)';
-        ctx.fillText('★ ULT READY — HOLD SHIFT TO SETUP', dir<0 ? anchorX : anchorX, y + h + 7);
+        ctx.fillText('★ ULT READY — HOLD SHIFT TO SETUP', dir<0 ? anchorX : anchorX, promptY);
       }
     }
     ctx.restore();
@@ -12656,12 +13120,12 @@
 
   function drawMomentumBars(){
     const boxW = 160, boxX = W/2 - boxW/2, boxY = 10, boxH = 34;
-    const barW = 150, barH = 8, gap = 16;
-    const y = boxY + boxH + 4;
+    const barW = 320, barH = 28, gap = 16;
+    const y = boxY + boxH + 6;
     drawMomentumOneBar(left,  boxX - gap,        y, barW, barH, -1, '#3b82f6');
     drawMomentumOneBar(right, boxX + boxW + gap, y, barW, barH, +1, '#ec4899');
-    // Stamina bars sit just beneath the momentum bars (MOMENTUM_SPEC Part 5).
-    const sy = y + barH + 4, sh = 5;
+    // Thin stamina bars sit just beneath the momentum bars.
+    const sy = y + barH + 6, sh = 6;
     drawStaminaOneBar(left,  boxX - gap,        sy, barW, sh, -1);
     drawStaminaOneBar(right, boxX + boxW + gap, sy, barW, sh, +1);
   }
