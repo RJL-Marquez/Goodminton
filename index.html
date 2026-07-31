@@ -3725,6 +3725,77 @@
     oppMid:   { smash: 1.15, dink: 0.90, drop: 1.00, clear: 1.00, drive: 1.10 }
   };
 
+  // Every character's ultimate needs either a jump (aerial) or stays grounded, per the
+  // gate already enforced in chooseAIUltIntent below. Reused here so Expert can read the
+  // SAME fact about its opponent — "what is this character's ultimate built for" — instead
+  // of only using it to judge its own timing. Any character not in either list can fire
+  // from both stances, so it's treated as a 'hybrid' unknown.
+  const AI_AERIAL_ULT_CHARS = ['jordan', 'lindan', 'cristiano', 'sherman'];
+  const AI_GROUND_ULT_CHARS = ['amara', 'sofia', 'priya', 'rodrigo', 'liam', 'diego'];
+  function ultArchetypeFor(cid){
+    if (AI_AERIAL_ULT_CHARS.includes(cid)) return 'aerial';
+    if (AI_GROUND_ULT_CHARS.includes(cid)) return 'ground';
+    return 'hybrid';
+  }
+  // "Is my opponent's ultimate armed right now?" — true the moment their meter is primed
+  // or far enough into a charge, regardless of which of the 15 characters they're playing.
+  // This is what lets Expert react to ANY character's ability, not just a hand-picked few.
+  function oppUltArmed(opp){
+    return !!(opp && (opp.ultPrimed || opp.ultCharging || (opp.ultChargeProgress && opp.ultChargeProgress >= 0.7)));
+  }
+  // Shared behind/close/ahead scoreboard read. Used to key "best TIME to spend my own
+  // ultimate" memory so the lookup (chooseAIUltIntent, when deciding) and the record
+  // (chooseAIPlan, when logging the decision for later reward/punish) always land on the
+  // exact same bucket for the same moment.
+  function aiLeverageKey(p, opp){
+    const behind = p.score < opp.score;
+    const tightScore = Math.abs(p.score - opp.score) <= 2;
+    return behind ? 'behind' : (tightScore ? 'close' : 'ahead');
+  }
+
+  // Expert-only: baseline reads for "my opponent's ultimate is armed — what does THEIR
+  // archetype threaten, and what should I feed them instead?" Layered on top of the plain
+  // position baseline above via a separate `oppPosKey_armed<Archetype>` bucket, so normal
+  // play is untouched until an opponent actually has their meter ready. An armed aerial
+  // character wants a tall floaty shuttle to jump into — deny the height. An armed ground
+  // character's ultimate erupts out of close drive/dink exchanges — starve that exchange
+  // and push deep instead. A net-camping opponent is denied the same way regardless of
+  // archetype; arming just sharpens how much.
+  const EXPERT_ARMED_BASELINE_WEIGHTS = {
+    oppAtNet_armedAerial: { smash: 1.05, dink: 0.55, drop: 0.55, clear: 1.35, drive: 1.15 },
+    oppAtNet_armedGround: { smash: 1.05, dink: 0.50, drop: 0.55, clear: 1.40, drive: 1.05 },
+    oppAtNet_armedHybrid: { smash: 1.05, dink: 0.55, drop: 0.55, clear: 1.35, drive: 1.10 },
+    oppDeep_armedAerial:  { smash: 1.20, dink: 1.20, drop: 1.20, clear: 0.55, drive: 1.10 },
+    oppDeep_armedGround:  { smash: 1.10, dink: 1.00, drop: 1.00, clear: 1.15, drive: 0.70 },
+    oppDeep_armedHybrid:  { smash: 1.15, dink: 1.10, drop: 1.10, clear: 0.85, drive: 0.95 },
+    oppMid_armedAerial:   { smash: 1.15, dink: 1.00, drop: 0.80, clear: 0.65, drive: 1.25 },
+    oppMid_armedGround:   { smash: 1.15, dink: 0.70, drop: 0.75, clear: 1.25, drive: 0.70 },
+    oppMid_armedHybrid:   { smash: 1.15, dink: 0.90, drop: 0.90, clear: 1.00, drive: 1.00 }
+  };
+
+  // Expert-only: baseline reads for "best TIME to spend my OWN ultimate" — same three
+  // position buckets, crossed with the scoreboard instead of the opponent's arming.
+  // Trailing tilts toward swinging for it (something needs to change); a comfortable lead
+  // tilts toward banking the safer point instead of gambling a lead away.
+  const EXPERT_ULT_BASELINE_WEIGHTS = {
+    oppAtNet_behind: { ult_art: 1.25, ult_drive: 1.20 },
+    oppAtNet_close:  { ult_art: 1.05, ult_drive: 1.05 },
+    oppAtNet_ahead:  { ult_art: 0.90, ult_drive: 0.90 },
+    oppDeep_behind:  { ult_art: 1.35, ult_drive: 1.15 },
+    oppDeep_close:   { ult_art: 1.10, ult_drive: 1.00 },
+    oppDeep_ahead:   { ult_art: 0.95, ult_drive: 0.90 },
+    oppMid_behind:   { ult_art: 1.30, ult_drive: 1.20 },
+    oppMid_close:    { ult_art: 1.05, ult_drive: 1.05 },
+    oppMid_ahead:    { ult_art: 0.90, ult_drive: 0.95 }
+  };
+  function capitalize(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
+  function seedWeightsFromTable(weights, table){
+    for (const posKey in table) {
+      const perType = table[posKey];
+      for (const type in perType) weights[type + '_' + posKey] = perType[type];
+    }
+  }
+
   // Reinforcement Learning Memory for AI decision making
   function createAIMemory() {
     return {
@@ -3774,15 +3845,12 @@
         this.weights = {};
         this.rallyHistory = [];
         if (seedExpert) {
-          // Start from the Expert baseline instead of neutral — "trained", not "learning
+          // Start from the Expert baselines instead of neutral — "trained", not "learning
           // on the job." Live rewardOrPunish() calls during the match still nudge these
           // same keys up/down per point, so it adapts to this specific opponent from here.
-          for (const posKey in EXPERT_BASELINE_WEIGHTS) {
-            const perType = EXPERT_BASELINE_WEIGHTS[posKey];
-            for (const type in perType) {
-              this.weights[type + '_' + posKey] = perType[type];
-            }
-          }
+          seedWeightsFromTable(this.weights, EXPERT_BASELINE_WEIGHTS);       // base shot tactics
+          seedWeightsFromTable(this.weights, EXPERT_ARMED_BASELINE_WEIGHTS); // opponent-ability awareness
+          seedWeightsFromTable(this.weights, EXPERT_ULT_BASELINE_WEIGHTS);   // best time to use own ultimate
         }
       },
 
@@ -5867,6 +5935,15 @@
     const oppAtNet = oppDistNet < halfCourt*0.30;
     const oppPosKey = oppAtNet ? 'oppAtNet' : (oppDeep ? 'oppDeep' : 'oppMid');
 
+    // Expert-only opponent-ability awareness: if their ultimate is armed, look up (and
+    // later record) shot weights under a distinct bucket that knows what THEIR archetype
+    // threatens (aerial needs height, ground needs an exchange) — see
+    // EXPERT_ARMED_BASELINE_WEIGHTS. Every other difficulty, and every non-armed moment
+    // on Expert, keeps using the plain oppPosKey exactly as before.
+    const oppArmed = (aiDifficulty === 'expert') && oppUltArmed(opp);
+    const oppArch = oppArmed ? ultArchetypeFor(opp.character && opp.character.id) : null;
+    const memPosKey = oppArmed ? (oppPosKey + '_armed' + capitalize(oppArch)) : oppPosKey;
+
     // Shot sequencing: am I still hunting for a kill shot I set up a moment ago?
     const combo = ai.comboIntent && now < ai.comboIntent.expiresAt;
 
@@ -5933,7 +6010,7 @@
       if (!chosenPlan) {
         // 3. Smart Jump Smash (Normal or Tactical) with Reinforcement Memory
         const cristianoJump = sigId === 'cristiano' ? 1.5 : 1;
-        const smashMemWeight = ai.memory ? ai.memory.getWeight('smash', oppPosKey) : 1.0;
+        const smashMemWeight = ai.memory ? ai.memory.getWeight('smash', memPosKey) : 1.0;
         const jumpChanceEff = diff.jumpChance * (0.75 + 0.6*persona.aggression) * (combo ? 1.4 : 1)
                               * vocab.smash * cristianoJump * priyaEsc * smashMemWeight;
         if(canJump && Math.random() < Math.min(0.97, jumpChanceEff)){
@@ -5951,7 +6028,7 @@
 
       if (!chosenPlan) {
         // 4. Net Game (Dink / Soft Drop) with Reinforcement Memory
-        const dinkMemWeight = ai.memory ? ai.memory.getWeight('dink', oppPosKey) : 1.0;
+        const dinkMemWeight = ai.memory ? ai.memory.getWeight('dink', memPosKey) : 1.0;
         const dinkBase = (oppDeep ? 0.85 : (0.25 + 0.35*persona.precision)) * (respectPeak ? 0.3 : 1) * dinkMemWeight;
         if(myDistNet <= NET_DINK_DISTANCE*0.9 && Math.random() < Math.min(0.97, dinkBase * vocab.dink)){
           if(Math.random() < diff.placementSkill * (0.35 + 0.4*persona.aggression)){
@@ -5971,9 +6048,9 @@
 
       if (!chosenPlan) {
         // 6. Strategic Float Placement (Clear / Drop / Drive) with Reinforcement Memory
-        const dropMemWeight = ai.memory ? ai.memory.getWeight('drop', oppPosKey) : 1.0;
-        const clearMemWeight = ai.memory ? ai.memory.getWeight('clear', oppPosKey) : 1.0;
-        const driveMemWeight = ai.memory ? ai.memory.getWeight('drive', oppPosKey) : 1.0;
+        const dropMemWeight = ai.memory ? ai.memory.getWeight('drop', memPosKey) : 1.0;
+        const clearMemWeight = ai.memory ? ai.memory.getWeight('clear', memPosKey) : 1.0;
+        const driveMemWeight = ai.memory ? ai.memory.getWeight('drive', memPosKey) : 1.0;
 
         const shortTarget = 130 + Math.random()*90;
         const deepTarget  = 450 + Math.random()*60;
@@ -6034,11 +6111,15 @@
       }
     }
 
-    // Record decision in Reinforcement Learning Memory
+    // Record decision in Reinforcement Learning Memory. Shot type/target uses memPosKey
+    // (matches the lookup above exactly, armed-awareness included). The ultimate uses its
+    // own leverage-aware key (matches chooseAIUltIntent's lookup) so "best time to ult"
+    // gets credited/blamed on the scoreboard situation it was actually used in.
     if (chosenPlan && ai.memory) {
-      ai.memory.recordAction(chosenPlan.type, oppPosKey);
+      ai.memory.recordAction(chosenPlan.type, memPosKey);
       if (chosenPlan.aiUltIntent) {
-        ai.memory.recordAction('ult_' + chosenPlan.aiUltIntent, oppPosKey);
+        const ultMemKey = (aiDifficulty === 'expert') ? (oppPosKey + '_' + aiLeverageKey(p, opp)) : oppPosKey;
+        ai.memory.recordAction('ult_' + chosenPlan.aiUltIntent, ultMemKey);
       }
     }
 
@@ -6070,13 +6151,11 @@
 
     // 3. Ground vs Aerial Capability Check
     const cid = p.character && p.character.id;
-    const aerialUlts = ['jordan', 'lindan', 'cristiano', 'sherman'];
-    const groundUlts = ['amara', 'sofia', 'priya', 'rodrigo', 'liam', 'diego'];
 
-    if(groundUlts.includes(cid) && airborne){
+    if(AI_GROUND_ULT_CHARS.includes(cid) && airborne){
       if(!canDrive) return null;
     }
-    if(aerialUlts.includes(cid) && !airborne){
+    if(AI_AERIAL_ULT_CHARS.includes(cid) && !airborne){
       if(!canDrive && !canArt) return null;
     }
 
@@ -6092,17 +6171,20 @@
     const arch = AI_ARCHETYPE[cid] || 'allcourt';
 
     let ultScore = 0.20;
-    if(airborne && aerialUlts.includes(cid)) ultScore += 0.40;
-    if(!airborne && groundUlts.includes(cid)) ultScore += 0.35;
+    if(airborne && AI_AERIAL_ULT_CHARS.includes(cid)) ultScore += 0.40;
+    if(!airborne && AI_GROUND_ULT_CHARS.includes(cid)) ultScore += 0.35;
     if(oppDistNet > halfCourt*0.70 || oppDistNet < halfCourt*0.18) ultScore += 0.30;
     if(behind) ultScore += 0.20;
     if(highLeverage) ultScore += 0.25;
     if(arch === 'power') ultScore += 0.15;
 
-    // Reinforcement Memory Multiplier
+    // Reinforcement Memory Multiplier — Expert additionally keys this on the scoreboard
+    // (behind/close/ahead) so it learns the best TIME to spend its ultimate, not just the
+    // best opponent position; every other difficulty keeps the plain position-only key.
     const ai = aiControllers[p.side];
-    const artWeight = (ai && ai.memory) ? ai.memory.getWeight('ult_art', oppPosKey) : 1.0;
-    const driveWeight = (ai && ai.memory) ? ai.memory.getWeight('ult_drive', oppPosKey) : 1.0;
+    const ultMemKey = (aiDifficulty === 'expert') ? (oppPosKey + '_' + aiLeverageKey(p, opp)) : oppPosKey;
+    const artWeight = (ai && ai.memory) ? ai.memory.getWeight('ult_art', ultMemKey) : 1.0;
+    const driveWeight = (ai && ai.memory) ? ai.memory.getWeight('ult_drive', ultMemKey) : 1.0;
 
     // 5. Difficulty Scaling Thresholds
     let minScoreThreshold = 0.50;
