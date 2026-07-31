@@ -1505,6 +1505,37 @@
     border-right: 4px solid var(--right-color);
     box-shadow: 0 20px 50px rgba(0,0,0,0.5), 0 0 30px rgba(236, 72, 153, 0.05);
   }
+  .vsBanterBox {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    max-width: 860px;
+    gap: 16px;
+    margin-top: -15px;
+    margin-bottom: -10px;
+  }
+  .vsBanterQuote {
+    flex: 1;
+    background: rgba(15, 23, 42, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    font-style: italic;
+    color: #f8fafc;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    line-height: 1.4;
+  }
+  .vsBanterQuote.left {
+    border-left: 4px solid #3b82f6;
+    text-align: left;
+  }
+  .vsBanterQuote.right {
+    border-right: 4px solid #ec4899;
+    text-align: right;
+  }
   .vsCanvas {
     display: block;
     width: 180px;
@@ -2664,6 +2695,10 @@
             <div class="vsStats" id="vsRightStats"></div>
           </div>
         </div>
+        <div class="vsBanterBox" id="vsBanterBox">
+          <div class="vsBanterQuote left" id="vsBanterLeft">"Pre-match quote P1"</div>
+          <div class="vsBanterQuote right" id="vsBanterRight">"Pre-match quote P2"</div>
+        </div>
         <div class="vsBottom">
           <div id="vsCourtName">CLASSIC COURT</div>
           <div class="loadingContainer">
@@ -3278,6 +3313,9 @@
       left: { receives: 0, aces: 0, smashes: 0, dinks: 0, floats: 0, outs: 0, doubleHits: 0, serves: 0, totalHits: 0 },
       right: { receives: 0, aces: 0, smashes: 0, dinks: 0, floats: 0, outs: 0, doubleHits: 0, serves: 0, totalHits: 0 }
     };
+    const seedExpert = (aiDifficulty === 'expert');
+    if (aiControllers && aiControllers.left && aiControllers.left.memory) aiControllers.left.memory.resetAll(seedExpert);
+    if (aiControllers && aiControllers.right && aiControllers.right.memory) aiControllers.right.memory.resetAll(seedExpert);
     matchRecap = {
       longestRally: 0,
       p1PeakMomentum: 0,
@@ -3673,6 +3711,96 @@
   function aiMoveEdge(p){ return aiEdgeActive(p) ? (AI_MOVE_EDGE[aiDifficulty]  || 1) : 1; }
   function aiReachEdge(p){ return aiEdgeActive(p) ? (AI_REACH_EDGE[aiDifficulty] || 0) : 0; }
 
+  // Expert-only "pretraining": baseline shot weights an Expert AI starts a match with,
+  // standing in for prior practice rather than the neutral 1.0-everywhere start every
+  // other difficulty gets. Same key space as the live weights (`type_oppPosKey`), just
+  // hand-tuned to sound badminton tactics: push a net-camping opponent deep, drag a deep
+  // opponent back up to the net, keep it brisk when they're neutral in the mid-court.
+  // Expert still layers live rewardOrPunish() on top of these every point, so it keeps
+  // adapting to *this* opponent's specific patterns from a strong footing instead of a
+  // blank one — it doesn't relearn badminton from scratch, it fine-tunes.
+  const EXPERT_BASELINE_WEIGHTS = {
+    oppAtNet: { smash: 0.95, dink: 0.55, drop: 0.65, clear: 1.35, drive: 1.20 },
+    oppDeep:  { smash: 1.15, dink: 1.35, drop: 1.40, clear: 0.85, drive: 1.00 },
+    oppMid:   { smash: 1.15, dink: 0.90, drop: 1.00, clear: 1.00, drive: 1.10 }
+  };
+
+  // Reinforcement Learning Memory for AI decision making
+  function createAIMemory() {
+    return {
+      weights: {}, // Map of actionContextKey -> multiplier weight (default 1.0, min 0.15, max 3.0)
+      rallyHistory: [], // Array of { key, type, oppPosKey } logged during current rally
+      
+      getWeight(type, oppPosKey) {
+        const key = type + '_' + oppPosKey;
+        return this.weights[key] !== undefined ? this.weights[key] : 1.0;
+      },
+      
+      recordAction(type, oppPosKey) {
+        if (!type || !oppPosKey) return;
+        const key = type + '_' + oppPosKey;
+        this.rallyHistory.push({ key, type, oppPosKey });
+      },
+      
+      rewardOrPunish(didScorePoint) {
+        if (!this.rallyHistory || this.rallyHistory.length === 0) return;
+        
+        for (let i = 0; i < this.rallyHistory.length; i++) {
+          const item = this.rallyHistory[i];
+          const isFinalMove = (i === this.rallyHistory.length - 1);
+          const current = this.weights[item.key] !== undefined ? this.weights[item.key] : 1.0;
+          
+          if (didScorePoint) {
+            // REWARD: Successful rally resulting in a point!
+            // The point-scoring move gets a significant boost (+0.40), setup moves get (+0.15)
+            const boost = isFinalMove ? 0.40 : 0.15;
+            this.weights[item.key] = Math.min(3.0, current + boost);
+          } else {
+            // PUNISH: Failed rally that resulted in opponent point or error!
+            // The decision leading to the loss/error gets penalized (-0.45), setup moves get (-0.15)
+            const penalty = isFinalMove ? 0.45 : 0.15;
+            this.weights[item.key] = Math.max(0.15, current - penalty);
+          }
+        }
+        
+        this.rallyHistory = [];
+      },
+      
+      resetRallyHistory() {
+        this.rallyHistory = [];
+      },
+
+      resetAll(seedExpert) {
+        this.weights = {};
+        this.rallyHistory = [];
+        if (seedExpert) {
+          // Start from the Expert baseline instead of neutral — "trained", not "learning
+          // on the job." Live rewardOrPunish() calls during the match still nudge these
+          // same keys up/down per point, so it adapts to this specific opponent from here.
+          for (const posKey in EXPERT_BASELINE_WEIGHTS) {
+            const perType = EXPERT_BASELINE_WEIGHTS[posKey];
+            for (const type in perType) {
+              this.weights[type + '_' + posKey] = perType[type];
+            }
+          }
+        }
+      },
+
+      getTopWeightsSummary() {
+        const keys = Object.keys(this.weights);
+        if (keys.length === 0) return 'learning...';
+        let bestKey = keys[0], bestVal = this.weights[keys[0]];
+        for (const k of keys) {
+          if (Math.abs(this.weights[k] - 1) > Math.abs(bestVal - 1)) {
+            bestKey = k;
+            bestVal = this.weights[k];
+          }
+        }
+        return `${bestKey}: ${bestVal.toFixed(2)}x`;
+      }
+    };
+  }
+
   // Per-side AI controller state — one instance per AI-controlled player, so AI vs AI mode
   // is just "run the same controller twice". All per-rally decision state lives here.
   function makeAIController(){
@@ -3681,29 +3809,94 @@
       opportunityActive:false, willAttempt:false, plan:null,
       hasJumped:false, hasSwung:false, lastJumpAt:-999,
       minHoldUntil:0, maxHoldUntil:0,
-      // whether the shuttle is actually heading toward this AI right now (see runAI) —
-      // drives tight tracking vs. easing off into a loose recovery wander, which
-      // wanderTargetX/nextWanderAt shape.
       focused:false, wanderTargetX:0, nextWanderAt:0,
-      // Shot-sequencing memory — set after a shot deliberately meant to set up a follow-up
-      // (a short drop pulling the opponent forward, or a deep clear pushing them back).
-      // While it hasn't expired, chooseAIPlan() hunts harder for the kill shot on the
-      // return that comes back, the way a player presses an advantage they just created
-      // instead of treating every incoming ball as a fresh, context-free decision.
-      comboIntent:null, // null | {expiresAt}
-      // Part 4 signature memory: sofia's last float stroke (so she can alternate off it)
-      // and maya's last working float depth (so she can reuse a pattern that's landing).
+      comboIntent:null,
       lastPlanType:null, mayaLastDepth:null,
-      stateLabel:'—' // purely for the F3 debug overlay
+      stateLabel:'—',
+      memory: createAIMemory()
     };
   }
   const aiControllers = { left: makeAIController(), right: makeAIController() };
+
+  // ---------- Adaptive Player Habit Memory & Analytics ----------
+  function createHabitTracker() {
+    return {
+      totalShots: 0,
+      shotsByKind: { smash: 0, drop: 0, drive: 0, clear: 0, lift: 0, dink: 0, block: 0 },
+      targets: { short: 0, deep: 0 },
+      jumpCount: 0,
+      ultCount: 0,
+      lastShotKind: null,
+      lastTargetX: 0,
+      shotSequences: {}, // e.g. "clear->smash": 3
+      
+      recordShot(kind, targetX, isJump, isUlt, prevKind) {
+        this.totalShots++;
+        if (this.shotsByKind[kind] !== undefined) this.shotsByKind[kind]++;
+        else this.shotsByKind[kind] = 1;
+
+        if (targetX < NET_X) {
+          if (targetX > COURT_LEFT + 220) this.targets.short++;
+          else this.targets.deep++;
+        } else {
+          if (targetX < COURT_RIGHT - 220) this.targets.short++;
+          else this.targets.deep++;
+        }
+
+        if (isJump) this.jumpCount++;
+        if (isUlt) this.ultCount++;
+
+        if (prevKind && kind) {
+          const seqKey = prevKind + '->' + kind;
+          this.shotSequences[seqKey] = (this.shotSequences[seqKey] || 0) + 1;
+        }
+
+        this.lastShotKind = kind;
+        this.lastTargetX = targetX;
+      },
+
+      getSmashRatio() {
+        return this.totalShots > 0 ? (this.shotsByKind.smash || 0) / this.totalShots : 0.2;
+      },
+      getDropRatio() {
+        return this.totalShots > 0 ? ((this.shotsByKind.drop || 0) + (this.shotsByKind.dink || 0)) / this.totalShots : 0.2;
+      },
+      getJumpRatio() {
+        return this.totalShots > 0 ? this.jumpCount / this.totalShots : 0.15;
+      },
+      predictNextShot(aiLastShot) {
+        if (!aiLastShot || this.totalShots < 3) return null;
+        let maxCount = 0;
+        let predictedKind = null;
+        const kinds = ['smash', 'drop', 'drive', 'clear', 'lift', 'dink'];
+        for (const k of kinds) {
+          const count = this.shotSequences[aiLastShot + '->' + k] || 0;
+          if (count > maxCount) {
+            maxCount = count;
+            predictedKind = k;
+          }
+        }
+        return maxCount >= 2 ? predictedKind : null;
+      },
+      reset() {
+        this.totalShots = 0;
+        this.shotsByKind = { smash: 0, drop: 0, drive: 0, clear: 0, lift: 0, dink: 0, block: 0 };
+        this.targets = { short: 0, deep: 0 };
+        this.jumpCount = 0;
+        this.ultCount = 0;
+        this.lastShotKind = null;
+        this.lastTargetX = 0;
+        this.shotSequences = {};
+      }
+    };
+  }
+  const playerHabitTracker = createHabitTracker();
+
   function resetAIController(c){
     c.nextDecisionAt = 0; c.serveAt = null; c.opportunityActive = false;
     c.willAttempt = false; c.plan = null; c.hasSwung = false; c.hasJumped = false;
     c.focused = false; c.comboIntent = null; c.lastPlanType = null; c.stateLabel = '—';
-    // mayaLastDepth deliberately persists across rallies — the "muscle memory" pattern is
-    // supposed to survive until it stops working, not reset every serve.
+    if (c.memory) c.memory.resetRallyHistory();
   }
 
   // ---------- stat-derived AI persona ----------
@@ -4170,7 +4363,7 @@
     const dir = p.side === 'left' ? 1 : -1;
     switch(id){
       case 'sherman':
-        triggerShermanFireworkRain(p);
+        startShermanMandateOfHeaven(p);
         break;
       case 'maya':
       case 'amara':
@@ -4230,7 +4423,7 @@
     const dir = p.side === 'left' ? 1 : -1;
     switch(id){
       case 'sherman':
-        triggerShermanFireworkRain(p);
+        startShermanMandateOfHeaven(p);
         break;
       case 'rodrigo': {
         holdShuttle(0.20);
@@ -4242,11 +4435,16 @@
         triggerStinger('RODRIGO', 'LA PAUSA', '#facc15', 1.8);
         break;
       }
-      case 'amara': {                            // Puppeteer — no landing marker, unpredictable sky lob
+      case 'amara': {                            // Puppeteer — unpredictable sky lob + Cleopatra transform, backdrop & blinding flash
+        p.solarJudgmentSunTimer = 1.8; // trigger blinding sun animation
         const realX = ultRandomX(p);
         ultLaunchToward(realX, 1500, 5.2);
         shuttle.ultMarker = null;
-        triggerShake(10, 0.3);
+
+        // Activate Cleopatra transform (duration 20s, stats maxed to 5, turns on Cleopatra dress/armor & blinding flash!)
+        activateTransform(p, 'CLEOPATRA', performance.now() / 1000);
+
+        triggerShake(14, 0.35);
         triggerStinger('AMARA', 'PUPPETEER', '#22d3ee', 1.8);
         break;
       }
@@ -4416,6 +4614,17 @@
     }
   }
 
+  function startShermanMandateOfHeaven(p) {
+    holdShuttle(2.5); // 2.5 seconds quiet suspense time before meteors descend
+    p.shermanMandateTimer = 2.5;
+    p.shermanMandateActive = true;
+    playSound('bell');
+    playSound('subbass');
+    triggerShake(12, 0.35);
+    spawnFloatText(p.x + PLAYER_W/2, p.y - 30, 'MANDATE OF HEAVEN 👑', '#ffd700');
+    triggerStinger('SHERMAN', 'MANDATE OF HEAVEN', '#f59e0b', 2.2);
+  }
+
   function triggerShermanFireworkRain(p){
     playSound('subbass');
     triggerShake(12, 0.35);
@@ -4561,6 +4770,209 @@
     }
   }
 
+  function spawnDragonImpactShockwave(x, y) {
+    playSound('subbass');
+    playSound('smash');
+    triggerShake(24, 0.5);
+    spawnFloatText(x, y - 25, 'DRAGON IMPACT! 🐉', '#ef4444');
+
+    rings.push({
+      x: x,
+      y: y,
+      radius: 10,
+      maxRadius: 200,
+      speed: 500,
+      color: '#ef4444',
+      alpha: 1.0
+    });
+    rings.push({
+      x: x,
+      y: y,
+      radius: 5,
+      maxRadius: 260,
+      speed: 620,
+      color: '#fbbf24',
+      alpha: 1.0
+    });
+
+    for (let k = 0; k < 36; k++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 120 + Math.random() * 480;
+      particles.push({
+        x: x,
+        y: y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 90,
+        color: Math.random() < 0.5 ? '#dc2626' : (Math.random() < 0.8 ? '#fbbf24' : '#ffffff'),
+        size: Math.random() * 6 + 2,
+        alpha: 1.0,
+        decay: 2.2,
+        gravity: 140
+      });
+    }
+  }
+
+  function drawShermanMandateGlow(p) {
+    if (!p) return;
+    const cx = p.x + PLAYER_W/2;
+    const cy = p.y + PLAYER_H/2;
+    const now = performance.now() * 0.001;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    // 1. Radiant gold floor disc under Sherman
+    const gGlow = ctx.createRadialGradient(cx, GROUND_Y, 10, cx, GROUND_Y, 150);
+    gGlow.addColorStop(0, 'rgba(255, 215, 0, 0.9)');
+    gGlow.addColorStop(0.4, 'rgba(245, 158, 11, 0.55)');
+    gGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = gGlow;
+    ctx.fillRect(cx - 160, GROUND_Y - 35, 320, 70);
+
+    // 2. Body-centering imperial aura halo
+    const bodyGrad = ctx.createRadialGradient(cx, cy, 15, cx, cy, 95);
+    bodyGrad.addColorStop(0, 'rgba(255, 235, 130, 0.95)');
+    bodyGrad.addColorStop(0.5, 'rgba(255, 215, 0, 0.5)');
+    bodyGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 95, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 3. Floating Imperial Sun Rays / Halo above head
+    const headY = p.y - 14;
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 2.5;
+    const rays = 8;
+    for (let i = 0; i < rays; i++) {
+      const a = (i / rays) * Math.PI - Math.PI / 2 + Math.sin(now * 2 + i) * 0.12;
+      const r1 = 18, r2 = 34;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * r1, headY + Math.sin(a) * r1);
+      ctx.lineTo(cx + Math.cos(a) * r2, headY + Math.sin(a) * r2);
+      ctx.stroke();
+    }
+
+    // 4. Mandate Rising Gold Sparks
+    if (Math.random() < 0.8) {
+      particles.push({
+        x: cx + (Math.random() - 0.5) * 45,
+        y: GROUND_Y - Math.random() * 10,
+        vx: (Math.random() - 0.5) * 35,
+        vy: -Math.random() * 150 - 60,
+        color: '#ffd700',
+        size: Math.random() * 4 + 2,
+        alpha: 1.0,
+        decay: 1.8,
+        gravity: -30
+      });
+    }
+
+    ctx.restore();
+  }
+
+  function drawShermanCoiledDragon(p) {
+    if (!p || !p.shermanDragonAirTimer || p.shermanDragonAirTimer <= 0) return;
+    const progress = p.shermanDragonAirTimer / 0.95; // 1 -> 0
+    const alpha = Math.min(1, Math.sin((1 - Math.max(0, Math.min(1, progress))) * Math.PI) * 1.3);
+    const cx = p.x + PLAYER_W/2;
+    const cy = p.y + PLAYER_H/2;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.globalCompositeOperation = 'lighter';
+
+    // 1. Dragon fire aura behind Sherman
+    const auraGrad = ctx.createRadialGradient(cx, cy, 20, cx, cy, 190);
+    auraGrad.addColorStop(0, 'rgba(239, 68, 68, 0.65)');
+    auraGrad.addColorStop(0.5, 'rgba(245, 158, 11, 0.4)');
+    auraGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = auraGrad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 190, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 2. Coiling Retro Pixel Dragon Body
+    const now = performance.now() * 0.001;
+    const dir = p.side === 'left' ? 1 : -1;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(dir, 1);
+
+    // Dragon serpent body segments
+    const segments = 16;
+    for (let i = segments; i >= 0; i--) {
+      const t = i / segments;
+      const angle = t * Math.PI * 2.5 + now * 3.5;
+      const radius = 60 + Math.sin(t * Math.PI * 2) * 28;
+      const sx = Math.cos(angle) * radius - 20;
+      const sy = Math.sin(angle) * (radius * 0.6) - 10;
+      const segSize = 14 + (1 - t) * 12;
+
+      // Dragon scale body node
+      ctx.fillStyle = i % 2 === 0 ? '#dc2626' : '#fbbf24';
+      ctx.strokeStyle = '#991b1b';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(sx, sy, segSize, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Golden dorsal spine / fin
+      ctx.fillStyle = '#fef08a';
+      ctx.fillRect(sx - 3, sy - segSize - 6, 6, 8);
+    }
+
+    // Dragon Head at top
+    const headX = 35, headY = -75;
+    ctx.fillStyle = '#dc2626';
+    ctx.beginPath();
+    ctx.ellipse(headX, headY, 28, 20, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#fbbf24';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Eyes, Fangs, Whiskers
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath();
+    ctx.arc(headX + 10, headY - 4, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(headX + 16, headY + 8);
+    ctx.lineTo(headX + 24, headY + 18);
+    ctx.lineTo(headX + 10, headY + 10);
+    ctx.fill();
+
+    ctx.strokeStyle = '#fbbf24';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(headX + 22, headY);
+    ctx.quadraticCurveTo(headX + 48, headY - 22, headX + 65, headY + 12);
+    ctx.stroke();
+
+    ctx.restore();
+
+    // Floating fire particles
+    if (Math.random() < 0.7) {
+      particles.push({
+        x: cx + (Math.random() - 0.5) * 130,
+        y: cy + (Math.random() - 0.5) * 130,
+        vx: (Math.random() - 0.5) * 90,
+        vy: -Math.random() * 130,
+        color: Math.random() < 0.5 ? '#ef4444' : '#f59e0b',
+        size: Math.random() * 4 + 2,
+        alpha: 1.0,
+        decay: 2.0,
+        gravity: -20
+      });
+    }
+
+    ctx.restore();
+  }
+
   // ==== Transformation ultimates (MOMENTUM_SPEC Part 6) =====================
   // Six Arts are timed physics-state changes rather than one-shot cinematics.
   // Activation clones the character with modified stats so the existing
@@ -4618,7 +5030,7 @@
     if(!p.transform) return 0;
     switch(p.transform.type){
       case 'ANCHOR':    return 110; // rooted but covers most of his half
-      case 'AMEN':      return (COURT_RIGHT - COURT_LEFT); // omnipresent divine reach across his half court!
+      case 'AMEN':      return (COURT_RIGHT - COURT_LEFT) / 2; // divine reach across his side of the court!
       case 'RALLY_LOCK':return 26;  // hit forgiveness
       default: return 0;
     }
@@ -5453,222 +5865,187 @@
     const oppDistNet = Math.abs((opp.x + PLAYER_W/2) - NET_X);
     const oppDeep  = oppDistNet > halfCourt*0.55;
     const oppAtNet = oppDistNet < halfCourt*0.30;
+    const oppPosKey = oppAtNet ? 'oppAtNet' : (oppDeep ? 'oppDeep' : 'oppMid');
 
-    // Shot sequencing: am I still hunting for a kill shot I set up a moment ago (a drop
-    // that pulled the opponent forward, or a deep clear that pushed them back)? While
-    // armed, marginal high balls read as smashable more readily — pressing an advantage
-    // instead of treating every return as a fresh, context-free decision.
+    // Shot sequencing: am I still hunting for a kill shot I set up a moment ago?
     const combo = ai.comboIntent && now < ai.comboIntent.expiresAt;
 
-    // Shot vocabulary (Part 3) + per-character signature id (Part 4). vocab biases which
-    // shots this archetype reaches for; sigId keys the handful of personality tweaks
-    // layered on top at the specific decision points they touch.
+    // Shot vocabulary & signature id
     const vocab = aiVocabFor(p, combo);
     const sigId = p && p.character && p.character.id;
-    // Part 4 priya (Adrenaline): escalates as the rally lengthens — more dangerous the
-    // longer things drag on. Scales her attacking eagerness by the current rally length.
     const priyaEsc = sigId === 'priya' ? (1 + Math.min(0.8, rallyHitCount/15)) : 1;
 
-    // Ultimate awareness (Part 5.2): the opponent's PEAK aura is visible information by
-    // design, so a self-aware player is entitled to respect it — at opponent PEAK, play
-    // safer: keep the ball deep/neutral and stay off the net, where an ultimate punishes
-    // hardest. Gated behind momentumAwareness exactly like the scoreboard nerve above, so
-    // Easy never does it and it never reads as mind-reading. If playtesters find it
-    // uncanny, lower this gate before touching anything else.
+    // Ultimate awareness: respect opponent PEAK aura
     const respectPeak = opp && opp.momentumTier === 2 && Math.random() < diff.momentumAwareness;
 
-    // a smashable ball is a genuine LOB — clearly above head height as it arrives. A fast
-    // flat drive momentarily "above head" out at reach's edge is not one: committing a
-    // jump to it just buries a rushed half-charge float into the tape. The height bar
-    // itself scales with the difficulty's jumpChance — a sharper player recognizes a kill
-    // opportunity in a moderately lifted ball, not only an obvious, very high one — and
-    // hunting a combo kill loosens it further, a player pressing the point takes the
-    // marginal one. Jump TIMING (see runAI's predictShuttleTimeToY call) is now a real
-    // forward prediction rather than a same-frame reactive check, so this recognition bar
-    // can afford to be this generous without the jump ending up mistimed.
     const smashHeightMargin = (100 - 28*diff.jumpChance) * (combo ? 0.6 : 1);
     const highBall = shuttle.y < p.y - smashHeightMargin;
 
-    // Incoming smash → defensive return (never a jump). Near the net, a soft quick block
-    // drops it back over. But from deeper in the court a fixed short tap has NO power to
-    // clear the net — the shuttle dies short on our own side (the reported bug). From
-    // there, solve a real defensive LIFT to a safe depth so the return actually gets back
-    // over, and let it charge as long as it needs (see the smash-defense pre-charge and
-    // the no-under-hit exemption in runAI). Better players lift a touch deeper for margin.
+    let chosenPlan = null;
+
+    // 1. Incoming smash → defensive block/lift
     if(shuttle.kind === 'smash'){
       if(myDistNet <= NET_DINK_DISTANCE*1.1){
-        return {type:'block', windupEarly:true, fixedHold:diff.smashChargeDuration, jump:false};
-      }
-      const liftDepth = 300 + 140*diff.placementSkill; // ~333 (easy) .. 440 (expert): deep, safe reset
-      return {type:'block', windupEarly:true, targetDepth:liftDepth, jump:false};
-    }
-
-    // Jump smash — the offensive kill. High-power characters actively hunt for this;
-    // low-power characters are somewhat less eager (their smash isn't as devastating) but
-    // still take a genuinely open opportunity — a real player doesn't pass up a free kill
-    // shot just because their swing isn't the hardest one on the court.
-    // Geometric constraint a real player respects instinctively: a smash launches on a
-    // steep DOWNWARD path from jump height, so from deep court it grounds on the hitter's
-    // own side long before the net — it's only a playable shot from the front/mid court.
-    // Deep high balls get cleared or dropped instead (the branches below).
-    const smashRange = myDistNet < halfCourt*0.55;
-    const jumpCooldown = 0.9 * (1.3 - 0.5*diff.jumpChance); // sharper difficulties reset faster
-    const canJump = p.onGround && highBall && smashRange && (now - ai.lastJumpAt > jumpCooldown);
-    // floor raised well above the old coin-flip baseline: a genuinely open smash chance
-    // should be taken almost every time at the higher difficulties, not hedged against —
-    // that hedge existed only because jump timing used to be unreliable, and it isn't
-    // anymore (see predictShuttleTimeToY in runAI).
-    // Part 3: smash vocabulary weight gates how eagerly this archetype hunts the jump kill
-    // (benjamin's 0 means he never smashes — Flat Face). Part 4 cristiano: aerial-smash
-    // hunter, jumps at almost anything airborne to the exclusion of court position.
-    const cristianoJump = sigId === 'cristiano' ? 1.5 : 1;
-    const jumpChanceEff = diff.jumpChance * (0.75 + 0.6*persona.aggression) * (combo ? 1.4 : 1)
-                          * vocab.smash * cristianoJump * priyaEsc;
-    if(canJump && Math.random() < Math.min(0.97, jumpChanceEff)){
-      ai.comboIntent = null; // pressed the advantage and swung for it — combo resolved
-      // A jump smash is a quick, explosive snap, not a slow half-second wind-up — a real
-      // player doesn't hang in the air holding the charge. This range was originally tuned
-      // like a grounded shot's (up to ~0.76s of hold) and routinely outlasted the shuttle's
-      // actual time at smashable height, so the swing consistently arrived too late even
-      // though the jump itself was timed correctly. fracMin sits right at releaseHit's own
-      // floor for calling a jumping hit a "smash" at all (chargeFrac >= 0.5 — anything
-      // under that plays as a soft float instead, no matter how well the jump was timed) —
-      // the shortest hold that still reliably registers as one. fracMax only scales with
-      // aggression, not fracMin, so slower-charging characters (low Speed lengthens
-      // chargeTimeFor, and with it every fraction's real-world seconds) aren't pushed
-      // toward a longer absolute hold than they can physically fit inside one jump.
-      return {type:'smash', windupEarly:true, jump:true,
-              fracMin:0.50, fracMax:0.56 + 0.12*persona.aggression};
-    }
-
-    // Net game — I'm close to the net: a soft dink is deadliest when the opponent is deep.
-    // High-control characters love this shot; low-control ones only risk it when it's
-    // clearly on. (Tap-length charge → releaseHit's dink mechanics take over.)
-    // Part 3: the dink trigger is scaled by the dink vocabulary weight — a placement
-    // character reaches for the net game far more readily than a power slugger, but even
-    // a power character (dink 0.4) can still take it when the opponent is camped deep.
-    // The oppDeep case is no longer an automatic dink; it's a strong-but-weighted lean,
-    // so the bias stays a bias rather than becoming a gate.
-    // respectPeak (Part 5.2) suppresses the net game when the opponent is at PEAK — the
-    // last place to be is at the net feeding an ultimate.
-    const dinkBase = (oppDeep ? 0.85 : (0.25 + 0.35*persona.precision)) * (respectPeak ? 0.3 : 1);
-    if(myDistNet <= NET_DINK_DISTANCE*0.9 && Math.random() < Math.min(0.97, dinkBase * vocab.dink)){
-      // a dink pulls the opponent forward — arm the combo so a weak lifted reply gets hunted
-      if(Math.random() < diff.placementSkill * (0.35 + 0.4*persona.aggression)){
-        ai.comboIntent = {expiresAt: now + COMBO_WINDOW};
-      }
-      return {type:'dink', windupEarly:false, fracMin:0.03, fracMax:0.09, jump:false};
-    }
-
-    // Defensive lift fallback (Part 1.5): if even a mid-court float is beyond reach from
-    // here — deep, cornered, and low on power — the correct badminton is a lift to reset
-    // the rally, not a doomed drive that dies at the net. A low-power player out of
-    // position lifts and lives to rally again rather than attempting a shot they can't hit.
-    const reach = floatChargeFracFor(300, myDistNet, p.character);
-    if(!reach.achievable && reach.maxDepth < 140){
-      return {type:'lift', windupEarly:true,
-              targetDepth: Math.max(120, reach.maxDepth - 10), jump:false};
-    }
-
-    // Everything else is a float return, and the real decision is PLACEMENT: where on the
-    // opponent's side should this land? Tactical play targets the ground the opponent
-    // ISN'T covering — short when they're camped deep (the classic rally-ender), over
-    // their head when they crowd the net, and toward the bigger open space otherwise.
-    // How often the AI actually makes the tactical pick (vs. a comfortable neutral rally
-    // ball) is the difficulty's placementSkill; how tightly the shot lands on the picked
-    // spot combines the difficulty's aimError with the character's Control.
-    const shortTarget = 130 + Math.random()*90;  // drops just past their service line
-    const deepTarget  = 450 + Math.random()*60;  // pushes at their back line, stays in bounds
-    const midTarget   = 280 + Math.random()*120; // neutral rally ball
-    let targetDepth;
-    // Part 4 maya (Muscle Memory): once a float depth has been working she reuses it with
-    // a little jitter until it stops working (mayaLastDepth is cleared on a lost rally).
-    if(sigId === 'maya' && ai.mayaLastDepth != null && Math.random() < 0.5){
-      targetDepth = ai.mayaLastDepth + (Math.random()*2 - 1)*20;
-    } else if(Math.random() < diff.placementSkill){
-      // Part 4 amara (extremely patient): unless the opponent is genuinely out of
-      // position she declines to force it, plays a neutral rally ball, and waits for the
-      // error rather than manufacturing a winner.
-      if(sigId === 'amara' && !oppDeep && !oppAtNet){
-        targetDepth = midTarget;
-      } else if(oppDeep){
-        // short (drop) vs deep (clear), biased by this archetype's drop/clear weights (Part 3).
-        // respectPeak (Part 5.2) leans further toward the safe deep clear that pushes a
-        // PEAK opponent to the back of the court, away from the net.
-        let pShort = vocabWeightedP(0.60 + 0.25*persona.precision, vocab.drop, vocab.clear);
-        if(respectPeak) pShort *= 0.4;
-        targetDepth = Math.random() < pShort ? shortTarget : deepTarget;
-      } else if(oppAtNet){
-        targetDepth = deepTarget; // over their head; Part 1 clips it to a drive/drop if unreachable
+        chosenPlan = {type:'block', windupEarly:true, fixedHold:diff.smashChargeDuration, jump:false, aiUltIntent:null};
       } else {
-        let pShort = vocabWeightedP(0.5, vocab.drop, vocab.clear);
-        if(respectPeak) pShort *= 0.4;
-        targetDepth = Math.random() < pShort ? shortTarget : deepTarget;
+        const liftDepth = 300 + 140*diff.placementSkill;
+        chosenPlan = {type:'block', windupEarly:true, targetDepth:liftDepth, jump:false, aiUltIntent:null};
       }
     } else {
-      // neutral pick: mid (drive) vs deep (clear), biased by the drive/clear weights
-      const pMid = vocabWeightedP(0.5, vocab.drive, vocab.clear);
-      targetDepth = Math.random() < pMid ? midTarget : deepTarget;
-    }
-    // contactStress widens the miss on the intended spot — a stretched/rushed/airborne
-    // contact is a sloppier contact, physically, not just a coin-flip "fail" flag.
-    targetDepth += (Math.random()*2 - 1) * diff.aimError * (1.35 - 0.7*persona.precision) * (1 + 1.1*contactStress);
-    targetDepth = Math.max(120, Math.min(520, targetDepth));
+      const smashRange = myDistNet < halfCourt*0.65;
+      const jumpCooldown = 0.9 * (1.3 - 0.5*diff.jumpChance);
+      const canJump = p.onGround && highBall && smashRange && (now - ai.lastJumpAt > jumpCooldown);
 
-    // Part 4 liam (never a low-percentage shot): cap ambition so his float never needs a
-    // near-max charge — he trades a little depth for a comfortable margin every time.
-    if(sigId === 'liam'){
-      const pm = powerMultForRegular(p.character);
-      const liamSafeDepth = 380 - 0.97*myDistNet + 640*0.82*pm;
-      targetDepth = Math.min(targetDepth, liamSafeDepth);
+      // 2. Check Ultimate Intent if Ultimate Meter is 100% full
+      const hasFullUlt = Simulation.canSpendMomentum(p);
+
+      if (hasFullUlt && p.onGround) {
+        // Evaluate Aerial Ultimate Jump Smash
+        if (canJump) {
+          const aerialUltChoice = chooseAIUltIntent(p, opp, true);
+          if (aerialUltChoice) {
+            ai.comboIntent = null;
+            chosenPlan = {
+              type: 'smash',
+              windupEarly: true,
+              jump: true,
+              aiUltIntent: aerialUltChoice,
+              fracMin: 0.50,
+              fracMax: 0.68 + 0.12*persona.aggression
+            };
+          }
+        }
+        if (!chosenPlan) {
+          // Evaluate Ground Ultimate
+          const groundUltChoice = chooseAIUltIntent(p, opp, false);
+          if (groundUltChoice) {
+            chosenPlan = {
+              type: 'drive',
+              windupEarly: true,
+              targetDepth: oppDeep ? 180 : 450,
+              aiUltIntent: groundUltChoice,
+              jump: false
+            };
+          }
+        }
+      }
+
+      if (!chosenPlan) {
+        // 3. Smart Jump Smash (Normal or Tactical) with Reinforcement Memory
+        const cristianoJump = sigId === 'cristiano' ? 1.5 : 1;
+        const smashMemWeight = ai.memory ? ai.memory.getWeight('smash', oppPosKey) : 1.0;
+        const jumpChanceEff = diff.jumpChance * (0.75 + 0.6*persona.aggression) * (combo ? 1.4 : 1)
+                              * vocab.smash * cristianoJump * priyaEsc * smashMemWeight;
+        if(canJump && Math.random() < Math.min(0.97, jumpChanceEff)){
+          ai.comboIntent = null;
+          chosenPlan = {
+            type:'smash',
+            windupEarly:true,
+            jump:true,
+            aiUltIntent:null,
+            fracMin:0.50,
+            fracMax:0.56 + 0.12*persona.aggression
+          };
+        }
+      }
+
+      if (!chosenPlan) {
+        // 4. Net Game (Dink / Soft Drop) with Reinforcement Memory
+        const dinkMemWeight = ai.memory ? ai.memory.getWeight('dink', oppPosKey) : 1.0;
+        const dinkBase = (oppDeep ? 0.85 : (0.25 + 0.35*persona.precision)) * (respectPeak ? 0.3 : 1) * dinkMemWeight;
+        if(myDistNet <= NET_DINK_DISTANCE*0.9 && Math.random() < Math.min(0.97, dinkBase * vocab.dink)){
+          if(Math.random() < diff.placementSkill * (0.35 + 0.4*persona.aggression)){
+            ai.comboIntent = {expiresAt: now + COMBO_WINDOW};
+          }
+          chosenPlan = {type:'dink', windupEarly:false, fracMin:0.03, fracMax:0.09, jump:false, aiUltIntent:null};
+        }
+      }
+
+      if (!chosenPlan) {
+        // 5. Defensive Lift Fallback
+        const reach = floatChargeFracFor(300, myDistNet, p.character);
+        if(!reach.achievable && reach.maxDepth < 140){
+          chosenPlan = {type:'lift', windupEarly:true, targetDepth: Math.max(120, reach.maxDepth - 10), jump:false, aiUltIntent:null};
+        }
+      }
+
+      if (!chosenPlan) {
+        // 6. Strategic Float Placement (Clear / Drop / Drive) with Reinforcement Memory
+        const dropMemWeight = ai.memory ? ai.memory.getWeight('drop', oppPosKey) : 1.0;
+        const clearMemWeight = ai.memory ? ai.memory.getWeight('clear', oppPosKey) : 1.0;
+        const driveMemWeight = ai.memory ? ai.memory.getWeight('drive', oppPosKey) : 1.0;
+
+        const shortTarget = 130 + Math.random()*90;
+        const deepTarget  = 450 + Math.random()*60;
+        const midTarget   = 280 + Math.random()*120;
+        let targetDepth;
+
+        if(sigId === 'maya' && ai.mayaLastDepth != null && Math.random() < 0.5){
+          targetDepth = ai.mayaLastDepth + (Math.random()*2 - 1)*20;
+        } else if(Math.random() < diff.placementSkill){
+          if(sigId === 'amara' && !oppDeep && !oppAtNet){
+            targetDepth = midTarget;
+          } else if(oppDeep){
+            let pShort = vocabWeightedP(0.60 + 0.25*persona.precision, vocab.drop * dropMemWeight, vocab.clear * clearMemWeight);
+            if(respectPeak) pShort *= 0.4;
+            targetDepth = Math.random() < pShort ? shortTarget : deepTarget;
+          } else if(oppAtNet){
+            targetDepth = deepTarget;
+          } else {
+            let pShort = vocabWeightedP(0.5, vocab.drop * dropMemWeight, vocab.clear * clearMemWeight);
+            if(respectPeak) pShort *= 0.4;
+            targetDepth = Math.random() < pShort ? shortTarget : deepTarget;
+          }
+        } else {
+          const pMid = vocabWeightedP(0.5, vocab.drive * driveMemWeight, vocab.clear * clearMemWeight);
+          targetDepth = Math.random() < pMid ? midTarget : deepTarget;
+        }
+
+        targetDepth += (Math.random()*2 - 1) * diff.aimError * (1.35 - 0.7*persona.precision) * (1 + 1.1*contactStress);
+        targetDepth = Math.max(120, Math.min(520, targetDepth));
+
+        if(sigId === 'liam'){
+          const pm = powerMultForRegular(p.character);
+          const liamSafeDepth = 380 - 0.97*myDistNet + 640*0.82*pm;
+          targetDepth = Math.min(targetDepth, liamSafeDepth);
+        }
+
+        const solve = floatChargeFracFor(targetDepth, myDistNet, p.character);
+        if(sigId){ const d = aiDiagFor(sigId); d.floatPlans++; if(!solve.achievable) d.clips++; }
+        if(!solve.achievable){
+          targetDepth = Math.max(120, Math.min(targetDepth, solve.maxDepth - 15));
+        }
+
+        let type = targetDepth < 230 ? 'drop' : targetDepth > 430 ? 'clear' : 'drive';
+        if(sigId === 'sofia' && type === ai.lastPlanType){
+          if(type === 'drive'){ targetDepth = Math.random() < 0.5 ? 180 : 470; }
+          else { targetDepth = 300; }
+          const s2 = floatChargeFracFor(targetDepth, myDistNet, p.character);
+          if(!s2.achievable) targetDepth = Math.max(120, Math.min(targetDepth, s2.maxDepth - 15));
+          type = targetDepth < 230 ? 'drop' : targetDepth > 430 ? 'clear' : 'drive';
+        }
+        ai.lastPlanType = type;
+        if(sigId === 'maya') ai.mayaLastDepth = targetDepth;
+
+        if(type !== 'drive' && Math.random() < diff.placementSkill * (0.30 + 0.35*persona.aggression) * priyaEsc){
+          ai.comboIntent = {expiresAt: now + COMBO_WINDOW};
+        }
+        chosenPlan = {type, windupEarly:true, targetDepth, jump:false, aiUltIntent:null};
+      }
     }
 
-    // Reachability (Part 1.3): never plan a depth this character cannot physically
-    // produce from here. Clipping BEFORE type derivation means an out-of-range clear
-    // naturally re-derives as a drive or drop — the correct shot for a low-power player
-    // out of position, not a failed clear that dies at the net. The -15 is a safety
-    // margin so a shot solved at exactly the limit still clears the net after aim error.
-    const solve = floatChargeFracFor(targetDepth, myDistNet, p.character);
-    if(sigId){ const d = aiDiagFor(sigId); d.floatPlans++; if(!solve.achievable) d.clips++; } // Part 1.6 instrumentation
-    if(!solve.achievable){
-      targetDepth = Math.max(120, Math.min(targetDepth, solve.maxDepth - 15));
+    // Record decision in Reinforcement Learning Memory
+    if (chosenPlan && ai.memory) {
+      ai.memory.recordAction(chosenPlan.type, oppPosKey);
+      if (chosenPlan.aiUltIntent) {
+        ai.memory.recordAction('ult_' + chosenPlan.aiUltIntent, oppPosKey);
+      }
     }
 
-    let type = targetDepth < 230 ? 'drop' : targetDepth > 430 ? 'clear' : 'drive';
-    // Part 4 sofia (alternates compulsively): if this repeats her last float stroke, shove
-    // the target into a neighbouring band so the reply comes back as a different shot.
-    if(sigId === 'sofia' && type === ai.lastPlanType){
-      if(type === 'drive'){ targetDepth = Math.random() < 0.5 ? 180 : 470; }
-      else { targetDepth = 300; } // a repeated drop or clear becomes a neutral drive
-      const s2 = floatChargeFracFor(targetDepth, myDistNet, p.character);
-      if(!s2.achievable) targetDepth = Math.max(120, Math.min(targetDepth, s2.maxDepth - 15));
-      type = targetDepth < 230 ? 'drop' : targetDepth > 430 ? 'clear' : 'drive';
-    }
-    ai.lastPlanType = type;        // Part 4 sofia bookkeeping
-    if(sigId === 'maya') ai.mayaLastDepth = targetDepth; // Part 4 maya pattern memory
-    // a short drop or a deep clear both set up a follow-up kill the same way the dink
-    // above does — the drive stays a neutral rally ball and doesn't arm anything. Priya's
-    // escalation makes her press this advantage harder the longer the rally has run.
-    if(type !== 'drive' && Math.random() < diff.placementSkill * (0.30 + 0.35*persona.aggression) * priyaEsc){
-      ai.comboIntent = {expiresAt: now + COMBO_WINDOW};
-    }
-    return {type, windupEarly:true, targetDepth, jump:false};
+    return chosenPlan;
   }
 
-  // Inverse of the float-shot physics: the charge fraction that makes a grounded float
-  // land targetDepth px past the net when hit from distFromNet px in front of it. The
-  // linear model below was fitted against updateShuttle's actual trajectory integration
-  // (gravity/terminal-vy/drag, launch angle scaling with distance) and holds within a few
-  // px across the whole court, so the AI's placement is driven by the real physics rather
-  // than hand-tuned charge windows. Character Power scales shot speed, so the fraction is
-  // normalized by the same multiplier releaseHit applies.
-  // Returns { frac, achievable, maxDepth }. The old version returned just the clamped
-  // fraction, which SILENTLY capped at 0.95 — a low-power character asked "what charge
-  // lands this at depth 450?" got back 0.95 (indistinguishable from success) even when
-  // the true answer was "more charge than this character possesses", so it swung with
-  // full confidence into a shuttle that died at the net. Now the caller can tell an
-  // achievable plan from an impossible one, and maxDepth reports the deepest float this
-  // character can physically land from here (the inverse solved at frac = 0.95).
+  // Inverse of the float-shot physics
   function floatChargeFracFor(targetDepth, distFromNet, ch){
     const pm = powerMultForRegular(ch);
     const raw = ((targetDepth - 380 + 0.97*distFromNet) / 640) / pm;
@@ -5679,38 +6056,71 @@
     };
   }
 
-  // Ultimate spending decision (Part 5.1): at PEAK, on a genuine attacking contact, pick
-  // between Rage Drive (safe, immediate, cheap) and Rage Art (cinematic, whiff-punishable,
-  // costlier). Inputs mirror the spec: score deficit, opponent court position, stamina,
-  // rally length, and a character-archetype bias (power leans Art; placement/all-court
-  // cash out with Drive). Returns 'art' | 'drive' | null; releaseHit still applies the
-  // final stamina gate, so returning a value never force-fires an unaffordable ultimate.
+  // Strategic Ultimate Decision Engine: Evaluates meter, state (ground vs air), score leverage, and expected value
   function chooseAIUltIntent(p, opp, airborne){
+    // 1. Strict Meter Gate: Meter MUST be 100% full
+    if(!Simulation.canSpendMomentum(p)) return null;
+
+    // 2. Stamina Gate
     const S = GameConstants.STAMINA.COST;
     const stam = p.stamina == null ? GameConstants.STAMINA.MAX : p.stamina;
-    const canArt = stam >= S.ultimate + 10; // ~40: don't gamble the Art on fumes (Part 5.1)
+    const canArt = stam >= S.ultimate + 10;
     const canDrive = stam >= S.drive;
-    if(!canDrive && !canArt) return null;   // too drained to spend well — keep the meter
+    if(!canDrive && !canArt) return null;
 
+    // 3. Ground vs Aerial Capability Check
+    const cid = p.character && p.character.id;
+    const aerialUlts = ['jordan', 'lindan', 'cristiano', 'sherman'];
+    const groundUlts = ['amara', 'sofia', 'priya', 'rodrigo', 'liam', 'diego'];
+
+    if(groundUlts.includes(cid) && airborne){
+      if(!canDrive) return null;
+    }
+    if(aerialUlts.includes(cid) && !airborne){
+      if(!canDrive && !canArt) return null;
+    }
+
+    // 4. Tactical Score & Positioning Evaluation
     const halfCourt = (COURT_RIGHT - COURT_LEFT)/2;
     const oppDistNet = Math.abs((opp.x + PLAYER_W/2) - NET_X);
-    const oppOutOfPosition = oppDistNet > halfCourt*0.75 || oppDistNet < halfCourt*0.18;
+    const oppDeep  = oppDistNet > halfCourt*0.55;
+    const oppAtNet = oppDistNet < halfCourt*0.30;
+    const oppPosKey = oppAtNet ? 'oppAtNet' : (oppDeep ? 'oppDeep' : 'oppMid');
     const behind = p.score < opp.score;
-    const arch = AI_ARCHETYPE[p.character && p.character.id] || 'allcourt';
+    const tightScore = Math.abs(p.score - opp.score) <= 2;
+    const highLeverage = p.score >= 10 || opp.score >= 10 || tightScore || rallyHitCount >= 6;
+    const arch = AI_ARCHETYPE[cid] || 'allcourt';
 
-    let artScore = 0.15;                     // small base so the AI actually shows off its Art
-    if(airborne) artScore += 0.5;            // a jump is the natural Art delivery
-    if(oppOutOfPosition) artScore += 0.35;   // punish the open court while it's open
-    if(behind) artScore += 0.2;              // chase harder from behind
-    if(rallyHitCount >= 8) artScore += 0.15; // long rally — worth cashing the big swing
-    if(arch === 'power') artScore += 0.2;
-    else if(arch === 'placement' || arch === 'allcourt') artScore -= 0.15;
+    let ultScore = 0.20;
+    if(airborne && aerialUlts.includes(cid)) ultScore += 0.40;
+    if(!airborne && groundUlts.includes(cid)) ultScore += 0.35;
+    if(oppDistNet > halfCourt*0.70 || oppDistNet < halfCourt*0.18) ultScore += 0.30;
+    if(behind) ultScore += 0.20;
+    if(highLeverage) ultScore += 0.25;
+    if(arch === 'power') ultScore += 0.15;
 
-    // Threshold lowered (0.6 -> 0.45): the AI was almost always cashing out with the
-    // cheaper, non-cinematic Rage Drive, so the Art cinematic was rarely seen on its side.
-    if(canArt && artScore >= 0.45) return 'art';
-    if(canDrive) return 'drive';
-    return canArt ? 'art' : null;
+    // Reinforcement Memory Multiplier
+    const ai = aiControllers[p.side];
+    const artWeight = (ai && ai.memory) ? ai.memory.getWeight('ult_art', oppPosKey) : 1.0;
+    const driveWeight = (ai && ai.memory) ? ai.memory.getWeight('ult_drive', oppPosKey) : 1.0;
+
+    // 5. Difficulty Scaling Thresholds
+    let minScoreThreshold = 0.50;
+    if(aiDifficulty === 'easy'){
+      if(Math.random() > 0.25) return null;
+      minScoreThreshold = 0.30;
+    } else if(aiDifficulty === 'medium'){
+      minScoreThreshold = 0.45;
+    } else if(aiDifficulty === 'hard'){
+      minScoreThreshold = 0.62;
+    } else if(aiDifficulty === 'expert'){
+      if(!highLeverage && oppDistNet <= halfCourt*0.70 && Math.random() < 0.6) return null;
+      minScoreThreshold = 0.72;
+    }
+
+    if(canArt && (ultScore * artWeight) >= minScoreThreshold) return 'art';
+    if(canDrive && (ultScore * driveWeight) >= (minScoreThreshold * 0.8)) return 'drive';
+    return null;
   }
 
   function updateAI(dt, now){
@@ -5747,10 +6157,11 @@
       ai.stateLabel = 'serve';
       const standCenterX = aiReadyStanceX(p.side); // default stance, well back from the net
       const centerX = p.x + PLAYER_W/2;
+      const isAmenStationary = !!(p.transform && p.transform.type === 'AMEN');
       // <= so the exact boundary counts as in-stance — walking stops once the gap is
       // within 12px, so a player parked at exactly 12 would otherwise neither move nor
-      // serve, freezing the match
-      const inStance = Math.abs(centerX - standCenterX) <= 12;
+      // serve, freezing the match. If stationary in AMEN mode, serve immediately from current spot.
+      const inStance = isAmenStationary || Math.abs(centerX - standCenterX) <= 12;
       if(!inStance){
         if(centerX > standCenterX + 12) keys[km.moveLeft] = true;
         else if(centerX < standCenterX - 12) keys[km.moveRight] = true;
@@ -5777,6 +6188,7 @@
       // time left to get into position to return it.
       ai.stateLabel = 'receive';
       ai.serveAt = null;
+      if (p.transform && p.transform.type === 'AMEN') return;
       const stance = aiReadyStanceX(p.side);
       const centerX = p.x + PLAYER_W/2;
       if(stance > centerX + dead) keys[km.moveRight] = true;
@@ -5808,11 +6220,22 @@
 
       let predicted;
       if(ai.focused){
-        // anticipate where the shot will actually land (not just its current position),
-        // so movement starts early like a player reading the shot. Placement-read error
-        // shrinks with the character's Control — precise players read the landing spot
-        // tighter, sloppy ones drift off it.
+        // anticipate where the shot will actually land
         predicted = predictShuttleLandingX();
+        // Incorporate Habit Reading on Hard/Expert
+        if (aiDifficulty === 'hard' || aiDifficulty === 'expert') {
+          const halfCourt = (COURT_RIGHT - COURT_LEFT)/2;
+          const oppDistNet = Math.abs((opp.x + PLAYER_W/2) - NET_X);
+          const oppDeep  = oppDistNet > halfCourt*0.55;
+          const oppAtNet = oppDistNet < halfCourt*0.30;
+          const smashRatio = playerHabitTracker.getSmashRatio();
+          const dropRatio = playerHabitTracker.getDropRatio();
+          if (smashRatio > 0.35 && oppDeep) {
+            predicted += p.side === 'left' ? -35 : 35; // anticipate deep smash
+          } else if (dropRatio > 0.35 && oppAtNet) {
+            predicted += p.side === 'left' ? 35 : -35; // anticipate net drop
+          }
+        }
         predicted += (Math.random()*2-1) * diff.aimError * (1.35 - 0.7*persona.precision);
       } else {
         // not focused — the shuttle's someone else's problem for now. Recover toward the
@@ -5886,25 +6309,32 @@
     let inReach = false;
     const aiReach = reachFor(p.character) + heightReachBonus(p.character) + transformReachBonus(p) + passiveReachBonus(p) + aiReachEdge(p);
 
+    const shuttleOnMySide = p.side === 'right' ? shuttle.x >= NET_X : shuttle.x <= NET_X;
+
     if (p.transform && p.transform.type === 'AMEN') {
-      const beams = getAngelicLightBeams(p.side);
-      const hitBeam = beams.find(b => Math.abs(shuttle.x - b.x) <= b.radius);
-      if (dx <= aiReach || hitBeam) {
-        inReach = true;
-        nearReach = true;
+      if (shuttleOnMySide) {
+        const beams = getAngelicLightBeams(p.side);
+        const hitBeam = beams.find(b => Math.abs(shuttle.x - b.x) <= b.radius && (p.side === 'left' ? b.x <= NET_X : b.x >= NET_X));
+        if (dx <= aiReach || hitBeam) {
+          inReach = true;
+          nearReach = true;
+        } else {
+          nearReach = dx <= aiReach + 160;
+        }
       } else {
-        nearReach = dx <= aiReach + 160;
+        inReach = false;
+        nearReach = false;
       }
     } else {
       nearReach = dx <= aiReach + 160;  // loose window: start planning
       inReach = dx <= aiReach;          // tight window: actually allowed to swing
     }
-    // never reach across the net for a shuttle still on the opponent's side — if it
-    // hasn't crossed over, the smart move is to leave it alone and let it fall (which
-    // scores the point automatically), not chase it
-    const shuttleOnMySide = p.side === 'right' ? shuttle.x >= NET_X : shuttle.x <= NET_X;
-    const smashTop = p.y - 90 - heightTopExtend(p.character);
-    const smashBottom = p.y + 220 + heightLowExtend(p.character);
+    let smashTop = p.y - 90 - heightTopExtend(p.character);
+    let smashBottom = p.y + 220 + heightLowExtend(p.character);
+    if (p.transform && p.transform.type === 'AMEN') {
+      smashTop = 15;
+      smashBottom = GROUND_Y + 15;
+    }
     const canReachHeight = dy >= smashTop && dy <= smashBottom;
 
     const opportunityReady = nearReach && lastHitBy !== p.side && now - p.lastHitTime >= HIT_COOLDOWN;
@@ -5977,10 +6407,15 @@
       // arrived) or a beat late (the ball already past by the time it noticed) — this is
       // exactly why jump smashes looked mistimed and why so many got downgraded to a lift.
       if(plan.jump && p.onGround && !ai.hasJumped){
-        const contactHeight = p.y - 45; // a comfortable point in the jump's rise, not the exact apex
+        const contactHeight = p.y - 45;
         const timeToContact = predictShuttleTimeToY(contactHeight);
         const closingIn = dx <= aiReach + 130;
-        if(closingIn && timeToContact !== null && timeToContact <= JUMP_PEAK_TIME + 0.03){
+        let jumpMargin = 0.03;
+        if (aiDifficulty === 'easy') jumpMargin = 0.10;
+        else if (aiDifficulty === 'medium') jumpMargin = 0.05;
+        else if (aiDifficulty === 'expert') jumpMargin = 0.015;
+
+        if(closingIn && timeToContact !== null && Math.abs(timeToContact - JUMP_PEAK_TIME) <= jumpMargin){
           tryJump(p, now);
           ai.lastJumpAt = now;
           ai.hasJumped = true;
@@ -6085,7 +6520,7 @@
           // ground. It can't reproduce the human overhold/dash-cancel input, so it
           // declares intent directly; releaseHit reads p.aiUltIntent for non-humans.
           if(readyToSwing && Simulation.canSpendMomentum(p) && canReachHeight){
-            p.aiUltIntent = chooseAIUltIntent(p, opp, !p.onGround); // Part 5.1: smart Drive vs Art
+            p.aiUltIntent = (ai.plan && ai.plan.aiUltIntent !== undefined) ? ai.plan.aiUltIntent : chooseAIUltIntent(p, opp, !p.onGround);
           }
           const madeContact = releaseHit(p, now);
           p.aiUltIntent = null; // intent is per-swing; never leaks to the next contact
@@ -6179,7 +6614,7 @@
           spend = 'art';
         }
       } else {
-        spend = p.aiUltIntent || 'art';
+        spend = p.aiUltIntent || null;
       }
       // Stamina cost gate (Part 1.3 / Part 5.1): Rage Drive needs 20, Rage Art 30.
       // Without the stamina the ultimate can't fire — the meter is kept for later.
@@ -6243,21 +6678,26 @@
     const headX = p.x + PLAYER_W/2;
     const headY = p.y;
     const dx = Math.abs(shuttle.x - headX);
+    const shuttleOnMySide = p.side === 'right' ? shuttle.x >= NET_X : shuttle.x <= NET_X;
 
     let isDivineBeamHit = false;
     let inReach = false;
     const physReach = reachFor(p.character) + transformReachBonus(p) + passiveReachBonus(p) + heightReachBonus(p.character) + aiReachEdge(p);
 
     if (p.transform && p.transform.type === 'AMEN') {
-      if (dx <= physReach) {
-        inReach = true;
-      } else {
-        const beams = getAngelicLightBeams(p.side);
-        const hitBeam = beams.find(b => Math.abs(shuttle.x - b.x) <= b.radius);
-        if (hitBeam) {
+      if (shuttleOnMySide) {
+        if (dx <= physReach) {
           inReach = true;
-          isDivineBeamHit = true;
+        } else {
+          const beams = getAngelicLightBeams(p.side);
+          const hitBeam = beams.find(b => Math.abs(shuttle.x - b.x) <= b.radius && (p.side === 'left' ? b.x <= NET_X : b.x >= NET_X));
+          if (hitBeam) {
+            inReach = true;
+            isDivineBeamHit = true;
+          }
         }
+      } else {
+        inReach = false; // strictly cannot hit shuttle on opponent's side!
       }
     } else {
       inReach = (dx <= physReach);
@@ -6379,6 +6819,15 @@
       } else if (kind === 'float') {
         matchStats[p.side].floats++;
       }
+    }
+    if (isHumanControlled(p)) {
+      playerHabitTracker.recordShot(
+        kind,
+        predictShuttleLandingX(),
+        !p.onGround,
+        !!spend,
+        playerHabitTracker.lastShotKind
+      );
     }
     p.swingTimer = SWING_DURATION;
     p.swingPowerFrac = 0.6 + 0.4*chargeFrac;
@@ -6759,6 +7208,24 @@
           triggerShake(20, 0.45);
           triggerStinger('LIN DAN', 'DIAN SHA', '#ffd54a', 1.8);
         }
+        else if(id === 'sherman'){
+          // Air Ult: Imperial Dragon Descent 🐉
+          holdShuttle(0.40);
+          timeScale = 0.18; // slow down time for dramatic dragon summon
+          shuttle.resumeTimeScale = true;
+          shuttle.kind = 'smash';
+          shuttle.hitByMaxPower = true;
+          shuttle.isShermanDragonSmash = true;
+          p.shermanDragonAirTimer = 0.95;
+
+          const targetX = p.side === 'left' ? COURT_RIGHT - 70 : COURT_LEFT + 70;
+          ultLaunchToward(targetX, 1200); // extremely fast downward smash
+          shuttle.vy = 880;
+
+          playSound('subbass');
+          triggerShake(26, 0.55);
+          triggerStinger('SHERMAN', 'IMPERIAL DRAGON DESCENT 🐉', '#ef4444', 1.8);
+        }
         else if(id === 'rodrigo_old') {
           holdShuttle(spend === 'art' ? 0.20 : 0.08);
         }
@@ -6819,6 +7286,9 @@
     if (matchStats && matchStats[p.side]) {
       matchStats[p.side].serves++;
       matchStats[p.side].totalHits++;
+    }
+    if (isHumanControlled(p)) {
+      playerHabitTracker.recordShot('serve', predictShuttleLandingX(), false, false, null);
     }
     // stamp the serve as a hit so HIT_COOLDOWN actually guards it — previously this was
     // left unset, so a stale AI opportunity (see setupServe) could pass the cooldown check
@@ -6885,6 +7355,9 @@
     shuttle.jordanSkip = false;
     shuttle.isUltimateShot = false;
     shuttle.isShermanRain = false; shuttle.rainShuttles = [];
+    shuttle.isShermanDragonSmash = false;
+    if (left) { left.shermanMandateActive = false; left.shermanDragonAirTimer = 0; }
+    if (right) { right.shermanMandateActive = false; right.shermanDragonAirTimer = 0; }
     shuttle.ultFx = null; // clear ult signature trail flavour
     shuttle.ultFastDrop = null;
     shuttle.ultSmashArc = false;
@@ -6920,6 +7393,9 @@
   function awardPoint(sideThatScores, reason){
     shuttle.isShermanRain = false;
     shuttle.rainShuttles = [];
+    shuttle.isShermanDragonSmash = false;
+    if (left) { left.shermanMandateActive = false; left.shermanDragonAirTimer = 0; }
+    if (right) { right.shermanMandateActive = false; right.shermanDragonAirTimer = 0; }
     // Track local stats
     const faultySide = sideThatScores === 'left' ? 'right' : 'left';
     if (reason === 'DOUBLE_HIT') {
@@ -6944,6 +7420,16 @@
     }
 
     if(sideThatScores === 'left') left.score++; else right.score++;
+    
+    // Reinforcement Learning Memory: reward AI if it scored point, punish if it lost point
+    if (aiControllers.left && aiControllers.left.memory) {
+      aiControllers.left.memory.rewardOrPunish(sideThatScores === 'left');
+    }
+    if (aiControllers.right && aiControllers.right.memory) {
+      aiControllers.right.memory.rewardOrPunish(sideThatScores === 'right');
+    }
+
+    triggerPointBanter(sideThatScores === 'left' ? left : right, sideThatScores === 'left' ? right : left);
     
     if (rallyHitCount > matchRecap.longestRally) {
       matchRecap.longestRally = rallyHitCount;
@@ -9170,6 +9656,90 @@
     });
   }
 
+  function getPreMatchBanter(p1, p2) {
+    const id1 = p1 ? p1.id : '';
+    const id2 = p2 ? p2.id : '';
+
+    if (id1 === 'benjamin' || id2 === 'benjamin') {
+      const isBenLeft = id1 === 'benjamin';
+      const opp = isBenLeft ? p2 : p1;
+      const oppId = opp ? opp.id : '';
+
+      let benQuote = 'Repent, mortal! Thy basic technique is no match for divine light!';
+      let oppQuote = 'Keep preaching, preacher. My racket does the talking!';
+
+      if (oppId === 'amara') {
+        benQuote = 'Sun worship? My divine light will overshadow your ancient realm!';
+        oppQuote = 'The Pharaoh kneels for no one, least of all a man with a plank.';
+      } else if (oppId === 'ninjja') {
+        benQuote = 'Thou art cloaked in dark shadows! Cleanse thyself!';
+        oppQuote = 'Shadows never miss. Watch your back, holy man.';
+      } else if (oppId === 'diego') {
+        benQuote = 'Brute power without grace is vanity! Repent!';
+        oppQuote = 'I will smash that wooden plank right out of your hand!';
+      } else if (oppId === 'cristiano') {
+        benQuote = 'Kicking the shuttlecock? Such sacrilege on a holy court!';
+        oppQuote = 'SIUUUU! My feet are more precise than your racket!';
+      } else if (oppId === 'priya') {
+        benQuote = 'Thy dark and reckless flame shall be extinguished!';
+        oppQuote = 'Try extinguishing this afterburner, preacher!';
+      } else if (oppId === 'liam') {
+        benQuote = 'Thou art painfully average! Seek heavenly guidance!';
+        oppQuote = 'Yeah, yeah... whatever. Let\'s just serve.';
+      } else if (oppId === 'elijah') {
+        benQuote = 'A furry ruffian in heaven\'s court? Cleanse this place!';
+        oppQuote = 'Meow~ I\'ll claw right through your divine aura!';
+      }
+
+      return {
+        left: isBenLeft ? benQuote : oppQuote,
+        right: isBenLeft ? oppQuote : benQuote
+      };
+    }
+
+    return {
+      left: '"Let\'s see if your court work matches your reputation!"',
+      right: '"I came here to win. Ready when you are!"'
+    };
+  }
+
+  function triggerPointBanter(winner, loser) {
+    if (!winner || !winner.character) return;
+    const winId = winner.character.id;
+    const loseId = loser && loser.character ? loser.character.id : '';
+
+    if (winId === 'benjamin') {
+      const benQuotes = [
+        'Repent, average mortal! ✝',
+        'The light rejects thy dark playstyle!',
+        'Thou art weighed and found wanting!',
+        'Cleanse thy sluggish footwork!',
+        'Divine perfection triumphs!'
+      ];
+      const q = benQuotes[Math.floor(Math.random() * benQuotes.length)];
+      spawnFloatText(winner.x + PLAYER_W/2, winner.y - 28, q, '#fef08a');
+    } else if (loseId === 'benjamin') {
+      const benLoseQuotes = [
+        'A mere fluke of earthly chance!',
+        'Insolent sinner!',
+        'Heaven tests my patience...',
+        'Thy trick won\'t work again!'
+      ];
+      const q = benLoseQuotes[Math.floor(Math.random() * benLoseQuotes.length)];
+      spawnFloatText(loser.x + PLAYER_W/2, loser.y - 28, q, '#cbd5e1');
+    } else if (winId === 'amara') {
+      spawnFloatText(winner.x + PLAYER_W/2, winner.y - 28, 'Kneel before the Pharaoh! ☀️', '#fcd34d');
+    } else if (winId === 'cristiano') {
+      spawnFloatText(winner.x + PLAYER_W/2, winner.y - 28, 'SIUUUU! ⚽', '#ef4444');
+    } else if (winId === 'elijah') {
+      spawnFloatText(winner.x + PLAYER_W/2, winner.y - 28, 'Meow~ Outplayed! 🐾', '#f472b6');
+    } else if (winId === 'diego') {
+      spawnFloatText(winner.x + PLAYER_W/2, winner.y - 28, 'BOOM! Unstoppable! 💥', '#4ade80');
+    } else if (winId === 'priya') {
+      spawnFloatText(winner.x + PLAYER_W/2, winner.y - 28, 'Too hot to handle! 🔥', '#f97316');
+    }
+  }
+
   function showVSMatchup(leftChar, rightChar, bgId, onComplete) {
     const vsOverlay = document.getElementById('vsOverlay');
     vsOverlay.classList.remove('hidden');
@@ -9187,6 +9757,13 @@
     document.getElementById('vsLeftTagline').textContent = leftChar.tagline || 'Ready to serve';
     document.getElementById('vsRightName').textContent = rightChar.name;
     document.getElementById('vsRightTagline').textContent = rightChar.tagline || 'The Challenger';
+
+    // Set pre-match banter quotes
+    const banter = getPreMatchBanter(leftChar, rightChar);
+    const banterLeftEl = document.getElementById('vsBanterLeft');
+    const banterRightEl = document.getElementById('vsBanterRight');
+    if (banterLeftEl) banterLeftEl.textContent = banter.left;
+    if (banterRightEl) banterRightEl.textContent = banter.right;
     
     // Fill stats on VS screen
     fillVSStats('vsLeftStats', leftChar);
@@ -9953,6 +10530,22 @@
           }
           tickTransform(left, simDt);  // expire timed transformation ultimates (Part 6)
           tickTransform(right, simDt);
+          if (left.shermanMandateActive) {
+            left.shermanMandateTimer -= simDt;
+            if (left.shermanMandateTimer <= 0) {
+              left.shermanMandateActive = false;
+              triggerShermanFireworkRain(left);
+            }
+          }
+          if (right.shermanMandateActive) {
+            right.shermanMandateTimer -= simDt;
+            if (right.shermanMandateTimer <= 0) {
+              right.shermanMandateActive = false;
+              triggerShermanFireworkRain(right);
+            }
+          }
+          if (left.shermanDragonAirTimer > 0) left.shermanDragonAirTimer -= simDt;
+          if (right.shermanDragonAirTimer > 0) right.shermanDragonAirTimer -= simDt;
           applyPassiveMomentumTrickle(left, simDt);  // Cristiano Spotlight (Part 3)
           applyPassiveMomentumTrickle(right, simDt);
           regenStamina(left, simDt);  // Stamina regen while grounded & idle (Part 5.1)
@@ -11109,16 +11702,17 @@
   }
 
   function getAngelicLightBeams(side) {
-    const minX = side === 'left' ? COURT_LEFT : NET_X;
-    const maxX = side === 'left' ? NET_X : COURT_RIGHT;
+    const minX = side === 'left' ? COURT_LEFT + 20 : NET_X + 20;
+    const maxX = side === 'left' ? NET_X - 20 : COURT_RIGHT - 20;
     const width = maxX - minX;
     const now = performance.now() * 0.001;
     const beamCount = 6;
     const beams = [];
     for (let i = 0; i < beamCount; i++) {
-      const bx = minX + (width / (beamCount + 1)) * (i + 1) + Math.sin(now * 1.2 + i * 1.5) * 18;
-      const bw = 24 + Math.sin(now * 2 + i) * 8;
-      beams.push({ x: bx, width: bw, radius: (bw / 2) + 36 });
+      const bx = minX + (width / (beamCount + 1)) * (i + 1) + Math.sin(now * 1.2 + i * 1.5) * 12;
+      const bw = 20 + Math.sin(now * 2 + i) * 6;
+      const radius = (bw / 2) + 24;
+      beams.push({ x: bx, width: bw, radius: radius });
     }
     return beams;
   }
@@ -11329,39 +11923,86 @@
     ctx.restore();
   }
 
-  function drawEgyptianCourtSide(side) {
-    const minX = side === 'left' ? COURT_LEFT : NET_X;
-    const maxX = side === 'left' ? NET_X : COURT_RIGHT;
-    const width = maxX - minX;
-    const cx = (minX + maxX) / 2;
+  function drawEgyptianCourtFull(p) {
+    const minX = 0;
+    const maxX = W;
+    const width = W;
+    const cx = W / 2;
     const now = performance.now() * 0.001;
 
     ctx.save();
-    
-    // Create clipping region to keep things on Amara's half of the court
-    ctx.beginPath();
-    ctx.rect(minX, 0, width, GROUND_Y);
-    ctx.clip();
 
-    // 1. Beautiful Egyptian Sunset Sky Gradient in background
+    // 1. Full-court Egyptian Dusk Sky Gradient
     const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
-    skyGrad.addColorStop(0, '#1e1b4b');   // Deep indigo sky at top
-    skyGrad.addColorStop(0.3, '#4c1d95'); // Mystic purple
-    skyGrad.addColorStop(0.65, '#9a3412'); // Warm terracotta orange
-    skyGrad.addColorStop(0.85, '#f59e0b'); // Golden sand glow
-    skyGrad.addColorStop(1, '#fef08a');    // Radiant light sand at ground
+    skyGrad.addColorStop(0, '#0b0f19');    // Cosmic midnight blue at top
+    skyGrad.addColorStop(0.2, '#1e1b4b');  // Deep royal indigo
+    skyGrad.addColorStop(0.45, '#581c87'); // Mystical pharaoh purple
+    skyGrad.addColorStop(0.7, '#b91c1c');  // Fiery terracotta red
+    skyGrad.addColorStop(0.88, '#f59e0b'); // Radiant amber gold
+    skyGrad.addColorStop(1, '#fef08a');    // Glowing sand horizon
     ctx.fillStyle = skyGrad;
-    ctx.fillRect(minX, 0, width, GROUND_Y);
+    ctx.fillRect(minX, 0, width, GROUND_Y + 40);
 
-    // 2. Heat shimmer wave layers
-    ctx.globalAlpha = 0.12;
+    // 2. Center Solar Disk & Divine Sun Rays (Ra's Sun)
+    ctx.save();
+    const sunX = cx;
+    const sunY = 75;
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Solar disk glow aura
+    const sGlow = ctx.createRadialGradient(sunX, sunY, 10, sunX, sunY, 220);
+    sGlow.addColorStop(0, 'rgba(255, 255, 230, 0.95)');
+    sGlow.addColorStop(0.2, 'rgba(251, 191, 36, 0.7)');
+    sGlow.addColorStop(0.5, 'rgba(217, 119, 6, 0.35)');
+    sGlow.addColorStop(1, 'rgba(217, 119, 6, 0)');
+    ctx.fillStyle = sGlow;
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, 220, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Rotating golden divine sun rays
+    const rayCount = 12;
+    ctx.strokeStyle = 'rgba(254, 240, 138, 0.22)';
+    ctx.lineWidth = 3;
+    for (let r = 0; r < rayCount; r++) {
+      const angle = (r * Math.PI * 2 / rayCount) + (now * 0.15);
+      const rx1 = sunX + Math.cos(angle) * 35;
+      const ry1 = sunY + Math.sin(angle) * 35;
+      const rx2 = sunX + Math.cos(angle) * 450;
+      const ry2 = sunY + Math.sin(angle) * 450;
+      ctx.beginPath();
+      ctx.moveTo(rx1, ry1);
+      ctx.lineTo(rx2, ry2);
+      ctx.stroke();
+    }
+
+    // Winged solar disc silhouette behind sun
+    ctx.fillStyle = 'rgba(245, 158, 11, 0.4)';
+    ctx.beginPath();
+    ctx.ellipse(sunX - 120, sunY, 90, 18, -0.15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(sunX + 120, sunY, 90, 18, 0.15, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Core Golden Solar Disk
+    ctx.fillStyle = '#fef08a';
+    ctx.shadowColor = '#fbbf24';
+    ctx.shadowBlur = 20;
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, 32, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // 3. Heat Shimmer Waves across whole court
+    ctx.globalAlpha = 0.14;
     ctx.fillStyle = '#f59e0b';
     for (let i = 0; i < 3; i++) {
-      const shift = now * 1.5 + i * Math.PI / 1.5;
+      const shift = now * 1.6 + i * Math.PI / 1.5;
       ctx.beginPath();
       ctx.moveTo(minX, GROUND_Y);
-      for (let x = minX; x <= maxX; x += 20) {
-        const y = GROUND_Y - 40 - i * 15 + Math.sin((x / 30) + shift) * 8;
+      for (let x = minX; x <= maxX; x += 25) {
+        const y = GROUND_Y - 45 - i * 14 + Math.sin((x / 35) + shift) * 8;
         ctx.lineTo(x, y);
       }
       ctx.lineTo(maxX, GROUND_Y);
@@ -11370,229 +12011,261 @@
     }
     ctx.globalAlpha = 1.0;
 
-    // 3. Draw Parallax Desert Dunes
-    // Far dune (darker copper)
-    ctx.fillStyle = '#b45309';
+    // 4. Parallax Sand Dunes Across Whole Court
+    // Background dune (copper bronze)
+    ctx.fillStyle = '#9a3412';
     ctx.beginPath();
     ctx.moveTo(minX, GROUND_Y);
-    ctx.quadraticCurveTo(minX + width * 0.35, GROUND_Y - 45, minX + width * 0.7, GROUND_Y - 12);
-    ctx.quadraticCurveTo(minX + width * 0.85, GROUND_Y - 8, maxX, GROUND_Y);
+    ctx.quadraticCurveTo(width * 0.25, GROUND_Y - 55, width * 0.5, GROUND_Y - 20);
+    ctx.quadraticCurveTo(width * 0.75, GROUND_Y - 60, maxX, GROUND_Y);
     ctx.closePath();
     ctx.fill();
 
-    // Near dune (vibrant sand yellow with subtle shade)
-    const duneGrad = ctx.createLinearGradient(minX, GROUND_Y - 35, maxX, GROUND_Y);
-    duneGrad.addColorStop(0, '#f59e0b');
-    duneGrad.addColorStop(0.5, '#ea580c');
-    duneGrad.addColorStop(1, '#d97706');
+    // Foreground dune (glowing amber sand)
+    const duneGrad = ctx.createLinearGradient(0, GROUND_Y - 40, width, GROUND_Y);
+    duneGrad.addColorStop(0, '#ea580c');
+    duneGrad.addColorStop(0.3, '#f59e0b');
+    duneGrad.addColorStop(0.7, '#d97706');
+    duneGrad.addColorStop(1, '#ea580c');
     ctx.fillStyle = duneGrad;
     ctx.beginPath();
     ctx.moveTo(minX, GROUND_Y);
-    ctx.quadraticCurveTo(minX + width * 0.2, GROUND_Y - 10, minX + width * 0.5, GROUND_Y - 25);
-    ctx.quadraticCurveTo(minX + width * 0.8, GROUND_Y - 38, maxX, GROUND_Y);
+    ctx.quadraticCurveTo(width * 0.2, GROUND_Y - 15, width * 0.45, GROUND_Y - 35);
+    ctx.quadraticCurveTo(width * 0.8, GROUND_Y - 48, maxX, GROUND_Y);
     ctx.closePath();
     ctx.fill();
 
-    // 4. Draw Pyramids
-    // A companion smaller pyramid in the background (faded)
-    const p2W = 120;
-    const p2H = 75;
-    const p2Y = GROUND_Y - 5;
-    const p2X = cx + (side === 'left' ? -90 : 90);
-    
-    ctx.shadowBlur = 0;
-    // Faded Companion Left side (lit)
-    ctx.fillStyle = 'rgba(245, 158, 11, 0.65)';
-    ctx.beginPath();
-    ctx.moveTo(p2X, p2Y - p2H);
-    ctx.lineTo(p2X - p2W / 2, p2Y);
-    ctx.lineTo(p2X, p2Y);
-    ctx.closePath();
-    ctx.fill();
+    // 5. The Three Pyramids of Giza
+    // Left Companion Pyramid
+    const p1W = 160, p1H = 100, p1Y = GROUND_Y - 8, p1X = cx - 240;
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath(); ctx.moveTo(p1X, p1Y - p1H); ctx.lineTo(p1X - p1W / 2, p1Y); ctx.lineTo(p1X, p1Y); ctx.fill();
+    ctx.fillStyle = '#9a3412';
+    ctx.beginPath(); ctx.moveTo(p1X, p1Y - p1H); ctx.lineTo(p1X, p1Y); ctx.lineTo(p1X + p1W / 2, p1Y); ctx.fill();
 
-    // Faded Companion Right side (shaded)
-    ctx.fillStyle = 'rgba(120, 53, 15, 0.65)';
-    ctx.beginPath();
-    ctx.moveTo(p2X, p2Y - p2H);
-    ctx.lineTo(p2X, p2Y);
-    ctx.lineTo(p2X + p2W / 2, p2Y);
-    ctx.closePath();
-    ctx.fill();
+    // Right Companion Pyramid
+    const p3W = 160, p3H = 100, p3Y = GROUND_Y - 8, p3X = cx + 240;
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath(); ctx.moveTo(p3X, p3Y - p3H); ctx.lineTo(p3X - p3W / 2, p3Y); ctx.lineTo(p3X, p3Y); ctx.fill();
+    ctx.fillStyle = '#9a3412';
+    ctx.beginPath(); ctx.moveTo(p3X, p3Y - p3H); ctx.lineTo(p3X, p3Y); ctx.lineTo(p3X + p3W / 2, p3Y); ctx.fill();
 
-    // The Grand majestic Giza Pyramid
-    const pyrW = 220;
-    const pyrH = 140;
-    const pyrY = GROUND_Y - 8;
-    const pyrX = cx + (side === 'left' ? -25 : 25);
-    
-    // Grand Pyramid Lit side
+    // The Grand Center Pyramid of Giza
+    const pyrW = 280, pyrH = 175, pyrY = GROUND_Y - 10, pyrX = cx;
+    // Lit side
     const litGrad = ctx.createLinearGradient(pyrX - pyrW/2, pyrY, pyrX, pyrY - pyrH);
     litGrad.addColorStop(0, '#f59e0b');
     litGrad.addColorStop(1, '#fef08a');
     ctx.fillStyle = litGrad;
-    ctx.beginPath();
-    ctx.moveTo(pyrX, pyrY - pyrH);
-    ctx.lineTo(pyrX - pyrW / 2, pyrY);
-    ctx.lineTo(pyrX, pyrY);
-    ctx.closePath();
-    ctx.fill();
-
-    // Grand Pyramid Shaded side
+    ctx.beginPath(); ctx.moveTo(pyrX, pyrY - pyrH); ctx.lineTo(pyrX - pyrW / 2, pyrY); ctx.lineTo(pyrX, pyrY); ctx.fill();
+    // Shaded side
     const shadeGrad = ctx.createLinearGradient(pyrX, pyrY, pyrX + pyrW/2, pyrY);
     shadeGrad.addColorStop(0, '#9a3412');
     shadeGrad.addColorStop(1, '#7c2d12');
     ctx.fillStyle = shadeGrad;
+    ctx.beginPath(); ctx.moveTo(pyrX, pyrY - pyrH); ctx.lineTo(pyrX, pyrY); ctx.lineTo(pyrX + pyrW / 2, pyrY); ctx.fill();
+
+    // Glowing Golden Pyramidion Capstone on Grand Pyramid
+    ctx.save();
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#fbbf24';
+    ctx.shadowBlur = 15;
     ctx.beginPath();
     ctx.moveTo(pyrX, pyrY - pyrH);
-    ctx.lineTo(pyrX, pyrY);
-    ctx.lineTo(pyrX + pyrW / 2, pyrY);
+    ctx.lineTo(pyrX - 16, pyrY - pyrH + 24);
+    ctx.lineTo(pyrX + 16, pyrY - pyrH + 24);
     ctx.closePath();
     ctx.fill();
+    ctx.restore();
 
-    // Horizontal brick layers for Grand Pyramid
+    // Horizontal stone tiers
     ctx.strokeStyle = '#451a03';
     ctx.lineWidth = 1;
-    ctx.globalAlpha = 0.45;
-    const tiersCount = 14;
+    ctx.globalAlpha = 0.4;
+    const tiersCount = 16;
     for (let h = 1; h < tiersCount; h++) {
       const frac = h / tiersCount;
       const y = pyrY - pyrH * frac;
       const w = pyrW * (1 - frac);
-      ctx.beginPath();
-      ctx.moveTo(pyrX - w / 2, y);
-      ctx.lineTo(pyrX + w / 2, y);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(pyrX - w / 2, y); ctx.lineTo(pyrX + w / 2, y); ctx.stroke();
     }
     ctx.globalAlpha = 1.0;
 
-    // 5. Draw a highly stylized Eye of Horus or winged sun symbol in the sky
-    const eyeX = cx + (side === 'left' ? 40 : -40);
-    const eyeY = 55;
-    ctx.save();
-    ctx.shadowColor = '#fbbf24';
-    ctx.shadowBlur = 8;
-    ctx.strokeStyle = 'rgba(251, 191, 36, 0.75)';
-    ctx.lineWidth = 2.5;
-    
-    // Draw Horus Eye outline
-    ctx.beginPath();
-    ctx.ellipse(eyeX, eyeY, 16, 7, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    // Pupil
-    ctx.fillStyle = '#fbbf24';
-    ctx.beginPath();
-    ctx.arc(eyeX, eyeY, 5, 0, Math.PI * 2);
-    ctx.fill();
-    // Tear mark lines (Egyptian look)
-    ctx.beginPath();
-    ctx.moveTo(eyeX - 8, eyeY + 4);
-    ctx.quadraticCurveTo(eyeX - 10, eyeY + 12, eyeX - 6, eyeY + 16);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(eyeX + 4, eyeY + 6);
-    ctx.quadraticCurveTo(eyeX + 12, eyeY + 8, eyeX + 8, eyeY + 18);
-    ctx.stroke();
-    ctx.restore();
+    // 6. Egyptian Obelisks Flanking Court Edges
+    const obeliskPositions = [COURT_LEFT - 30, COURT_RIGHT + 30];
+    const hieroglyphs = ['☥', '👁', '𓋹', '𓆣', '𓁢', '𓃠', '𓉔'];
 
-    // 6. Draw lush beautiful Oasis with reeds and multiple palm trees!
-    const oasisX = cx + (side === 'left' ? 85 : -85);
-    const oasisY = GROUND_Y - 2;
+    obeliskPositions.forEach((obX, idx) => {
+      const obW = 28, obH = 210, obY = GROUND_Y;
+      // Obelisk Base & Column
+      const obGrad = ctx.createLinearGradient(obX - obW/2, obY, obX + obW/2, obY);
+      obGrad.addColorStop(0, '#78350f');
+      obGrad.addColorStop(0.4, '#d97706');
+      obGrad.addColorStop(0.7, '#f59e0b');
+      obGrad.addColorStop(1, '#451a03');
+      ctx.fillStyle = obGrad;
+      ctx.fillRect(obX - obW/2, obY - obH, obW, obH);
 
-    // Oval lagoon pool:
-    const oGrad = ctx.createRadialGradient(oasisX, oasisY, 2, oasisX, oasisY, 55);
-    oGrad.addColorStop(0, '#22d3ee'); // Glowing bright turquoise cyan
-    oGrad.addColorStop(0.3, '#06b6d4');
-    oGrad.addColorStop(0.7, '#0891b2');
-    oGrad.addColorStop(1, 'rgba(8, 145, 178, 0)');
-    ctx.fillStyle = oGrad;
-    ctx.beginPath();
-    ctx.ellipse(oasisX, oasisY, 55, 14, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Water shine overlay ripples
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.ellipse(oasisX + Math.sin(now)*5, oasisY + 2, 28, 4, 0, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // Papyrus reeds growing around the oasis
-    ctx.fillStyle = '#047857'; // Forest green
-    for (let i = 0; i < 6; i++) {
-      const rx = oasisX - 45 + i * 15 + Math.sin(now * 3 + i) * 2;
-      const ry = oasisY - 4 - Math.cos(i) * 5;
-      const rh = 12 + i * 3;
+      // Pyramidion top
       ctx.beginPath();
-      ctx.moveTo(rx, oasisY);
-      ctx.quadraticCurveTo(rx - 2, ry - rh/2, rx - 3, ry - rh);
-      ctx.lineTo(rx - 1, ry - rh);
-      ctx.quadraticCurveTo(rx, ry - rh/2, rx, oasisY);
+      ctx.moveTo(obX, obY - obH - 28);
+      ctx.lineTo(obX - obW/2, obY - obH);
+      ctx.lineTo(obX + obW/2, obY - obH);
+      ctx.closePath();
       ctx.fill();
-    }
 
-    // Three Palm Trees with textured curved trunks & swaying leaves
-    const palmConfigs = [
-      { dx: -18, dy: -48, scale: 1.0, rotDir: 1, color: '#10b981' },
-      { dx: 14, dy: -36, scale: 0.75, rotDir: -1, color: '#059669' },
-      { dx: -4, dy: -28, scale: 0.6, rotDir: 0.5, color: '#047857' }
-    ];
-
-    palmConfigs.forEach((cfg) => {
-      const px = oasisX + cfg.dx;
-      const py = oasisY;
-      const th = 70 * cfg.scale;
-      
-      // Draw trunk using textured rings
-      ctx.lineWidth = 3.5 * cfg.scale;
-      ctx.strokeStyle = '#78350f'; // Warm brown trunk
-      ctx.beginPath();
-      ctx.moveTo(px, py);
-      // Curved trunk
-      const tx = px + (cfg.rotDir * 18 * cfg.scale);
-      const ty = py - th;
-      ctx.quadraticCurveTo(px + (cfg.rotDir * 8 * cfg.scale), py - th/2, tx, ty);
-      ctx.stroke();
-
-      // Swaying palm fronds
+      // Glowing golden capstone
       ctx.save();
-      ctx.translate(tx, ty);
-      ctx.fillStyle = cfg.color;
-      const leafCount = 7;
-      for (let j = 0; j < leafCount; j++) {
-        const leafAngle = (j * Math.PI * 2 / leafCount) + Math.sin(now * 1.8 + j) * 0.12;
-        ctx.beginPath();
-        ctx.ellipse(0, 0, 26 * cfg.scale, 7 * cfg.scale, leafAngle, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // Glowing dates/coconuts
-      ctx.fillStyle = '#fbbf24';
-      ctx.beginPath(); ctx.arc(-2 * cfg.scale, 2 * cfg.scale, 4 * cfg.scale, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(3 * cfg.scale, -1 * cfg.scale, 3 * cfg.scale, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fef08a';
+      ctx.shadowColor = '#fbbf24';
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.moveTo(obX, obY - obH - 28);
+      ctx.lineTo(obX - obW/2, obY - obH);
+      ctx.lineTo(obX + obW/2, obY - obH);
+      ctx.closePath();
+      ctx.fill();
       ctx.restore();
+
+      // Glowing Hieroglyphs etched vertically down the obelisk
+      ctx.fillStyle = '#fef08a';
+      ctx.shadowColor = '#fbbf24';
+      ctx.shadowBlur = 6;
+      ctx.font = 'bold 16px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (let g = 0; g < hieroglyphs.length; g++) {
+        const gy = obY - obH + 30 + g * 24;
+        const gAlpha = 0.6 + Math.sin(now * 3 + g + idx * 5) * 0.35;
+        ctx.globalAlpha = gAlpha;
+        ctx.fillText(hieroglyphs[g], obX, gy);
+      }
+      ctx.globalAlpha = 1.0;
+      ctx.shadowBlur = 0;
     });
 
-    // 7. Floating Golden Magic particles: Rising Glowing Scarabs & Ancient Runes
-    // Generates a magic dust effect moving upwards
-    for (let i = 0; i < 8; i++) {
-      const rx = minX + ((i * 59 + Math.sin(now + i) * 35) % width);
-      const ry = GROUND_Y - ((now * 45 + i * 50) % GROUND_Y);
-      const alpha = Math.sin((ry / GROUND_Y) * Math.PI) * 0.8;
-      
+    // 7. Dual Nile Oases with Lagoon, Papyrus & Swaying Palms on both sides
+    const oases = [
+      { x: COURT_LEFT + 110, scale: 1.0 },
+      { x: COURT_RIGHT - 110, scale: 1.0 }
+    ];
+
+    oases.forEach((o, oIdx) => {
+      const oasisX = o.x;
+      const oasisY = GROUND_Y - 2;
+
+      // Turquoise lagoon pool
+      const oGrad = ctx.createRadialGradient(oasisX, oasisY, 2, oasisX, oasisY, 65);
+      oGrad.addColorStop(0, '#22d3ee');
+      oGrad.addColorStop(0.35, '#06b6d4');
+      oGrad.addColorStop(0.7, '#0891b2');
+      oGrad.addColorStop(1, 'rgba(8, 145, 178, 0)');
+      ctx.fillStyle = oGrad;
+      ctx.beginPath();
+      ctx.ellipse(oasisX, oasisY, 65, 16, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Water ripples
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(oasisX + Math.sin(now * 1.5 + oIdx) * 6, oasisY + 2, 32, 5, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Papyrus reeds
+      ctx.fillStyle = '#047857';
+      for (let i = 0; i < 7; i++) {
+        const rx = oasisX - 50 + i * 16 + Math.sin(now * 3 + i + oIdx) * 2;
+        const ry = oasisY - 4;
+        const rh = 14 + (i % 3) * 4;
+        ctx.beginPath();
+        ctx.moveTo(rx, oasisY);
+        ctx.quadraticCurveTo(rx - 2, ry - rh/2, rx - 3, ry - rh);
+        ctx.lineTo(rx - 1, ry - rh);
+        ctx.quadraticCurveTo(rx, ry - rh/2, rx, oasisY);
+        ctx.fill();
+      }
+
+      // Palm trees
+      const palms = [
+        { dx: -22, dy: -52, scale: 1.0, rotDir: oIdx === 0 ? -1 : 1, color: '#10b981' },
+        { dx: 18, dy: -42, scale: 0.8, rotDir: oIdx === 0 ? 1 : -1, color: '#059669' },
+        { dx: -2, dy: -32, scale: 0.65, rotDir: 0.4, color: '#047857' }
+      ];
+
+      palms.forEach((cfg) => {
+        const px = oasisX + cfg.dx;
+        const py = oasisY;
+        const th = 75 * cfg.scale;
+        
+        ctx.lineWidth = 4 * cfg.scale;
+        ctx.strokeStyle = '#78350f';
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        const tx = px + (cfg.rotDir * 20 * cfg.scale);
+        const ty = py - th;
+        ctx.quadraticCurveTo(px + (cfg.rotDir * 10 * cfg.scale), py - th/2, tx, ty);
+        ctx.stroke();
+
+        ctx.save();
+        ctx.translate(tx, ty);
+        ctx.fillStyle = cfg.color;
+        const leafCount = 7;
+        for (let j = 0; j < leafCount; j++) {
+          const leafAngle = (j * Math.PI * 2 / leafCount) + Math.sin(now * 2 + j + oIdx) * 0.14;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 28 * cfg.scale, 8 * cfg.scale, leafAngle, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#fbbf24';
+        ctx.beginPath(); ctx.arc(-2 * cfg.scale, 2 * cfg.scale, 4 * cfg.scale, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(3 * cfg.scale, -1 * cfg.scale, 3.5 * cfg.scale, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      });
+    });
+
+    // 8. Aesthetic Floating Particles across Whole Court (Amara's Ambient Passive FX)
+    // 24 floating glowing particles: Gold Dust, Lapis Lazuli Sparkles & Hieroglyph Runes
+    const particleGlyphs = ['☥', '👁', '𓋹', '𓆣', '✦', '✧', '♦'];
+    const pCount = 24;
+    for (let i = 0; i < pCount; i++) {
+      const rx = (i * 67 + Math.sin(now * 1.2 + i) * 60) % W;
+      const ry = GROUND_Y - ((now * 55 + i * 40) % (GROUND_Y + 20));
+      const pFrac = ry / GROUND_Y;
+      const alpha = Math.sin(pFrac * Math.PI) * 0.85;
+
       if (alpha > 0) {
         ctx.save();
         ctx.globalAlpha = alpha;
-        ctx.fillStyle = '#fef08a';
-        ctx.shadowColor = '#fbbf24';
-        ctx.shadowBlur = 6;
+        const pType = i % 3; // 0: Gold dust, 1: Turquoise lapis, 2: Hieroglyph rune
         
-        // Draw miniature glowing diamonds/runes
-        ctx.beginPath();
-        ctx.moveTo(rx, ry - 3);
-        ctx.lineTo(rx + 3, ry);
-        ctx.lineTo(rx, ry + 3);
-        ctx.lineTo(rx - 3, ry);
-        ctx.closePath();
-        ctx.fill();
+        if (pType === 0) {
+          ctx.fillStyle = '#fef08a';
+          ctx.shadowColor = '#fbbf24';
+          ctx.shadowBlur = 8;
+          ctx.beginPath();
+          ctx.arc(rx, ry, 2.5 + Math.sin(now * 3 + i) * 1, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (pType === 1) {
+          ctx.fillStyle = '#22d3ee';
+          ctx.shadowColor = '#06b6d4';
+          ctx.shadowBlur = 10;
+          ctx.beginPath();
+          ctx.moveTo(rx, ry - 4);
+          ctx.lineTo(rx + 4, ry);
+          ctx.lineTo(rx, ry + 4);
+          ctx.lineTo(rx - 4, ry);
+          ctx.closePath();
+          ctx.fill();
+        } else {
+          ctx.fillStyle = '#fbbf24';
+          ctx.shadowColor = '#d97706';
+          ctx.shadowBlur = 6;
+          ctx.font = '14px monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(particleGlyphs[i % particleGlyphs.length], rx, ry);
+        }
         ctx.restore();
       }
     }
@@ -11939,16 +12612,9 @@
     ctx.drawImage(_envCanvas, 0, 0, _envCanvas.width, _envCanvas.height, 0, 0, W, H);
     ctx.imageSmoothingEnabled = true; // restore for players/UI drawn afterward
 
-    const amenPlayer = (left && left.transform && left.transform.type === 'AMEN') ? left : ((right && right.transform && right.transform.type === 'AMEN') ? right : null);
-    if (amenPlayer) {
-      drawAngelicCourtSide(amenPlayer.side);
-      const oppSide = amenPlayer.side === 'left' ? 'right' : 'left';
-      drawBenjaminSmokeAndRainOpponentSide(oppSide, 0.016);
-    }
-
     const cleopatraPlayer = (left && left.transform && left.transform.type === 'CLEOPATRA') ? left : ((right && right.transform && right.transform.type === 'CLEOPATRA') ? right : null);
     if (cleopatraPlayer) {
-      drawEgyptianCourtSide(cleopatraPlayer.side);
+      drawEgyptianCourtFull(cleopatraPlayer);
       if (cleopatraPlayer.cleopatraIsFlashing) {
         const oppSide = cleopatraPlayer.side === 'left' ? 'right' : 'left';
         drawOpponentBlindingFlash(oppSide);
@@ -11958,16 +12624,28 @@
       }
     }
 
+    const amenPlayer = (left && left.transform && left.transform.type === 'AMEN') ? left : ((right && right.transform && right.transform.type === 'AMEN') ? right : null);
+    if (amenPlayer) {
+      drawAngelicCourtSide(amenPlayer.side);
+      const oppSide = amenPlayer.side === 'left' ? 'right' : 'left';
+      drawBenjaminSmokeAndRainOpponentSide(oppSide, 0.016);
+    }
+
     // outer boundary (doubles line) — full-resolution on the main ctx, on TOP of the
     // pixelated environment so the rally is always easy to track.
-    ctx.strokeStyle = bg.line;
+    const hasTransformBackdrop = !!(cleopatraPlayer || amenPlayer);
+    const courtLineColor = hasTransformBackdrop ? '#fef08a' : bg.line;
+    ctx.strokeStyle = courtLineColor;
     ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(COURT_LEFT, COURT_TOP); ctx.lineTo(COURT_RIGHT, COURT_TOP);
-    ctx.stroke();
+    if (!hasTransformBackdrop) {
+      ctx.beginPath();
+      ctx.moveTo(COURT_LEFT, COURT_TOP); ctx.lineTo(COURT_RIGHT, COURT_TOP);
+      ctx.stroke();
+    }
     ctx.beginPath();
     ctx.moveTo(COURT_LEFT, GROUND_Y); ctx.lineTo(COURT_RIGHT, GROUND_Y);
     ctx.stroke();
+
     const BOUNDARY_TICK_H = 34;
     [COURT_LEFT, COURT_RIGHT].forEach(function(lx){
       ctx.beginPath();
@@ -11975,10 +12653,8 @@
       ctx.stroke();
     });
 
-    // service lines — same ground-anchored treatment: a short painted tick sitting
-    // right at the ground the players stand on (where a real service line is actually
-    // painted) instead of a stroke running up through the bleacher rows.
-    const paintColor = 'rgba(255,236,180,0.85)';
+    // service lines — same ground-anchored treatment (strictly on the ground floor)
+    const paintColor = hasTransformBackdrop ? '#fef08a' : 'rgba(255,236,180,0.85)';
     const SERVICE_TICK_H = 34;
     [SERVICE_SHORT_X_LEFT, SERVICE_SHORT_X_RIGHT, SERVICE_LONG_X_LEFT, SERVICE_LONG_X_RIGHT].forEach(function(lx){
       drawPaintedLine(ctx, lx, GROUND_Y+2, GROUND_Y + SERVICE_TICK_H, paintColor);
@@ -12848,6 +13524,37 @@
   function drawShuttle(){
     if (shuttle.isShermanRain) return;
     if(!_shutReady) buildShuttleSprite();
+
+    if (shuttle.isShermanDragonSmash) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const radGlow = ctx.createRadialGradient(shuttle.x, shuttle.y, 4, shuttle.x, shuttle.y, 38);
+      radGlow.addColorStop(0, '#ffffff');
+      radGlow.addColorStop(0.3, '#fef08a');
+      radGlow.addColorStop(0.6, '#ef4444');
+      radGlow.addColorStop(1, 'rgba(220, 38, 38, 0)');
+      ctx.fillStyle = radGlow;
+      ctx.beginPath();
+      ctx.arc(shuttle.x, shuttle.y, 38, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Dragon particle trail
+      if (Math.random() < 0.75) {
+        particles.push({
+          x: shuttle.x + (Math.random() - 0.5) * 16,
+          y: shuttle.y + (Math.random() - 0.5) * 16,
+          vx: -shuttle.vx * 0.2 + (Math.random() - 0.5) * 60,
+          vy: -shuttle.vy * 0.2 + (Math.random() - 0.5) * 60,
+          color: Math.random() < 0.6 ? '#dc2626' : '#fbbf24',
+          size: Math.random() * 5 + 2,
+          alpha: 0.9,
+          decay: 2.5,
+          gravity: -10
+        });
+      }
+      ctx.restore();
+    }
+
     ctx.save();
     ctx.translate(shuttle.x, shuttle.y);
     // Orient by actual trajectory: cork leads, feathers trail opposite the velocity vector.
@@ -13492,6 +14199,7 @@
         lines.push('clip:   ' + clipRate + ' (' + dg.clips + '/' + dg.floatPlans + ')');
         lines.push('netdie: ' + dg.netDeaths);
       }
+      lines.push('aiMem:  ' + (c.memory ? c.memory.getTopWeightsSummary() : '—'));
       const panelW = 188, lineH = 15;
       const px = side === 'left' ? 14 : W - panelW - 14;
       const py = 96;
@@ -13515,6 +14223,8 @@
     ctx.fillText('rally ' + rallyHitCount + ' · last ' + lastRallyLength + ' · avg ' + avg, W/2, 96);
     ctx.restore();
   }
+
+  let shermanCourtDarkness = 0;
 
   function draw(){
     // Camera target selection
@@ -13556,6 +14266,25 @@
 
     drawCourt();
 
+    // Sherman Mandate of Heaven Dark Court Overlay
+    const isMandateQuiet = (left && left.shermanMandateActive) || (right && right.shermanMandateActive);
+    const isShermanRainActive = shuttle.isShermanRain;
+    const targetDarkness = (isMandateQuiet || isShermanRainActive) ? 0.88 : 0.0;
+    shermanCourtDarkness += (targetDarkness - shermanCourtDarkness) * Math.min(1, 0.016 * 6.0);
+
+    if (shermanCourtDarkness > 0.005) {
+      ctx.save();
+      ctx.fillStyle = `rgba(5, 5, 14, ${shermanCourtDarkness.toFixed(3)})`;
+      ctx.fillRect(0, 0, W, GROUND_Y + 40);
+
+      // Glowing Mandate of Heaven Sherman
+      const shermanP = (left && left.character && left.character.id === 'sherman') ? left : ((right && right.character && right.character.id === 'sherman') ? right : null);
+      if (shermanP) {
+        drawShermanMandateGlow(shermanP);
+      }
+      ctx.restore();
+    }
+
     const activeZoneP = (left && left.absoluteZoneTimer > 0) ? left : ((right && right.absoluteZoneTimer > 0) ? right : null);
     if(activeZoneP){
       ctx.save();
@@ -13573,6 +14302,8 @@
 
     drawPlayer(left);
     drawPlayer(right);
+    if (left && left.shermanDragonAirTimer > 0) drawShermanCoiledDragon(left);
+    if (right && right.shermanDragonAirTimer > 0) drawShermanCoiledDragon(right);
     drawUltMarker(); // world-space deception marker (Part 6)
     if(shuttle.active || state==='serve') { drawUltShuttleFx(); drawTrail(); drawShuttle(); drawShermanRainShuttles(); }
 
