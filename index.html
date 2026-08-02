@@ -4728,7 +4728,7 @@
       const targetX = targetXs[i];
 
       const dy = GROUND_Y - startY;
-      const vy = 240 + Math.random() * 30;
+      const vy = (240 + Math.random() * 30) * 1.5; // 1.5x faster meteor drop
       const estTime = dy / (vy + 20);
       const dx = targetX - startX;
       // Calculate initial vx to reach targetX with drag, giving distinct varied angles
@@ -4790,69 +4790,68 @@
       ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(dxn * streakLen, dyn * streakLen); ctx.stroke();
       ctx.restore();
 
-      if(item.isReal){
-        // Still marked, but scaled down and dimmed to stay close to a decoy during the fall.
-        ctx.globalCompositeOperation = 'lighter';
-        const radGlow = ctx.createRadialGradient(0, 0, 2, 0, 0, 20);
-        radGlow.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
-        radGlow.addColorStop(0.35, 'rgba(255, 215, 0, 0.7)');
-        radGlow.addColorStop(0.7, 'rgba(255, 223, 100, 0.3)');
-        radGlow.addColorStop(1, 'rgba(255, 215, 0, 0)');
-        ctx.fillStyle = radGlow;
-        ctx.beginPath();
-        ctx.arc(0, 0, 20, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Rotating 4-point starburst, scaled down to match the smaller glow
-        const starRot = nowSec * 4.0;
-        ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        for(let s = 0; s < 4; s++){
-          const a = starRot + (s * Math.PI / 2);
-          const r1 = 13;
-          ctx.moveTo(0, 0);
-          ctx.lineTo(Math.cos(a) * r1, Math.sin(a) * r1);
-        }
-        ctx.stroke();
-
-        ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        for(let s = 0; s < 4; s++){
-          const a = starRot + Math.PI/4 + (s * Math.PI / 2);
-          ctx.moveTo(0, 0);
-          ctx.lineTo(Math.cos(a) * 8, Math.sin(a) * 8);
-        }
-        ctx.stroke();
-
-        // Shining Core Shuttlecock Sprite
-        ctx.rotate(item.angle);
-        const SP = 1.7;
-        const dw = SHUT_W * SP, dh = SHUT_H * SP;
-        ctx.drawImage(_shutBuf, -dw/2, -dh + SP*3, dw, dh);
-
-      } else {
-        // Decoy Firework Shuttlecock
-        ctx.globalCompositeOperation = 'lighter';
-        const radGlow = ctx.createRadialGradient(0, 0, 2, 0, 0, 15);
-        radGlow.addColorStop(0, item.color);
-        radGlow.addColorStop(0.6, item.color + '66');
-        radGlow.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = radGlow;
-        ctx.beginPath();
-        ctx.arc(0, 0, 15, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Decoy Shuttlecock Sprite
-        ctx.rotate(item.angle);
-        const SP = 1.7;
-        const dw = SHUT_W * SP, dh = SHUT_H * SP;
-        ctx.drawImage(_shutBuf, -dw/2, -dh + SP*3, dw, dh);
-      }
+      // Every falling item — real or decoy — is drawn as the same diving dragon meteor
+      // (only the color tint differs), so the real one still can't be picked out by shape,
+      // matching the original intent of the old "stay close to a decoy" comment here.
+      ctx.globalCompositeOperation = 'lighter';
+      drawDragonMeteor(item, nowSec);
 
       ctx.restore();
     }
+  }
+
+  // Compact diving-dragon silhouette for a single falling meteor item (see
+  // drawShermanRainShuttles) — oriented head-first along its own fall direction, with a
+  // short serpentine tail. Deliberately smaller/simpler than drawFlyingDragonBody since up
+  // to 5 of these render simultaneously.
+  function drawDragonMeteor(item, nowSec) {
+    const angle = Math.atan2(item.vy, item.vx);
+    const rgb = hexToRgb(item.color);
+    const glowRgb = `${rgb[0]},${rgb[1]},${rgb[2]}`;
+
+    const aura = ctx.createRadialGradient(0, 0, 3, 0, 0, 26);
+    aura.addColorStop(0, `rgba(${glowRgb},0.55)`);
+    aura.addColorStop(0.6, `rgba(${glowRgb},0.22)`);
+    aura.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = aura;
+    ctx.beginPath(); ctx.arc(0, 0, 26, 0, Math.PI * 2); ctx.fill();
+
+    ctx.save();
+    ctx.rotate(angle + Math.PI / 2); // local -y (the head) now points along the fall direction
+
+    const N = 6;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < N; i++) {
+      const t = i / N, t2 = (i + 1) / N;
+      const wob1 = Math.sin(t * 7 + nowSec * 8) * 3 * t;
+      const wob2 = Math.sin(t2 * 7 + nowSec * 8) * 3 * t2;
+      ctx.strokeStyle = item.color;
+      ctx.lineWidth = 6 * (1 - t) + 1.5;
+      ctx.beginPath(); ctx.moveTo(wob1, 6 + t * 26); ctx.lineTo(wob2, 6 + t2 * 26); ctx.stroke();
+    }
+
+    ctx.fillStyle = item.color;
+    ctx.strokeStyle = '#fef08a';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(-7, 6);
+    ctx.quadraticCurveTo(-9, -7, 0, -11);
+    ctx.quadraticCurveTo(9, -7, 7, 6);
+    ctx.quadraticCurveTo(0, 9, -7, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.strokeStyle = '#fef08a';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(-3, -7); ctx.quadraticCurveTo(-8, -13, -5, -18); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(3, -7); ctx.quadraticCurveTo(8, -13, 5, -18); ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(-3, -3, 1.3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(3, -3, 1.3, 0, Math.PI * 2); ctx.fill();
+
+    ctx.restore();
   }
 
   function spawnDragonImpactShockwave(x, y) {
