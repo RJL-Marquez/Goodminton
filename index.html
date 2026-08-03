@@ -3137,7 +3137,11 @@
   // above — reuses the same statMult() helper as speedMultFor/powerMultFor/reachFor, just
   // with its own linear/kicker constants so dash distance can be balanced independently of
   // ordinary movement speed.
-  function dashDistanceMultFor(ch){
+  function dashDistanceMultFor(ch, p){
+    // Jordan's dash is boosted to a flat 4★ tier only while his 30s live domain is up —
+    // independent of his 2★ base Speed stat (still normal movement/charge speed) — ninja-style
+    // burst tied to Tempest King's Dominion, not a permanent kit change.
+    if (ch && ch.id === 'jordan' && p && p.jordanDomainLiveActive) return statMult(4, DASH_DIST_LINEAR, DASH_DIST_KICKER);
     return statMult(ch && ch.stats && ch.stats.speed, DASH_DIST_LINEAR, DASH_DIST_KICKER);
   }
 
@@ -4579,19 +4583,7 @@
         break;
       }
       case 'jordan': {
-        triggerDomainExpansion(p, 'VOLCANIC CALDERA', '#5b9bff');
-        holdShuttle(0.35);
-        const targetX = ultDeepCornerX(p);
-        ultLaunchToward(targetX, 220);
-        shuttle.kind = 'smash';
-        shuttle.hitByMaxPower = true;
-        shuttle.noDrag = true;
-        shuttle.jordanSkip = true;
-        p.deadWeightSwings = 3;
-        p.deadWeightStack = 0;
-        p.deadWeightTimer = 15.0; // Ground Buff Dead Weight
-        triggerShake(18, 0.4);
-        triggerStinger('JORDAN', 'FULL STOP', '#5b9bff', 1.8);
+        startJordanTempestCinematic(p, false);
         break;
       }
       case 'kenji': {
@@ -4795,6 +4787,130 @@
     shuttle.ultMarker = null;
 
     spawnFloatText(p.x + PLAYER_W/2, p.y - 30, 'FIREWORK RAIN! 🎆', '#a78bfa');
+  }
+
+  // ===========================================================================
+  // JORDAN — TEMPEST KING'S DOMINION  (cinematic ultimate)
+  // ===========================================================================
+  const JORDAN_TEMPEST_BUILDUP = 2.5;       // hand-raise / circle-expand cinematic, seconds
+  const JORDAN_DOMAIN_LIVE_DURATION = 30.0; // live rally window once the domain is fully formed
+  function startJordanTempestCinematic(p, isAir) {
+    triggerDomainExpansion(p, 'TEMPEST KING\'S DOMINION', '#5b9bff', JORDAN_TEMPEST_BUILDUP + JORDAN_DOMAIN_LIVE_DURATION);
+    shuttle.vx = 0;
+    shuttle.vy = 0;
+    shuttle.jordanTempestRelease = JORDAN_TEMPEST_BUILDUP;
+    shuttle.jordanTempestIsAir = isAir;
+    shuttle.jordanTempestOwner = p.side;
+    p.jordanTempestActive = true;
+    p.jordanTempestTimer = JORDAN_TEMPEST_BUILDUP;
+    p.jordanTempestIsAir = isAir;
+    p.jordanSilhouette = 0;
+    p.jordanEyeGlow = 0;
+    p.jordanCircleRadius = 0;
+    p._tempestCircleImpact = false;
+    p._tempestFullImpact = false;
+    p._tempestLaunched = false;
+    p.jordanDomainLiveActive = false;
+    p.jordanDomainLiveTimer = 0;
+    p.jordanPauseCharges = 3;
+    p.jordanPauseActive = false;
+    p.jordanPauseTimer = 0;
+    timeScale = 0.12;
+    hitFreezeFrames = 7;
+    playSound('bell');
+    const ultName = isAir ? 'THUNDER BREAK DESCENT' : 'JUDGMENT OF THE STORM KING';
+    triggerStinger('JORDAN', ultName, '#5b9bff', 2.8);
+  }
+
+  function tickJordanTempest(p, dt) {
+    if (!p.jordanTempestActive) return;
+    p.jordanTempestTimer -= dt;
+    const elapsed = 2.5 - Math.max(0, p.jordanTempestTimer);
+
+    if (elapsed < 1.2) timeScale = Math.min(timeScale, 0.18);
+    else if (elapsed < 1.8) timeScale = Math.min(timeScale, 0.35);
+
+    // Eyes light up first, well before the world turns monochrome or his body goes silhouette.
+    p.jordanEyeGlow = Math.min(1, elapsed / 0.3);
+    if (elapsed > 0.3) {
+      p.jordanCircleRadius = Math.min(1, (elapsed - 0.3) / 1.5);
+    }
+    if (elapsed > 0.5) {
+      p.jordanSilhouette = Math.min(1, (elapsed - 0.5) / 1.0);
+    }
+
+    if (elapsed > 0.3 && !p._tempestCircleImpact) {
+      p._tempestCircleImpact = true;
+      hitFreezeFrames = Math.max(hitFreezeFrames, 4);
+      playSound('subbass');
+    }
+    if (elapsed > 1.8 && !p._tempestFullImpact) {
+      p._tempestFullImpact = true;
+      hitFreezeFrames = Math.max(hitFreezeFrames, 5);
+      playSound('bell');
+      triggerShake(18, 0.35);
+    }
+
+    if (p.jordanTempestIsAir) {
+      p.vy = Math.min(p.vy, -20);
+    } else {
+      p.vx = 0;
+    }
+
+    if (p.jordanTempestTimer <= 0) {
+      p.jordanTempestActive = false;
+      p.jordanCircleRadius = 1;
+      executeJordanTempestLaunch(p);
+    }
+  }
+
+  function executeJordanTempestLaunch(p) {
+    if (p._tempestLaunched) return; // guard: the buildup timer and the shuttle-hold timer both
+    p._tempestLaunched = true;      // cross zero the same frame — only fire the launch once
+    const targetX = ultDeepCornerX(p);
+    ultLaunchToward(targetX, 1500, 5.2); // Amara-style high arc, fast drop — same fall logic, not an unreturnable shot
+    shuttle.kind = 'smash';
+    shuttle.hitByMaxPower = true;
+    if (p.jordanTempestIsAir) {
+      p.craterTimer = 8.0;
+    } else {
+      p.deadWeightSwings = 3;
+      p.deadWeightStack = 0;
+      p.deadWeightTimer = 15.0;
+    }
+    hitFreezeFrames = Math.max(hitFreezeFrames, 5);
+    triggerShake(24, 0.5);
+    playSound('subbass');
+    // The buildup cinematic is over — the domain now stays fully formed for a live
+    // rally window (silhouette + monochrome persist across points until this expires).
+    p.jordanDomainLiveActive = true;
+    p.jordanDomainLiveTimer = JORDAN_DOMAIN_LIVE_DURATION;
+  }
+
+  // Domain live window (Part: Tempest King's Dominion) — keeps Jordan's silhouette and the
+  // monochrome domain alive across serves/rallies for JORDAN_DOMAIN_LIVE_DURATION seconds
+  // after the opening shot, independent of point resets. Fades the silhouette out over the
+  // final second, then clears the shuttle-pause charges.
+  function tickJordanDomainLive(p, dt) {
+    if (!p.jordanDomainLiveActive) return;
+    // Pause the 30s clock during off-court time (point-pause/celebration between rallies) —
+    // matches how Amara/Benjamin's domain timing only burns down during live play.
+    if (state !== 'rally' && state !== 'serve') return;
+    p.jordanDomainLiveTimer -= dt;
+    if (p.jordanDomainLiveTimer <= 1.0) {
+      p.jordanSilhouette = Math.max(0, p.jordanDomainLiveTimer);
+      p.jordanEyeGlow = Math.max(0, p.jordanDomainLiveTimer);
+    }
+    if (p.jordanDomainLiveTimer <= 0) {
+      p.jordanDomainLiveActive = false;
+      p.jordanDomainLiveTimer = 0;
+      p.jordanSilhouette = 0;
+      p.jordanEyeGlow = 0;
+      p.jordanCircleRadius = 0;
+      p.jordanPauseCharges = 0;
+      p.jordanPauseActive = false;
+      p.jordanPauseTimer = 0;
+    }
   }
 
   function drawShermanRainShuttles(){
@@ -6076,6 +6192,10 @@
     if(e.code === keyBindings.p2Left && isHumanControlled(right)) tryDash(right, -1, 'left', now);
     if(e.code === keyBindings.p2Right && isHumanControlled(right)) tryDash(right, 1, 'right', now);
 
+    // Jordan — Domain Special Ability: Shuttle Pause (fixed keys, not rebindable)
+    if(e.code === 'ControlLeft' && isHumanControlled(left)) tryJordanShuttlePause(left, now);
+    if(e.code === 'ControlRight' && isHumanControlled(right)) tryJordanShuttlePause(right, now);
+
     // hit / serve — press-and-hold to charge, release to swing
     if(e.code === keyBindings.p1Hit && isHumanControlled(left)) startCharge(left, now);
     if(e.code === keyBindings.p2Hit && isHumanControlled(right)) startCharge(right, now);
@@ -7093,6 +7213,41 @@
     }
   }
 
+  // Jordan — Domain Special Ability: Shuttle Pause (3 charges per domain). While the live
+  // domain is up, pressing Control with the shuttle in flight freezes the shuttle and the
+  // opponent in place for up to 2 seconds so Jordan alone can move and line up his return.
+  // Pressing Control again while already frozen manually resumes early — the shuttle then
+  // just drops straight down under gravity instead of continuing its old trajectory (only a
+  // real swing that connects, via releaseHit(), sends it off on a fresh, aimed shot).
+  function tryJordanShuttlePause(p, now){
+    if(!p || !p.character || p.character.id !== 'jordan') return;
+    if(!isHumanControlled(p)) return;
+    if(state !== 'rally') return;
+    if(!p.jordanDomainLiveActive) return;
+
+    if(p.jordanPauseActive){
+      // second press — manually let go of time; the shuttle just falls from rest
+      p.jordanPauseActive = false;
+      p.jordanPauseTimer = 0;
+      shuttle.jordanPauseHeld = false;
+      playSound('hit');
+      return;
+    }
+
+    if((p.jordanPauseCharges||0) <= 0) return;
+    if(!shuttle.active) return; // point already decided — can't rescue a dead shuttle
+
+    p.jordanPauseCharges--;
+    p.jordanPauseActive = true;
+    p.jordanPauseTimer = 2.0;
+    shuttle.jordanPauseHeld = true;
+    shuttle.vx = 0;
+    shuttle.vy = 0;
+    playSound('bell');
+    triggerShake(6, 0.2);
+    spawnFloatText(p.x + PLAYER_W/2, p.y - 30, 'TIME STANDS STILL (' + p.jordanPauseCharges + ' LEFT)', '#5b9bff');
+  }
+
   function startCharge(p, now){
     if(state === 'serve' && servingSide === p.side){
       if(p.charging) return;
@@ -7246,6 +7401,14 @@
       Simulation.applyMomentumWhiff(p, {maxCharge: moMaxCharge, now: now});
       if(spend==='art') rageArtWhiff(p, now);
       return false;
+    }
+
+    // Jordan's Shuttle Pause resolves the instant he actually connects — time resumes and
+    // the shot below computes a fresh velocity, so the frozen vx/vy never needs restoring.
+    if (p.jordanPauseActive) {
+      p.jordanPauseActive = false;
+      p.jordanPauseTimer = 0;
+      shuttle.jordanPauseHeld = false;
     }
 
     // Height (Part 4): tall players reach higher overhead, short players dig lower.
@@ -7645,16 +7808,7 @@
           triggerStinger('MAYA', 'SIGHT LINE', '#c084fc', 1.8);
         }
         else if(id === 'jordan'){
-          // Air Ult: "Hammer Drop"
-          triggerDomainExpansion(p, 'VOLCANIC CALDERA', '#5b9bff');
-          holdShuttle(0.20);
-          shuttle.kind = 'smash';
-          shuttle.vx = dir * 150; // short horizontal travel
-          shuttle.vy = 850; // extreme downward gravity/speed
-          shuttle.hitByMaxPower = true;
-          p.craterTimer = 8.0; // Air Buff Crater
-          triggerShake(18, 0.4);
-          triggerStinger('JORDAN', 'HAMMER DROP', '#5b9bff', 1.8);
+          startJordanTempestCinematic(p, true);
         }
         else if(id === 'kenji'){
           // Air Ult: "Hang Time"
@@ -7900,12 +8054,18 @@
     shuttle.hideMarkerBeforeCrossNet = false;
     shuttle.noDrag = false;
     shuttle.jordanSkip = false;
+    shuttle.jordanTempestRelease = 0; shuttle.jordanTempestIsAir = false; shuttle.jordanTempestOwner = null;
+    shuttle.jordanPauseHeld = false;
+    if (left) { left.jordanPauseActive = false; left.jordanPauseTimer = 0; }
+    if (right) { right.jordanPauseActive = false; right.jordanPauseTimer = 0; }
     shuttle.isUltimateShot = false;
     shuttle.isShermanRain = false; shuttle.rainShuttles = [];
     shuttle.isShermanDragonSmash = false;
     shuttle.shermanDragonReleaseTimer = 0; shuttle.shermanDragonTargetX = undefined;
-    if (left) { left.shermanMandateActive = false; left.shermanDragonAirTimer = 0; }
-    if (right) { right.shermanMandateActive = false; right.shermanDragonAirTimer = 0; }
+    // Jordan's domain persists across points for its own 30s live window — only wipe the
+    // silhouette/circle here if that live window isn't running (i.e. the domain already ended).
+    if (left) { left.shermanMandateActive = false; left.shermanDragonAirTimer = 0; left.jordanTempestActive = false; if (!left.jordanDomainLiveActive) { left.jordanSilhouette = 0; left.jordanEyeGlow = 0; left.jordanCircleRadius = 0; } }
+    if (right) { right.shermanMandateActive = false; right.shermanDragonAirTimer = 0; right.jordanTempestActive = false; if (!right.jordanDomainLiveActive) { right.jordanSilhouette = 0; right.jordanEyeGlow = 0; right.jordanCircleRadius = 0; } }
     shuttle.ultFx = null; // clear ult signature trail flavour
     shuttle.ultFastDrop = null;
     shuttle.ultSmashArc = false;
@@ -10407,13 +10567,22 @@
       }
     }
 
+    // Jordan's dash — ninja-style low-stance burst, no sparks, just a trail of afterimages —
+    // only while his 30s live domain is up (reuses the ninjja dashGhosts rendering above).
+    if (p.character && p.character.id === 'jordan' && p.dashTimer > 0 && p.jordanDomainLiveActive) {
+      p.dashGhosts = p.dashGhosts || [];
+      p.dashGhosts.push({
+        x: p.x, y: p.y, alpha: 0.6, facing: p.side === 'left' ? 1 : -1
+      });
+    }
+
     // Difficulty physical edge (AI only): faster court coverage at higher tiers, slower at
     // Easy. Never applied to a human (aiMoveEdge returns 1 for human-controlled players).
     const moveEdge = aiMoveEdge(p);
     if(p.dashTimer > 0){
       // dash distance uses the tier-based multiplier (normal speed scaling for 4★,
       // plus the extra 5★ bonus) rather than the plain movement multiplier above
-      vx = p.dashDir * DASH_SPEED * dashDistanceMultFor(p.character) * moveEdge * groundSlowMultFor(p);
+      vx = p.dashDir * DASH_SPEED * dashDistanceMultFor(p.character, p) * moveEdge * groundSlowMultFor(p);
       p.dashTimer -= dt;
     } else {
       if(keys[leftKey]) vx -= MOVE_SPEED * spMult * moveEdge;
@@ -10665,6 +10834,19 @@
         triggerShake(14, 0.38);
       }
       return; // Freeze update while sightLine is active
+    }
+
+    // Jordan Tempest cinematic hold — shuttle frozen until cinematic concludes
+    if (shuttle.jordanTempestRelease > 0) {
+      shuttle.jordanTempestRelease -= dt;
+      shuttle.vx = 0;
+      shuttle.vy = 0;
+      if (shuttle.jordanTempestRelease <= 0) {
+        shuttle.jordanTempestRelease = 0;
+        const jp = shuttle.jordanTempestOwner === 'left' ? left : right;
+        if (jp) executeJordanTempestLaunch(jp);
+      }
+      return;
     }
 
     // Amara Puppeteer timing hold and re-launch
@@ -11103,15 +11285,24 @@
           hitFreezeFrames--;
         } else {
           const simDt = dt * timeScale;
-          updateAI(simDt, nowSec);
+          // Jordan's Shuttle Pause: while engaged, only Jordan updates this frame — the
+          // opponent, their AI, and the shuttle itself are frozen in place.
+          const jordanPaused = left.jordanPauseActive ? left : (right.jordanPauseActive ? right : null);
+          const jordanFrozenSide = jordanPaused ? (jordanPaused.side === 'left' ? 'right' : 'left') : null;
+
+          if(!jordanPaused) updateAI(simDt, nowSec);
 
           if(state === 'rally' || state === 'serve'){
-            updatePlayer(left, simDt,
-              isHumanControlled(left)  ? keyBindings.p1Left  : AI_KEYMAP.left.moveLeft,
-              isHumanControlled(left)  ? keyBindings.p1Right : AI_KEYMAP.left.moveRight);
-            updatePlayer(right, simDt,
-              isHumanControlled(right) ? keyBindings.p2Left  : AI_KEYMAP.right.moveLeft,
-              isHumanControlled(right) ? keyBindings.p2Right : AI_KEYMAP.right.moveRight);
+            if(jordanFrozenSide !== 'left'){
+              updatePlayer(left, simDt,
+                isHumanControlled(left)  ? keyBindings.p1Left  : AI_KEYMAP.left.moveLeft,
+                isHumanControlled(left)  ? keyBindings.p1Right : AI_KEYMAP.left.moveRight);
+            }
+            if(jordanFrozenSide !== 'right'){
+              updatePlayer(right, simDt,
+                isHumanControlled(right) ? keyBindings.p2Left  : AI_KEYMAP.right.moveLeft,
+                isHumanControlled(right) ? keyBindings.p2Right : AI_KEYMAP.right.moveRight);
+            }
           }
           if(state === 'serve'){
             const server = servingSide === 'left' ? left : right;
@@ -11119,8 +11310,18 @@
             shuttle.x = server.x + PLAYER_W/2 + serveDir*10;
             shuttle.y = server.y + PLAYER_H*0.52;
           }
-          if(state === 'rally'){
+          if(state === 'rally' && !jordanPaused){
             updateShuttle(simDt);
+          }
+          if(jordanPaused){
+            jordanPaused.jordanPauseTimer -= simDt;
+            if(jordanPaused.jordanPauseTimer <= 0){
+              // Jordan let the pause run out without swinging — time resumes on its own and
+              // the shuttle just drops from rest (vx/vy are already 0 from the freeze).
+              jordanPaused.jordanPauseActive = false;
+              jordanPaused.jordanPauseTimer = 0;
+              shuttle.jordanPauseHeld = false;
+            }
           }
           if(state === 'pointPause'){
             pointPauseTimer -= simDt;
@@ -11144,6 +11345,10 @@
           }
           if (left.shermanDragonAirTimer > 0) left.shermanDragonAirTimer -= simDt;
           if (right.shermanDragonAirTimer > 0) right.shermanDragonAirTimer -= simDt;
+          tickJordanTempest(left, simDt);
+          tickJordanTempest(right, simDt);
+          tickJordanDomainLive(left, simDt);
+          tickJordanDomainLive(right, simDt);
           applyPassiveMomentumTrickle(left, simDt);  // Cristiano Spotlight (Part 3)
           applyPassiveMomentumTrickle(right, simDt);
           regenStamina(left, simDt);  // Stamina regen while grounded & idle (Part 5.1)
@@ -11793,7 +11998,31 @@
       px(hx+4, hy+7, '#fbbf24');
     }
     if(ch.longNose){ px(hx+8,hy+4,'K');px(hx+9,hy+4,'K');px(hx+9,hy+5,'k'); }
-    drawPixFace(px,hx+1,hy,expr,t,ch.glasses);
+    if(!ch.pixSilhouette) drawPixFace(px,hx+1,hy,expr,t,ch.glasses); // pure silhouette: no eyes/brows/mouth baked into the sprite — only the overlay glow-eyes read
+    // Jordan's transformation glow — painted at the exact same buffer coords drawPixFace uses
+    // for the eyes (fx=hx+1, eL=2/eR=5, ey=3), so the glow is pixel-perfect aligned to his
+    // modeled eyes regardless of facing/scale/height, on both the real face and the silhouette.
+    if(ang.eyeGlow > 0){
+      var _gfx=hx+1, _gfy=hy, _geL=2, _geR=5, _gey=3;
+      _pixCtx.save();
+      _pixCtx.globalCompositeOperation='lighter';
+      _pixCtx.globalAlpha=ang.eyeGlow;
+      var _haloR=4.5;
+      [[_gfx+_geL+0.5,_gfy+_gey+0.5],[_gfx+_geR+0.5,_gfy+_gey+0.5]].forEach(function(pt){
+        var grad=_pixCtx.createRadialGradient(pt[0],pt[1],0.3,pt[0],pt[1],_haloR);
+        grad.addColorStop(0,'rgba(255,255,255,0.9)');
+        grad.addColorStop(1,'rgba(255,255,255,0)');
+        _pixCtx.fillStyle=grad;
+        _pixCtx.fillRect(pt[0]-_haloR,pt[1]-_haloR,_haloR*2,_haloR*2);
+      });
+      _pixCtx.restore();
+      _pixCtx.save();
+      _pixCtx.globalAlpha=ang.eyeGlow;
+      _pixCtx.fillStyle='#ffffff';
+      _pixCtx.fillRect(_gfx+_geL,_gfy+_gey,2,1);
+      _pixCtx.fillRect(_gfx+_geR,_gfy+_gey,2,1);
+      _pixCtx.restore();
+    }
     // Fursona Unleashed — ginger cat ears, whiskers + a pink nose over the head
     if(ang.furry){
       px(hx+1,hy-2,'#e08a3c'); px(hx+2,hy-1,'#e08a3c');   // left ear
@@ -12637,18 +12866,128 @@
     ctx.restore();
   }
 
-  function drawVolcanicDomainFull(p) {
-    const cx = W / 2, now = performance.now() * 0.001;
+  function drawTempestDomainFull(p) {
+    const now = performance.now() * 0.001;
     ctx.save();
-    const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
-    skyGrad.addColorStop(0, '#180202'); skyGrad.addColorStop(0.6, '#7f1d1d'); skyGrad.addColorStop(1, '#dc2626');
-    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
 
-    ctx.fillStyle = '#f97316';
-    for (let i = 0; i < 8; i++) {
-      const lx = 60 + i * 160 + Math.sin(now * 3 + i) * 10;
-      ctx.beginPath(); ctx.arc(lx, GROUND_Y - 5, 25 + Math.sin(now * 4 + i) * 8, 0, Math.PI * 2); ctx.fill();
+    // Monochrome storm sky
+    const skyGrad = ctx.createLinearGradient(W / 2, 0, W / 2, GROUND_Y);
+    skyGrad.addColorStop(0, '#070707');
+    skyGrad.addColorStop(0.35, '#131313');
+    skyGrad.addColorStop(0.65, '#0c0c0c');
+    skyGrad.addColorStop(1, '#101010');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, W, GROUND_Y);
+
+    // Dark ground
+    ctx.fillStyle = '#141414';
+    ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+
+    // Storm clouds drifting
+    for (let i = 0; i < 7; i++) {
+      const cx = ((i * 210 + now * 12) % (W + 240)) - 120;
+      const cy = 30 + (i % 3) * 30 + Math.sin(now * 0.4 + i) * 8;
+      ctx.fillStyle = i % 2 === 0 ? '#1c1c1c' : '#191919';
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, 70 + (i % 4) * 18, 22 + (i % 3) * 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(cx + 45, cy - 8, 50 + (i % 3) * 12, 18 + (i % 2) * 6, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
+
+    // Ruined pillars — broken temple silhouettes
+    const pillars = [
+      { x: 70, h: 160, w: 16, broken: true },
+      { x: 190, h: 210, w: 18, broken: false },
+      { x: 360, h: 130, w: 14, broken: true },
+      { x: 520, h: 90, w: 12, broken: true },
+      { x: 780, h: 100, w: 12, broken: true },
+      { x: 940, h: 200, w: 18, broken: false },
+      { x: 1100, h: 150, w: 16, broken: true },
+      { x: 1220, h: 180, w: 14, broken: true },
+    ];
+    for (let i = 0; i < pillars.length; i++) {
+      const pl = pillars[i];
+      const topY = GROUND_Y - pl.h;
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(pl.x - pl.w / 2, topY, pl.w, pl.h);
+      ctx.fillRect(pl.x - pl.w / 2 - 4, topY - 5, pl.w + 8, 5);
+      ctx.fillRect(pl.x - pl.w / 2 - 3, GROUND_Y - 6, pl.w + 6, 6);
+      if (pl.broken) {
+        ctx.fillStyle = '#0e0e0e';
+        ctx.beginPath();
+        ctx.moveTo(pl.x - pl.w / 2, topY);
+        ctx.lineTo(pl.x - 2, topY - 10);
+        ctx.lineTo(pl.x + 3, topY + 6);
+        ctx.lineTo(pl.x + pl.w / 2, topY - 4);
+        ctx.lineTo(pl.x + pl.w / 2, topY + 14);
+        ctx.lineTo(pl.x - pl.w / 2, topY + 14);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    // Fallen arch between two pillars
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(190, GROUND_Y - 210);
+    ctx.quadraticCurveTo(275, GROUND_Y - 260, 360, GROUND_Y - 130);
+    ctx.stroke();
+
+    // Floating debris
+    for (let i = 0; i < 10; i++) {
+      const dx = ((i * 157 + now * (6 + i * 0.4)) % (W + 40)) - 20;
+      const dy = 120 + Math.sin(now * 0.6 + i * 2.3) * 50 + (i * 53 % 220);
+      ctx.fillStyle = '#222222';
+      ctx.fillRect(dx, dy, 3 + (i % 3), 3 + (i % 2));
+    }
+
+    // Lightning flash
+    const flashVal = Math.sin(now * 2.3) * Math.sin(now * 3.7) * Math.sin(now * 5.1);
+    if (flashVal > 0.82) {
+      ctx.fillStyle = 'rgba(91, 155, 255, 0.10)';
+      ctx.fillRect(0, 0, W, GROUND_Y);
+    }
+
+    // Lightning bolt
+    if (flashVal > 0.85) {
+      ctx.save();
+      ctx.lineCap = 'round';
+      const boltX = 150 + ((now * 173) % 1000);
+      let bx = boltX, by = 5;
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      for (let seg = 0; seg < 7; seg++) {
+        bx += Math.sin(now * 11 + seg * 4.1) * 22;
+        by += 35 + (seg * 7 % 25);
+        if (by > GROUND_Y) by = GROUND_Y;
+        ctx.lineTo(bx, by);
+      }
+      ctx.strokeStyle = 'rgba(91, 155, 255, 0.35)';
+      ctx.lineWidth = 7;
+      ctx.stroke();
+      ctx.strokeStyle = '#5b9bff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Rain
+    ctx.save();
+    ctx.strokeStyle = 'rgba(170, 170, 170, 0.22)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 120; i++) {
+      const rx = ((i * 71 + now * 320) % (W + 50)) - 25;
+      const ry = ((i * 131 + i * i * 3 + now * 680) % (GROUND_Y + 60)) - 30;
+      ctx.beginPath();
+      ctx.moveTo(rx, ry);
+      ctx.lineTo(rx - 2, ry + 12);
+      ctx.stroke();
+    }
+    ctx.restore();
+
     ctx.restore();
   }
 
@@ -13659,7 +13998,34 @@
           drawBenjaminSmokeAndRainOpponentSide(domainPlayer.side === 'left' ? 'right' : 'left', 0.016);
           break;
         case 'maya': drawBlueprintDomainFull(domainPlayer); break;
-        case 'jordan': drawVolcanicDomainFull(domainPlayer); break;
+        case 'jordan': {
+          const jp = domainPlayer;
+          const circR = jp.jordanCircleRadius || 0;
+          if (circR > 0 && circR < 1) {
+            ctx.save();
+            const maxR = Math.hypot(W, H);
+            const r = circR * maxR;
+            const ccx = jp.x + PLAYER_W / 2 + (jp.side === 'left' ? 25 : -25);
+            const ccy = jp.y + PLAYER_H * 0.4;
+            ctx.beginPath();
+            ctx.arc(ccx, ccy, r, 0, Math.PI * 2);
+            ctx.clip();
+            drawTempestDomainFull(jp);
+            ctx.restore();
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+            ctx.lineWidth = 2;
+            ctx.shadowColor = '#5b9bff';
+            ctx.shadowBlur = 14;
+            ctx.beginPath();
+            ctx.arc(ccx, ccy, r, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          } else {
+            drawTempestDomainFull(jp);
+          }
+          break;
+        }
         case 'cristiano': drawBernabeuDomainFull(domainPlayer); break;
         case 'priya': drawRedlineDomainFull(domainPlayer); break;
         case 'lindan': drawDragonPalaceDomainFull(domainPlayer); break;
@@ -14000,6 +14366,41 @@
         ctx.stroke();
       }
 
+      // Jordan: perfect circle + pressure aura (compressed, circular, elegant)
+      if(p.character && p.character.id === 'jordan'){
+        const cR = 30 + 3 * Math.sin(nowSec * 1.8);
+        ctx.strokeStyle = 'rgba(180, 210, 255, 0.55)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, GROUND_Y + 3, cR, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(cx, GROUND_Y + 3, cR + 6, 0, Math.PI * 2);
+        ctx.stroke();
+        for (let mk = 0; mk < 4; mk++) {
+          const a = nowSec * 0.7 + mk * Math.PI / 2;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(cx + Math.cos(a) * cR, GROUND_Y + 3 + Math.sin(a) * cR * 0.28, 1.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        for (let k = 0; k < 2; k++) {
+          particles.push({
+            x: cx + (Math.random() - 0.5) * 44,
+            y: p.y + PLAYER_H * (0.2 + Math.random() * 0.7),
+            vx: (Math.random() - 0.5) * 25,
+            vy: -Math.random() * 60 - 15,
+            color: Math.random() > 0.5 ? '#ffffff' : '#2a2a2a',
+            size: Math.random() * 3 + 1.5,
+            alpha: 0.85,
+            decay: 2.2,
+            gravity: -25
+          });
+        }
+      }
+
       // Cristiano Special Toggled Ultimate Visuals (Grounded Free Kick vs Airborne Bicycle Kick)
       if(p.character && p.character.id === 'cristiano'){
         if(p.onGround){
@@ -14134,6 +14535,31 @@
       armBack = -0.3;
     }
 
+    // Jordan Tempest cinematic: calm stance, then one hand slowly rises
+    if (p.jordanTempestActive) {
+      const mElapsed = 2.5 - Math.max(0, Math.min(2.5, p.jordanTempestTimer));
+      legFront = 0;
+      legBack = 0;
+      if (p.jordanTempestIsAir) {
+        legFront = -0.4;
+        legBack = 0.2;
+      }
+      if (mElapsed < 0.5) {
+        armFront = -0.3;
+      } else if (mElapsed < 1.5) {
+        const t = Math.max(0, Math.min(1, (mElapsed - 0.5) / 1.0));
+        const ease = t * t * (3 - 2 * t);
+        armFront = -0.3 + (1.6 - (-0.3)) * ease;
+      } else if (mElapsed < 2.0) {
+        armFront = 1.6;
+      } else {
+        const t = Math.max(0, Math.min(1, (mElapsed - 2.0) / 0.5));
+        const ease = t * t * (3 - 2 * t);
+        armFront = 1.6 + (0.3 - 1.6) * ease;
+      }
+      armBack = -0.3;
+    }
+
     const cx = p.x + PLAYER_W/2;
     const groundY = p.y + PLAYER_H;
 
@@ -14173,6 +14599,14 @@
 
     if (p.transform && p.transform.type === 'AMEN') {
       pixExpr = 'closed'; // serene, eyes-closed prayer face held through every hit
+    }
+    // Jordan — restraint over flashiness: never shows the intense open-mouth "smash" shout or
+    // the gritted-teeth "strain" (airborne) face; nonchalant demeanor already covers idle/focused.
+    if (p.character && p.character.id === 'jordan' && (pixExpr === 'smash' || pixExpr === 'strain')) {
+      pixExpr = 'nonchalant';
+    }
+    if (p.jordanTempestActive) {
+      pixExpr = 'nonchalant'; // calm/lidded throughout the transformation, no exceptions
     }
     // Elijah's Fursona Unleashed: render cat ears/tail/whiskers while the transform is live.
     const pixFurry = !!(p.character.id === 'elijah' && p.transform && p.transform.type === 'FURSONA_UNLEASHED');
@@ -14380,6 +14814,55 @@
       ctx.shadowBlur = 25;
       drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), ch, {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, expr:'smash'}, facing);
       ctx.restore();
+    } else if (ch.id === 'jordan' && ((p.jordanSilhouette || 0) > 0 || (p.jordanEyeGlow || 0) > 0) && activeDomain && activeDomain.charId === 'jordan') {
+      // Jordan transformation — eyes glow first (pixel-aligned, see buildPixFigure), then the
+      // body progressively fades from normal color to a pure black silhouette.
+      const sil = Math.min(1, p.jordanSilhouette || 0);
+      const eyeGlow = Math.min(1, p.jordanEyeGlow || 0);
+      const angData = {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, expr:pixExpr, onGround:p.onGround, eyeGlow:eyeGlow};
+      if (sil < 1) {
+        ctx.save();
+        ctx.globalAlpha = 1 - sil;
+        drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), ch, angData, facing);
+        ctx.restore();
+      }
+      if (sil > 0) {
+        const dk = '#080808';
+        const silCh = {id:ch.id, skin:dk, hair:dk, hairStyle:ch.hairStyle, shirt:dk, shirt2:dk, shorts:dk, shoe:dk, demeanor:ch.demeanor, pixSilhouette:true};
+        ctx.save();
+        ctx.globalAlpha = sil;
+        drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), silCh, angData, facing);
+        ctx.restore();
+      }
+
+      // Subtle rain streaks across silhouette
+      if (sil > 0.3) {
+        ctx.save();
+        ctx.globalAlpha = sil * 0.3;
+        ctx.strokeStyle = '#aaaaaa';
+        ctx.lineWidth = 1;
+        const t = performance.now() * 0.001;
+        for (let r = 0; r < 5; r++) {
+          const rx = cx - 10 + (r * 7 + t * 80) % 20;
+          const ry = p.y + (r * 13 + t * 120) % PLAYER_H;
+          ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx - 1, ry + 8); ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // Occasional white rim lighting during lightning flashes
+      const flash = Math.sin(performance.now() * 0.0023) * Math.sin(performance.now() * 0.0037);
+      if (flash > 0.85) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.2;
+        ctx.strokeStyle = '#ccddff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(cx, p.y + PLAYER_H * 0.45, 16, PLAYER_H * 0.42, 0, -0.8, 0.8);
+        ctx.stroke();
+        ctx.restore();
+      }
     } else {
       drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), ch, {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, expr:pixExpr, onGround:p.onGround, furry:pixFurry}, facing); // Part 4: taller/shorter silhouette
     }
@@ -14640,6 +15123,25 @@
     if (shuttle.isShermanDragonSmash && shuttle.y < COURT_TOP) return;
     if(!_shutReady) buildShuttleSprite();
 
+    if (shuttle.jordanPauseHeld) {
+      const pulse = 10 + Math.sin(performance.now() * 0.012) * 3;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = 'rgba(91, 155, 255, 0.65)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(shuttle.x, shuttle.y, pulse, 0, Math.PI * 2);
+      ctx.stroke();
+      const holdGlow = ctx.createRadialGradient(shuttle.x, shuttle.y, 1, shuttle.x, shuttle.y, 18);
+      holdGlow.addColorStop(0, 'rgba(91, 155, 255, 0.3)');
+      holdGlow.addColorStop(1, 'rgba(91, 155, 255, 0)');
+      ctx.fillStyle = holdGlow;
+      ctx.beginPath();
+      ctx.arc(shuttle.x, shuttle.y, 18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
     if (shuttle.isShermanDragonSmash) {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
@@ -14770,7 +15272,13 @@
     let isDraining = false;
     let remainSec = 0;
 
-    if (p.transform && (p.transform.remain > 0 || p.transform.expiry !== undefined)) {
+    if (p.character && p.character.id === 'jordan' && p.jordanDomainLiveActive) {
+      // Tempest King's Dominion: the meter drains across the 30s live domain window instead
+      // of showing banked momentum — mirrors the p.transform draining bars below.
+      isDraining = true;
+      remainSec = Math.max(0, p.jordanDomainLiveTimer || 0);
+      frac = Math.max(0, Math.min(1, remainSec / JORDAN_DOMAIN_LIVE_DURATION));
+    } else if (p.transform && (p.transform.remain > 0 || p.transform.expiry !== undefined)) {
       isDraining = true;
       remainSec = Math.max(0, p.transform.remain !== undefined ? p.transform.remain : (p.transform.expiry - nowSec));
       const dur = p.transform.dur || 20.0;
@@ -15342,6 +15850,20 @@
   let shermanCourtDarkness = 0;
 
   function draw(){
+    // Jordan Tempest cinematic camera override — slow zoom toward Jordan
+    const jordanCinP = (left && left.jordanTempestActive) ? left : ((right && right.jordanTempestActive) ? right : null);
+    if (jordanCinP && dynamicCameraEnabled) {
+      const elapsed = 2.5 - Math.max(0, jordanCinP.jordanTempestTimer);
+      targetCamX = (jordanCinP.x + PLAYER_W / 2 - W / 2) * 0.55;
+      targetCamY = (jordanCinP.y + PLAYER_H / 2 - H / 2) * 0.35;
+      if (elapsed < 1.0) {
+        targetCamZoom = 1.0 + elapsed * 0.18;
+      } else if (elapsed < 2.0) {
+        targetCamZoom = 1.18 + (elapsed - 1.0) * 0.08;
+      } else {
+        targetCamZoom = 1.26;
+      }
+    } else
     // Camera target selection
     if (dynamicCameraEnabled && state === 'pointPause' && pointCelebrateSide) {
       const p = (pointCelebrateSide === 'left') ? left : right;
@@ -15417,6 +15939,35 @@
         drawShermanMandateGlow(shermanP);
       }
       ctx.restore();
+    }
+
+    // Jordan Tempest storm overlay — wind particles + ambient lightning during active domain
+    if (activeDomain && activeDomain.charId === 'jordan' && activeDomain.timer > 0) {
+      const tNow = performance.now() * 0.001;
+      // Spawn wind-driven rain particles in world space
+      if (Math.random() < 0.6) {
+        for (let k = 0; k < 3; k++) {
+          particles.push({
+            x: Math.random() * W,
+            y: -10,
+            vx: -40 - Math.random() * 30,
+            vy: 500 + Math.random() * 200,
+            color: '#888888',
+            size: 1,
+            alpha: 0.35,
+            decay: 0.8,
+            gravity: 0
+          });
+        }
+      }
+      // Periodic blue lightning flash overlay
+      const lf = Math.sin(tNow * 2.3) * Math.sin(tNow * 3.7) * Math.sin(tNow * 5.1);
+      if (lf > 0.88) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(91, 155, 255, 0.06)';
+        ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+      }
     }
 
     const activeZoneP = (left && left.absoluteZoneTimer > 0) ? left : ((right && right.absoluteZoneTimer > 0) ? right : null);
