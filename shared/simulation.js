@@ -245,7 +245,10 @@
   // Only the resource half lives here so both sims agree on WHEN a spend is legal
   // and that it zeroes the meter. The shot/cinematic effect is applied by each
   // sim's releaseHit. Stamina cost (Part 5) is not wired yet — Phase 5.
-  function canSpendMomentum(p) { return !p.transform && (p.momentum || 0) >= MO.MAX; }
+  // momentumChargeBlocked is a generic external gate (e.g. Jordan's Tempest domain sets it
+  // on BOTH players for the duration) — anything can set/clear it without this module
+  // needing to know why.
+  function canSpendMomentum(p) { return !p.transform && !p.momentumChargeBlocked && (p.momentum || 0) >= MO.MAX; }
   function spendMomentum(p) {
     p.momentum = 0;
     p.momentumTier = 0;

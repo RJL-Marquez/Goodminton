@@ -4867,7 +4867,7 @@
   function executeJordanTempestLaunch(p) {
     if (p._tempestLaunched) return; // guard: the buildup timer and the shuttle-hold timer both
     p._tempestLaunched = true;      // cross zero the same frame — only fire the launch once
-    const targetX = ultDeepCornerX(p);
+    const targetX = ultRandomX(p); // randomized landing spot anywhere in the opponent's court — not a fixed deep-corner read
     ultLaunchToward(targetX, 1500, 5.2); // Amara-style high arc, fast drop — same fall logic, not an unreturnable shot
     shuttle.kind = 'smash';
     shuttle.hitByMaxPower = true;
@@ -4885,6 +4885,18 @@
     // rally window (silhouette + monochrome persist across points until this expires).
     p.jordanDomainLiveActive = true;
     p.jordanDomainLiveTimer = JORDAN_DOMAIN_LIVE_DURATION;
+    // Nobody — Jordan included — can charge toward their next ultimate while his domain is
+    // still running (also stops his own meter quietly refilling to full off rally hits during
+    // the 30s, which used to make it look "auto-charged" the instant the domain ended).
+    const jOpp = p.side === 'left' ? right : left;
+    p.momentumChargeBlocked = true;
+    if (jOpp) jOpp.momentumChargeBlocked = true;
+  }
+
+  // True while ANY Jordan domain is currently live — used to gate momentum gain for both
+  // players (see the Simulation.applyMomentumGain call sites in releaseHit/doServe).
+  function jordanDomainSuppressesMomentum(){
+    return !!((left && left.jordanDomainLiveActive) || (right && right.jordanDomainLiveActive));
   }
 
   // Domain live window (Part: Tempest King's Dominion) — keeps Jordan's silhouette and the
@@ -4893,6 +4905,13 @@
   // final second, then clears the shuttle-pause charges.
   function tickJordanDomainLive(p, dt) {
     if (!p.jordanDomainLiveActive) return;
+    // activeDomain.timer drains in real wall-clock time every render frame regardless of
+    // game state (see updateDomainExpansion), but our own timer below pauses off-court —
+    // so keep the shared background timer topped up to ours or it'll cut the monochrome
+    // court back to normal color early while the meter/silhouette are still active.
+    if (activeDomain && activeDomain.charId === 'jordan' && activeDomain.ownerSide === p.side) {
+      activeDomain.timer = Math.max(activeDomain.timer, p.jordanDomainLiveTimer);
+    }
     // Pause the 30s clock during off-court time (point-pause/celebration between rallies) —
     // matches how Amara/Benjamin's domain timing only burns down during live play.
     if (state !== 'rally' && state !== 'serve') return;
@@ -4910,6 +4929,13 @@
       p.jordanPauseCharges = 0;
       p.jordanPauseActive = false;
       p.jordanPauseTimer = 0;
+      if (activeDomain && activeDomain.charId === 'jordan' && activeDomain.ownerSide === p.side) {
+        activeDomain.timer = 0; // end the shared background at the same instant
+      }
+      // Release the ultimate-charge lock on both players now that the domain is over.
+      const jOpp = p.side === 'left' ? right : left;
+      p.momentumChargeBlocked = false;
+      if (jOpp) jOpp.momentumChargeBlocked = false;
     }
   }
 
@@ -5865,9 +5891,9 @@
     if(!p) return GameConstants.STAMINA.MAX;
     return (p.staminaDebuffTimer > 0) ? GameConstants.STAMINA.MAX * 0.8 : GameConstants.STAMINA.MAX;
   }
-  function staminaLow(p){ return (p.stamina||0) < maxStaminaFor(p) * GameConstants.STAMINA.LOW_THRESHOLD; }
-  function staminaHas(p, amt){ return (p.stamina||0) >= amt; }
-  function spendStamina(p, amt){ const maxS = maxStaminaFor(p); p.stamina = Math.max(0, (p.stamina==null?maxS:p.stamina) - amt); }
+  function staminaLow(p){ if(p.jordanDomainLiveActive) return false; return (p.stamina||0) < maxStaminaFor(p) * GameConstants.STAMINA.LOW_THRESHOLD; }
+  function staminaHas(p, amt){ if(p.jordanDomainLiveActive) return true; return (p.stamina||0) >= amt; }
+  function spendStamina(p, amt){ if(p.jordanDomainLiveActive) return; const maxS = maxStaminaFor(p); p.stamina = Math.max(0, (p.stamina==null?maxS:p.stamina) - amt); }
   function refillStamina(p){ p.staminaDebuffTimer = 0; p.stamina = maxStaminaFor(p); }
   function regenStamina(p, dt){
     if(p.staminaDebuffTimer > 0){
@@ -7237,6 +7263,13 @@
     if((p.jordanPauseCharges||0) <= 0) return;
     if(!shuttle.active) return; // point already decided — can't rescue a dead shuttle
 
+    // Can't preemptively freeze a shot the opponent just hit while it's still travelling and
+    // hasn't reached Jordan's side yet — only once it's arrived (or if Jordan hit it last,
+    // i.e. it's still his own outgoing shot and the opponent hasn't touched it back).
+    const oppSide = p.side === 'left' ? 'right' : 'left';
+    const shuttleOnMySide = p.side === 'right' ? shuttle.x >= NET_X : shuttle.x <= NET_X;
+    if(lastHitBy === oppSide && !shuttleOnMySide) return;
+
     p.jordanPauseCharges--;
     p.jordanPauseActive = true;
     p.jordanPauseTimer = 2.0;
@@ -7748,18 +7781,22 @@
     }
 
     // ---- Momentum gain for this clean contact (MOMENTUM_SPEC Part 1/2) ----
-    const moOpp = p.side === 'left' ? right : left;
-    Simulation.applyMomentumGain(p, moOpp, {
-      event: kind,
-      aerial: !p.onGround,
-      dashSave: (now - p.lastDashTime) <= DASH_WINDOW,
-      stretch: dx >= reachFor(p.character) * 0.8,
-      moved: (Math.abs(p.vx || 0) > 1 || p.dashTimer > 0), // local sim drives movement through vx
-      maxCharge: moMaxCharge,
-      rallyHitCount: rallyHitCount,
-      now: now,
-      clean: true
-    });
+    // Suppressed entirely while Jordan's domain is live — nobody charges toward their next
+    // ultimate while his is still running.
+    if (!jordanDomainSuppressesMomentum()) {
+      const moOpp = p.side === 'left' ? right : left;
+      Simulation.applyMomentumGain(p, moOpp, {
+        event: kind,
+        aerial: !p.onGround,
+        dashSave: (now - p.lastDashTime) <= DASH_WINDOW,
+        stretch: dx >= reachFor(p.character) * 0.8,
+        moved: (Math.abs(p.vx || 0) > 1 || p.dashTimer > 0), // local sim drives movement through vx
+        maxCharge: moMaxCharge,
+        rallyHitCount: rallyHitCount,
+        now: now,
+        clean: true
+      });
+    }
 
     // ---- Passive post-contact bookkeeping (MOMENTUM_SPEC Part 3) ----
     updatePassivesOnHit(p, kind, now);
@@ -8010,11 +8047,14 @@
     isServeFlight = true;
     state = 'rally';
 
-    // Momentum: the serve is a clean contact too (MOMENTUM_SPEC Part 2.1).
-    Simulation.applyMomentumGain(p, p.side === 'left' ? right : left, {
-      event: 'serve', aerial: false, moved: false,
-      rallyHitCount: rallyHitCount, now: now, clean: true
-    });
+    // Momentum: the serve is a clean contact too (MOMENTUM_SPEC Part 2.1). Suppressed while
+    // Jordan's domain is live, same as the hit-momentum gain above.
+    if (!jordanDomainSuppressesMomentum()) {
+      Simulation.applyMomentumGain(p, p.side === 'left' ? right : left, {
+        event: 'serve', aerial: false, moved: false,
+        rallyHitCount: rallyHitCount, now: now, clean: true
+      });
+    }
 
     // Serve audio & visual kick
     playSound('hit');
@@ -12003,12 +12043,14 @@
     // for the eyes (fx=hx+1, eL=2/eR=5, ey=3), so the glow is pixel-perfect aligned to his
     // modeled eyes regardless of facing/scale/height, on both the real face and the silhouette.
     if(ang.eyeGlow > 0){
+      // full 2-row eye box (ey = eyeball row, ey+1 = pupil row — same box openEye()/lidEye()
+      // draw into), so the glow fully covers his modeled eyes instead of just their top row.
       var _gfx=hx+1, _gfy=hy, _geL=2, _geR=5, _gey=3;
       _pixCtx.save();
       _pixCtx.globalCompositeOperation='lighter';
       _pixCtx.globalAlpha=ang.eyeGlow;
-      var _haloR=4.5;
-      [[_gfx+_geL+0.5,_gfy+_gey+0.5],[_gfx+_geR+0.5,_gfy+_gey+0.5]].forEach(function(pt){
+      var _haloR=5;
+      [[_gfx+_geL+1,_gfy+_gey+1],[_gfx+_geR+1,_gfy+_gey+1]].forEach(function(pt){
         var grad=_pixCtx.createRadialGradient(pt[0],pt[1],0.3,pt[0],pt[1],_haloR);
         grad.addColorStop(0,'rgba(255,255,255,0.9)');
         grad.addColorStop(1,'rgba(255,255,255,0)');
@@ -12019,8 +12061,8 @@
       _pixCtx.save();
       _pixCtx.globalAlpha=ang.eyeGlow;
       _pixCtx.fillStyle='#ffffff';
-      _pixCtx.fillRect(_gfx+_geL,_gfy+_gey,2,1);
-      _pixCtx.fillRect(_gfx+_geR,_gfy+_gey,2,1);
+      _pixCtx.fillRect(_gfx+_geL,_gfy+_gey,2,2);
+      _pixCtx.fillRect(_gfx+_geR,_gfy+_gey,2,2);
       _pixCtx.restore();
     }
     // Fursona Unleashed — ginger cat ears, whiskers + a pink nose over the head
@@ -14600,13 +14642,11 @@
     if (p.transform && p.transform.type === 'AMEN') {
       pixExpr = 'closed'; // serene, eyes-closed prayer face held through every hit
     }
-    // Jordan — restraint over flashiness: never shows the intense open-mouth "smash" shout or
-    // the gritted-teeth "strain" (airborne) face; nonchalant demeanor already covers idle/focused.
-    if (p.character && p.character.id === 'jordan' && (pixExpr === 'smash' || pixExpr === 'strain')) {
+    // Jordan — intimidation through restraint: never smiles (elated), never looks sad
+    // (dejected), never shows exertion/anger (smash/strain/focused) — always the same calm,
+    // lidded nonchalant face, win or lose, mid-swing or mid-transformation, no exceptions.
+    if (p.character && p.character.id === 'jordan') {
       pixExpr = 'nonchalant';
-    }
-    if (p.jordanTempestActive) {
-      pixExpr = 'nonchalant'; // calm/lidded throughout the transformation, no exceptions
     }
     // Elijah's Fursona Unleashed: render cat ears/tail/whiskers while the transform is live.
     const pixFurry = !!(p.character.id === 'elijah' && p.transform && p.transform.type === 'FURSONA_UNLEASHED');
