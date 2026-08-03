@@ -2119,6 +2119,22 @@
     opacity: 0.85;
   }
   .touchAngleBtn.hidden { display: none; }
+  .touchFreezeBtn {
+    width: 56px;
+    height: 56px;
+    font-size: 22px;
+    background: rgba(91, 155, 255, 0.22);
+    border-color: rgba(91, 155, 255, 0.65);
+    color: #cfe4ff;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.4), 0 0 14px rgba(91, 155, 255, 0.25);
+  }
+  .touchFreezeBtn:active, .touchFreezeBtn.pressed {
+    background: rgba(91, 155, 255, 0.55);
+    border-color: #ffffff;
+    box-shadow: 0 0 24px rgba(91, 155, 255, 0.8);
+  }
+  .touchFreezeBtn.hidden { display: none; }
+  .touchFreezeIcon { font-size: 22px; line-height: 1; }
 
   /* Shared style for the small fixed corner buttons (fullscreen, pause). Both are
      position:fixed and siblings of #wrap (see the comment above #touchControls) —
@@ -2778,6 +2794,9 @@
     </div>
   </div>
   <div id="touchRightCluster" class="touchCluster">
+    <button id="touchFreeze" class="touchBtn touchFreezeBtn hidden" aria-label="Shuttle Pause" title="Shuttle Pause">
+      <span class="touchFreezeIcon" style="pointer-events:none;">❄</span>
+    </button>
     <div class="touchAngleGroup">
       <button id="touchAngleUp" class="touchBtn touchAngleBtn hidden" aria-label="Angle up">▲</button>
       <button id="touchAngleDown" class="touchBtn touchAngleBtn hidden" aria-label="Angle down">▼</button>
@@ -4254,6 +4273,23 @@
       name: ((p.character && p.character.name) || '').toUpperCase(),
       artName: prettyArtName(artId).toUpperCase(),
       quip: ULT_QUIPS[p.character && p.character.id] || '',
+      color: p.side === 'left' ? '#3b82f6' : '#ec4899',
+      accent: (p.character && p.character.shirt) || '#ff3b3b'
+    };
+    // Genshin / Storm-4 style full-screen "ult activation" cutscene beat. Reusable for every
+    // character — poses their own sprite as a rim-lit cut-in over a color flood + speed lines +
+    // name slam. Purely cosmetic; runs on top of the existing Persona cut-in banner.
+    triggerUltBurst(p, artId);
+  }
+
+  let ultBurst = null; // {timer, dur, side, character, name, artName, color, accent}
+  function triggerUltBurst(p, artId){
+    ultBurst = {
+      timer: 0.85, dur: 0.85,
+      side: p.side,
+      character: p.character,
+      name: ((p.character && p.character.name) || '').toUpperCase(),
+      artName: prettyArtName(artId).toUpperCase(),
       color: p.side === 'left' ? '#3b82f6' : '#ec4899',
       accent: (p.character && p.character.shirt) || '#ff3b3b'
     };
@@ -6266,6 +6302,7 @@
   const touchPauseBtn = document.getElementById('touchPauseBtn');
   const touchAngleUpBtn = document.getElementById('touchAngleUp');
   const touchAngleDownBtn = document.getElementById('touchAngleDown');
+  const touchFreezeBtn = document.getElementById('touchFreeze');
 
   // press-and-hold buttons (movement keys, hit charge): onDown fires on touch, onUp
   // fires on release OR if the finger slides off/is interrupted, so a button can
@@ -6333,6 +6370,10 @@
 
   bindTapButton(touchAngleUpBtn, function(){ adjustAttackAngle(left, ATTACK_ANGLE_STEP); });
   bindTapButton(touchAngleDownBtn, function(){ adjustAttackAngle(left, -ATTACK_ANGLE_STEP); });
+
+  // Jordan — Shuttle Pause (mobile mirror of the ControlLeft/ControlRight keyboard bind).
+  // Only ever shown/usable for Jordan while his live domain is up (see updateTouchControlsVisibility).
+  bindTapButton(touchFreezeBtn, function(){ if(isHumanControlled(left)) tryJordanShuttlePause(left, performance.now()/1000); });
 
   // Prevent selection/magnifier/callouts on all mobile touch buttons
   document.querySelectorAll('.touchBtn, .touchCornerBtn').forEach(function(btn){
@@ -6462,6 +6503,10 @@
     }
     if(touchAngleUpBtn) touchAngleUpBtn.classList.toggle('hidden', !advancedControlsEnabled);
     if(touchAngleDownBtn) touchAngleDownBtn.classList.toggle('hidden', !advancedControlsEnabled);
+    if(touchFreezeBtn){
+      const showFreeze = isHumanControlled(left) && left.character && left.character.id === 'jordan' && !!left.jordanDomainLiveActive;
+      touchFreezeBtn.classList.toggle('hidden', !showFreeze);
+    }
     if(touchFullscreenBtn) touchFullscreenBtn.classList.toggle('visible', isTouchDevice);
     // Pause button only makes sense once a match actually exists to pause (hidden on
     // the main menu / char-select / game-over, where there's nothing to pause).
@@ -10607,12 +10652,13 @@
       }
     }
 
-    // Jordan's dash — ninja-style low-stance burst, no sparks, just a trail of afterimages —
-    // only while his 30s live domain is up (reuses the ninjja dashGhosts rendering above).
+    // Jordan's dash — VOID burst: instead of faded body copies he tears through the void, leaving
+    // black void-silhouette afterimages with a purple core (see the `void` branch in the ghost
+    // renderer). Only while his 30s live domain is up.
     if (p.character && p.character.id === 'jordan' && p.dashTimer > 0 && p.jordanDomainLiveActive) {
       p.dashGhosts = p.dashGhosts || [];
       p.dashGhosts.push({
-        x: p.x, y: p.y, alpha: 0.6, facing: p.side === 'left' ? 1 : -1
+        x: p.x, y: p.y, alpha: 0.8, facing: p.side === 'left' ? 1 : -1, void: true
       });
     }
 
@@ -11419,6 +11465,7 @@
 
       if(shakeTime > 0) shakeTime = Math.max(0, shakeTime - dt);
       if(ultCinematic){ ultCinematic.timer -= dt; if(ultCinematic.timer <= 0) ultCinematic = null; }
+      if(ultBurst){ ultBurst.timer -= dt; if(ultBurst.timer <= 0) ultBurst = null; }
       for(let _fi = floatTexts.length - 1; _fi >= 0; _fi--){ floatTexts[_fi].t += dt; if(floatTexts[_fi].t >= floatTexts[_fi].dur) floatTexts.splice(_fi, 1); }
 
       // Update juice particles
@@ -12542,6 +12589,36 @@
   // rewrites. Gameplay markings (boundary/service lines, net) are drawn AFTER, on the main
   // ctx at full resolution, so they stay crisp (spec rule 0.2).
   const COURT_PIXEL_UNIT = 3; // one knob: 2 = SNES-detailed, 3 = balanced 16-bit, 4-5 = chunkier
+  // Shared low-res buffer for transformation/domain backdrops so they pixelate through the
+  // SAME COURT_PIXEL_UNIT downsample the static court env uses — otherwise domain art is drawn
+  // directly on the full-res main ctx and reads as smooth "vector" art against the 16-bit game.
+  let _domCanvas = null, _domCtx = null;
+  function domPixelCtx(){
+    const U = COURT_PIXEL_UNIT;
+    const bw = Math.ceil(W / U), bh = Math.ceil(H / U);
+    if(!_domCanvas || _domCanvas.width !== bw || _domCanvas.height !== bh){
+      _domCanvas = document.createElement('canvas');
+      _domCanvas.width = bw; _domCanvas.height = bh;
+      _domCtx = _domCanvas.getContext('2d');
+    }
+    _domCtx.setTransform(1, 0, 0, 1, 0, 0);
+    _domCtx.clearRect(0, 0, bw, bh);
+    _domCtx.setTransform(1/U, 0, 0, 1/U, 0, 0); // full-res coords draw straight into the low-res buffer
+    _domCtx.imageSmoothingEnabled = false;
+    return _domCtx;
+  }
+  // Blit the low-res domain buffer back onto the main canvas, upscaled with smoothing OFF so the
+  // storm lands on the pixel grid. Optional `maskPath(mainCtx)` clips the blit (used for the
+  // storm-front reveal wipe).
+  function blitDomBuffer(maskPath){
+    ctx.save();
+    if(maskPath){ ctx.beginPath(); maskPath(ctx); ctx.clip(); }
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(_domCanvas, 0, 0, _domCanvas.width, _domCanvas.height, 0, 0, W, H);
+    ctx.imageSmoothingEnabled = true;
+    ctx.restore();
+  }
+
   let _envCanvas = null, _envCtx = null, _envKey = null;
   function ensureEnvCanvas(w, h){
     const bw = Math.ceil(w / COURT_PIXEL_UNIT), bh = Math.ceil(h / COURT_PIXEL_UNIT);
@@ -12908,37 +12985,42 @@
     ctx.restore();
   }
 
+  // Jordan's Tempest domain. Drawn into the shared low-res pixel buffer (see domPixelCtx) so the
+  // whole storm lands on the 16-bit pixel grid instead of reading as smooth vector art. Every
+  // primitive here is deliberately blocky: posterized sky bands, rectangular clouds, stepped
+  // lightning, and pixel rain — no anti-aliased ellipses/curves.
   function drawTempestDomainFull(p) {
     const now = performance.now() * 0.001;
-    ctx.save();
+    const U = COURT_PIXEL_UNIT;
+    const q = function(v){ return Math.round(v / U) * U; }; // snap to the pixel grid
+    const g = domPixelCtx();
+    g.save();
 
-    // Monochrome storm sky
-    const skyGrad = ctx.createLinearGradient(W / 2, 0, W / 2, GROUND_Y);
-    skyGrad.addColorStop(0, '#070707');
-    skyGrad.addColorStop(0.35, '#131313');
-    skyGrad.addColorStop(0.65, '#0c0c0c');
-    skyGrad.addColorStop(1, '#101010');
-    ctx.fillStyle = skyGrad;
-    ctx.fillRect(0, 0, W, GROUND_Y);
-
-    // Dark ground
-    ctx.fillStyle = '#141414';
-    ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
-
-    // Storm clouds drifting
-    for (let i = 0; i < 7; i++) {
-      const cx = ((i * 210 + now * 12) % (W + 240)) - 120;
-      const cy = 30 + (i % 3) * 30 + Math.sin(now * 0.4 + i) * 8;
-      ctx.fillStyle = i % 2 === 0 ? '#1c1c1c' : '#191919';
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, 70 + (i % 4) * 18, 22 + (i % 3) * 8, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(cx + 45, cy - 8, 50 + (i % 3) * 12, 18 + (i % 2) * 6, 0, 0, Math.PI * 2);
-      ctx.fill();
+    // Monochrome storm sky — hard posterized bands (no smooth gradient)
+    const skyBands = ['#070707', '#0f0f0f', '#131313', '#0d0d0d', '#101010'];
+    const bandH = GROUND_Y / skyBands.length;
+    for (let b = 0; b < skyBands.length; b++) {
+      g.fillStyle = skyBands[b];
+      g.fillRect(0, q(b * bandH), W, Math.ceil(bandH) + U);
     }
 
-    // Ruined pillars — broken temple silhouettes
+    // Dark ground
+    g.fillStyle = '#141414';
+    g.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+
+    // Storm clouds drifting — blocky stacked rectangles instead of ellipses
+    for (let i = 0; i < 7; i++) {
+      const cx = q(((i * 210 + now * 12) % (W + 240)) - 120);
+      const cy = q(30 + (i % 3) * 30 + Math.sin(now * 0.4 + i) * 8);
+      g.fillStyle = i % 2 === 0 ? '#1c1c1c' : '#191919';
+      const cw = q(120 + (i % 4) * 30), ch2 = q(30 + (i % 3) * 12);
+      g.fillRect(cx - cw / 2, cy - ch2 / 2, cw, ch2);
+      g.fillRect(cx - cw / 3, cy - ch2, q(cw * 0.6), ch2);           // upper hump
+      g.fillRect(cx - cw / 2 - q(18), cy - q(6), q(30), q(14));      // left nub
+      g.fillRect(cx + cw / 2 - q(12), cy - q(6), q(30), q(14));      // right nub
+    }
+
+    // Ruined pillars — broken temple silhouettes (already blocky; keep, grid-snapped)
     const pillars = [
       { x: 70, h: 160, w: 16, broken: true },
       { x: 190, h: 210, w: 18, broken: false },
@@ -12952,85 +13034,109 @@
     for (let i = 0; i < pillars.length; i++) {
       const pl = pillars[i];
       const topY = GROUND_Y - pl.h;
-      ctx.fillStyle = '#1a1a1a';
-      ctx.fillRect(pl.x - pl.w / 2, topY, pl.w, pl.h);
-      ctx.fillRect(pl.x - pl.w / 2 - 4, topY - 5, pl.w + 8, 5);
-      ctx.fillRect(pl.x - pl.w / 2 - 3, GROUND_Y - 6, pl.w + 6, 6);
+      g.fillStyle = '#1a1a1a';
+      g.fillRect(q(pl.x - pl.w / 2), q(topY), q(pl.w), pl.h);
+      g.fillRect(q(pl.x - pl.w / 2 - 4), q(topY - 5), q(pl.w + 8), U * 2);
+      g.fillRect(q(pl.x - pl.w / 2 - 3), q(GROUND_Y - 6), q(pl.w + 6), U * 2);
       if (pl.broken) {
-        ctx.fillStyle = '#0e0e0e';
-        ctx.beginPath();
-        ctx.moveTo(pl.x - pl.w / 2, topY);
-        ctx.lineTo(pl.x - 2, topY - 10);
-        ctx.lineTo(pl.x + 3, topY + 6);
-        ctx.lineTo(pl.x + pl.w / 2, topY - 4);
-        ctx.lineTo(pl.x + pl.w / 2, topY + 14);
-        ctx.lineTo(pl.x - pl.w / 2, topY + 14);
-        ctx.closePath();
-        ctx.fill();
+        // stepped broken crown instead of a smooth triangle
+        g.fillStyle = '#0e0e0e';
+        g.fillRect(q(pl.x - pl.w / 2), q(topY), q(pl.w / 2), U * 2);
+        g.fillRect(q(pl.x), q(topY + 3), q(pl.w / 2), U * 3);
       }
     }
 
-    // Fallen arch between two pillars
-    ctx.strokeStyle = '#1a1a1a';
-    ctx.lineWidth = 8;
-    ctx.beginPath();
-    ctx.moveTo(190, GROUND_Y - 210);
-    ctx.quadraticCurveTo(275, GROUND_Y - 260, 360, GROUND_Y - 130);
-    ctx.stroke();
+    // Fallen arch between two pillars — stepped blocky segments (was a quadratic curve)
+    g.fillStyle = '#1a1a1a';
+    const archPts = [
+      [190, 210], [230, 245], [275, 258], [320, 235], [360, 130]
+    ];
+    for (let a = 0; a < archPts.length; a++) {
+      g.fillRect(q(archPts[a][0]) - U * 2, q(GROUND_Y - archPts[a][1]), U * 4, U * 4);
+    }
 
-    // Floating debris
+    // Floating debris — pixel chunks
     for (let i = 0; i < 10; i++) {
-      const dx = ((i * 157 + now * (6 + i * 0.4)) % (W + 40)) - 20;
-      const dy = 120 + Math.sin(now * 0.6 + i * 2.3) * 50 + (i * 53 % 220);
-      ctx.fillStyle = '#222222';
-      ctx.fillRect(dx, dy, 3 + (i % 3), 3 + (i % 2));
+      const dx = q(((i * 157 + now * (6 + i * 0.4)) % (W + 40)) - 20);
+      const dy = q(120 + Math.sin(now * 0.6 + i * 2.3) * 50 + (i * 53 % 220));
+      g.fillStyle = '#222222';
+      g.fillRect(dx, dy, U + (i % 3) * U, U + (i % 2) * U);
     }
 
     // Lightning flash
     const flashVal = Math.sin(now * 2.3) * Math.sin(now * 3.7) * Math.sin(now * 5.1);
     if (flashVal > 0.82) {
-      ctx.fillStyle = 'rgba(91, 155, 255, 0.10)';
-      ctx.fillRect(0, 0, W, GROUND_Y);
+      g.fillStyle = 'rgba(91, 155, 255, 0.10)';
+      g.fillRect(0, 0, W, GROUND_Y);
     }
 
-    // Lightning bolt
+    // Lightning bolt — stepped blocky segments, no round caps
     if (flashVal > 0.85) {
-      ctx.save();
-      ctx.lineCap = 'round';
       const boltX = 150 + ((now * 173) % 1000);
-      let bx = boltX, by = 5;
-      ctx.beginPath();
-      ctx.moveTo(bx, by);
+      let bx = q(boltX), by = 0;
+      const segs = [];
       for (let seg = 0; seg < 7; seg++) {
-        bx += Math.sin(now * 11 + seg * 4.1) * 22;
-        by += 35 + (seg * 7 % 25);
-        if (by > GROUND_Y) by = GROUND_Y;
-        ctx.lineTo(bx, by);
+        const nx = q(bx + Math.sin(now * 11 + seg * 4.1) * 22);
+        let ny = by + q(35 + (seg * 7 % 25));
+        if (ny > GROUND_Y) ny = GROUND_Y;
+        segs.push([bx, by, nx, ny]);
+        bx = nx; by = ny;
       }
-      ctx.strokeStyle = 'rgba(91, 155, 255, 0.35)';
-      ctx.lineWidth = 7;
-      ctx.stroke();
-      ctx.strokeStyle = '#5b9bff';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.restore();
+      // draw each segment as a filled blocky rectangle stack (glow then core)
+      const paintBolt = function(col, wid){
+        g.fillStyle = col;
+        for (let s = 0; s < segs.length; s++) {
+          const [x0, y0, x1, y1] = segs[s];
+          const steps = Math.max(1, Math.round((y1 - y0) / U));
+          for (let k = 0; k <= steps; k++) {
+            const px = q(x0 + (x1 - x0) * (k / steps));
+            const py = q(y0 + (y1 - y0) * (k / steps));
+            g.fillRect(px - wid / 2, py, wid, U * 2);
+          }
+        }
+      };
+      paintBolt('rgba(91, 155, 255, 0.35)', U * 3);
+      paintBolt('#8fbcff', U);
     }
 
-    // Rain
-    ctx.save();
-    ctx.strokeStyle = 'rgba(170, 170, 170, 0.22)';
-    ctx.lineWidth = 1;
+    // Rain — short vertical pixel dashes
+    g.fillStyle = 'rgba(170, 170, 170, 0.22)';
     for (let i = 0; i < 120; i++) {
-      const rx = ((i * 71 + now * 320) % (W + 50)) - 25;
-      const ry = ((i * 131 + i * i * 3 + now * 680) % (GROUND_Y + 60)) - 30;
-      ctx.beginPath();
-      ctx.moveTo(rx, ry);
-      ctx.lineTo(rx - 2, ry + 12);
-      ctx.stroke();
+      const rx = q(((i * 71 + now * 320) % (W + 50)) - 25);
+      const ry = q(((i * 131 + i * i * 3 + now * 680) % (GROUND_Y + 60)) - 30);
+      g.fillRect(rx, ry, U, U * 3);
     }
-    ctx.restore();
 
-    ctx.restore();
+    g.restore();
+
+    // Blit the pixelated storm onto the main canvas. When a reveal wipe is active the caller
+    // handles the mask; here (fully-open domain) we blit the whole screen.
+    if (p && (p.jordanCircleRadius || 0) > 0 && (p.jordanCircleRadius || 0) < 1) {
+      blitDomBuffer(function(c){ tempestFrontPath(c, p, p.jordanCircleRadius); });
+    } else {
+      blitDomBuffer(null);
+    }
+  }
+
+  // Jagged expanding "storm-front" reveal path — replaces the JJK perfect-circle clip. Traces a
+  // lightning-fractured closed shape radiating from Jordan's position, growing with `prog` (0..1).
+  function tempestFrontPath(c, jp, prog) {
+    const U = COURT_PIXEL_UNIT;
+    const q = function(v){ return Math.round(v / U) * U; };
+    const maxR = Math.hypot(W, H);
+    const r = prog * maxR * 1.08;
+    const ccx = jp.x + PLAYER_W / 2 + (jp.side === 'left' ? 25 : -25);
+    const ccy = jp.y + PLAYER_H * 0.4;
+    const spikes = 22;
+    c.moveTo(ccx, ccy);
+    for (let i = 0; i <= spikes; i++) {
+      const ang = (i / spikes) * Math.PI * 2;
+      // stable per-angle jitter so the fracture edge looks jagged but doesn't shimmer randomly
+      const j = 0.72 + 0.34 * (0.5 + 0.5 * Math.sin(i * 12.9898) * Math.cos(i * 4.1414));
+      const rr = r * j;
+      c.lineTo(q(ccx + Math.cos(ang) * rr), q(ccy + Math.sin(ang) * rr));
+    }
+    c.closePath();
   }
 
   function drawBernabeuDomainFull(p) {
@@ -14043,28 +14149,25 @@
         case 'jordan': {
           const jp = domainPlayer;
           const circR = jp.jordanCircleRadius || 0;
+          // Storm pixelates + reveals through its own low-res buffer (drawTempestDomainFull).
+          drawTempestDomainFull(jp);
+          // While the front is still sweeping open, trace a crackling lightning rim along its edge.
           if (circR > 0 && circR < 1) {
             ctx.save();
-            const maxR = Math.hypot(W, H);
-            const r = circR * maxR;
-            const ccx = jp.x + PLAYER_W / 2 + (jp.side === 'left' ? 25 : -25);
-            const ccy = jp.y + PLAYER_H * 0.4;
-            ctx.beginPath();
-            ctx.arc(ccx, ccy, r, 0, Math.PI * 2);
-            ctx.clip();
-            drawTempestDomainFull(jp);
-            ctx.restore();
-            ctx.save();
-            ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(200,224,255,0.7)';
+            ctx.lineWidth = 3;
+            ctx.lineJoin = 'miter';
             ctx.shadowColor = '#5b9bff';
-            ctx.shadowBlur = 14;
+            ctx.shadowBlur = 16;
             ctx.beginPath();
-            ctx.arc(ccx, ccy, r, 0, Math.PI * 2);
+            tempestFrontPath(ctx, jp, circR);
+            ctx.stroke();
+            // brighter inner flicker on the rim
+            ctx.strokeStyle = 'rgba(255,255,255,' + (0.35 + 0.35 * Math.abs(Math.sin(performance.now() * 0.02))) + ')';
+            ctx.lineWidth = 1.4;
+            ctx.shadowBlur = 6;
             ctx.stroke();
             ctx.restore();
-          } else {
-            drawTempestDomainFull(jp);
           }
           break;
         }
@@ -14656,6 +14759,39 @@
         g.alpha -= 0.05;
         if (g.alpha <= 0) {
           p.dashGhosts.splice(i, 1);
+        } else if (g.void) {
+          // VOID afterimage: a pure black silhouette body with a violet inner glow bleeding
+          // through, so Jordan reads as tearing through the void rather than motion-blurring.
+          const gx = g.x + PLAYER_W/2, gy = g.y + PLAYER_H;
+          const dk = '#050208';
+          const voidCh = {id:ch.id, skin:dk, hair:dk, hairStyle:ch.hairStyle, shirt:dk, shirt2:dk, shorts:dk, shoe:dk, demeanor:ch.demeanor, pixSilhouette:true};
+          // violet under-glow bleeding out of the silhouette
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = g.alpha * 0.5;
+          const vy = g.y + PLAYER_H * 0.45;
+          const vGrad = ctx.createRadialGradient(gx, vy, 4, gx, vy, 34);
+          vGrad.addColorStop(0, 'rgba(150,70,255,0.55)');
+          vGrad.addColorStop(0.5, 'rgba(96,40,200,0.25)');
+          vGrad.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = vGrad;
+          ctx.fillRect(gx - 34, vy - 42, 68, 84);
+          ctx.restore();
+          // black void body
+          ctx.save();
+          ctx.globalAlpha = g.alpha * 0.8;
+          drawHumanoid(ctx, gx, gy, heightVisualScale(ch), voidCh, {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, expr:'focused'}, g.facing);
+          ctx.restore();
+          // torn magenta rim flicker along the leading edge
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = g.alpha * 0.6;
+          ctx.fillStyle = 'rgba(190,90,255,0.9)';
+          for (let s = 0; s < 5; s++) {
+            const ry = g.y + PLAYER_H * (0.2 + s * 0.15) + (Math.sin(performance.now()*0.03 + s) * 3);
+            ctx.fillRect(gx + g.facing * (10 + (s % 2) * 4), ry, 3, 3);
+          }
+          ctx.restore();
         } else {
           ctx.save();
           ctx.globalAlpha = g.alpha * 0.55;
@@ -15605,6 +15741,183 @@
     ctx.restore();
   }
 
+  // ---------- Ult activation cutscene (Genshin burst / Naruto Storm-4 jutsu cut-in) ----------
+  // A brief (~0.85s) full-screen "the world changes" beat that plays the moment any Rage Art
+  // fires, reusable for every character. Timeline (t = 0..1):
+  //   0.00–0.15  impact: white flash → dark veil floods in
+  //   0.10–0.40  the caster's sprite slams in as a giant rim-lit cut-in from their side
+  //   0.15–1.00  radial speed-lines + a diagonal color band sweep behind the pose
+  //   0.42–1.00  art-name text slams down with expanding shockwave rings
+  //   0.85–1.00  veil + pose wipe away, handing back to gameplay
+  function drawUltBurst(){
+    if(!ultBurst) return;
+    const b = ultBurst;
+    const t = 1 - b.timer / b.dur;                    // 0..1 progress
+    const clamp01 = function(v){ return v < 0 ? 0 : (v > 1 ? 1 : v); };
+    const easeOut = function(x){ return 1 - Math.pow(1 - clamp01(x), 4); };
+    const fromLeft = b.side === 'left';
+    const cxCenter = W / 2, cyCenter = H / 2;
+
+    // global fade envelope so the whole beat rises fast and wipes out at the end
+    const rise = clamp01(t / 0.12);
+    const fall = t > 0.85 ? (1 - (t - 0.85) / 0.15) : 1;
+    const env = clamp01(rise) * clamp01(fall);
+
+    ctx.save();
+
+    // 0. Opening white impact flash (very first frames only)
+    if (t < 0.14) {
+      ctx.globalAlpha = (1 - t / 0.14) * 0.9;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // 1. Dark veil so the cut-in reads (kept off the exact center band lightly to preserve court feel)
+    ctx.globalAlpha = 0.78 * env;
+    ctx.fillStyle = '#04050a';
+    ctx.fillRect(0, 0, W, H);
+
+    // 2. Diagonal color band sweeping across behind the pose
+    ctx.save();
+    ctx.globalAlpha = 0.5 * env;
+    ctx.globalCompositeOperation = 'lighter';
+    const bandSweep = easeOut((t - 0.08) / 0.5);
+    const bandCX = (fromLeft ? -W * 0.2 : W * 1.2) + (cxCenter - (fromLeft ? -W * 0.2 : W * 1.2)) * bandSweep;
+    const bandGrad = ctx.createLinearGradient(bandCX - 320, 0, bandCX + 320, H);
+    bandGrad.addColorStop(0, 'rgba(0,0,0,0)');
+    bandGrad.addColorStop(0.5, b.color);
+    bandGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = bandGrad;
+    ctx.beginPath();
+    const sk = 120;
+    ctx.moveTo(bandCX - 260 + sk, 0);
+    ctx.lineTo(bandCX + 260 + sk, 0);
+    ctx.lineTo(bandCX + 260 - sk, H);
+    ctx.lineTo(bandCX - 260 - sk, H);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // 3. Radial converging speed-lines centered on the pose anchor
+    const poseAnchorX = fromLeft ? W * 0.36 : W * 0.64;
+    ctx.save();
+    ctx.globalAlpha = 0.5 * env;
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.lineCap = 'butt';
+    const lineCount = 40;
+    const spin = t * 0.6;
+    const innerR = 120 + 240 * easeOut((t - 0.1) / 0.6); // lines retreat outward, opening a clear pocket
+    for (let i = 0; i < lineCount; i++) {
+      const a = (i / lineCount) * Math.PI * 2 + spin + (i % 2) * 0.04;
+      const wob = (i % 3) * 6;
+      ctx.lineWidth = (i % 4 === 0) ? 4 : 1.6;
+      ctx.beginPath();
+      ctx.moveTo(poseAnchorX + Math.cos(a) * (innerR + wob), cyCenter + Math.sin(a) * (innerR + wob));
+      ctx.lineTo(poseAnchorX + Math.cos(a) * (innerR + 900), cyCenter + Math.sin(a) * (innerR + 900));
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // 4. Giant rim-lit character cut-in, sliding in from the caster's side then holding
+    const poseProg = easeOut((t - 0.08) / 0.26);
+    const groundY = H * 0.92;
+    const startX = fromLeft ? -260 : W + 260;
+    const poseX = startX + (poseAnchorX - startX) * poseProg;
+    const facing = fromLeft ? 1 : -1;
+    const scale = 5.4;
+    // dramatic overhead-smash pose (negative armFront cocks the racket arm up/back)
+    const poseAng = { legFront: 0.4, legBack: -0.5, armFront: -2.1, armBack: -1.0, expr: 'smash', onGround: true, air: true };
+    const ch = b.character;
+    if (ch) {
+      // colored aura halo behind the figure
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.55 * env;
+      const haloY = groundY - PLAYER_H * scale * 0.32;
+      const halo = ctx.createRadialGradient(poseX, haloY, 20, poseX, haloY, 260);
+      halo.addColorStop(0, b.color);
+      halo.addColorStop(0.4, 'rgba(120,140,255,0.15)');
+      halo.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = halo;
+      ctx.fillRect(poseX - 300, haloY - 300, 600, 600);
+      ctx.restore();
+
+      // rim-light pass: bright accent-colored silhouette, offset a few px toward the light
+      const rimCh = { id: ch.id, skin: b.accent, hair: b.accent, hairStyle: ch.hairStyle, cap: ch.cap, glasses: ch.glasses, shirt: b.accent, shirt2: b.accent, shorts: b.accent, shoe: b.accent, demeanor: ch.demeanor, pixSilhouette: true };
+      ctx.save();
+      ctx.globalAlpha = env;
+      ctx.globalCompositeOperation = 'lighter';
+      drawHumanoid(ctx, poseX - facing * 4, groundY, scale, rimCh, poseAng, facing);
+      ctx.restore();
+
+      // solid black body on top so the rim reads as an edge light
+      const blackCh = { id: ch.id, skin: '#08090f', hair: '#08090f', hairStyle: ch.hairStyle, cap: ch.cap, glasses: ch.glasses, shirt: '#08090f', shirt2: '#08090f', shorts: '#08090f', shoe: '#08090f', demeanor: ch.demeanor, pixSilhouette: true };
+      ctx.save();
+      ctx.globalAlpha = env;
+      drawHumanoid(ctx, poseX, groundY, scale, blackCh, poseAng, facing);
+      ctx.restore();
+
+      // then the real colored character, faded in, so you still recognize who it is
+      ctx.save();
+      ctx.globalAlpha = env * clamp01((t - 0.18) / 0.2) * 0.9;
+      drawHumanoid(ctx, poseX, groundY, scale, ch, poseAng, facing);
+      ctx.restore();
+    }
+
+    // 5. Art-name slam + expanding shockwave rings
+    if (t > 0.4) {
+      const nameT = (t - 0.4) / 0.6;
+      const slam = easeOut(nameT / 0.25);
+      const nameScale = 1 + (1 - clamp01(nameT / 0.22)) * 0.6; // overshoots big → settles
+      const nameX = fromLeft ? W * 0.62 : W * 0.38;
+      const nameY = H * 0.34;
+
+      // shockwave rings from the name
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (let r = 0; r < 2; r++) {
+        const rp = clamp01((nameT - r * 0.12) / 0.5);
+        if (rp <= 0 || rp >= 1) continue;
+        ctx.globalAlpha = (1 - rp) * 0.5 * env;
+        ctx.strokeStyle = b.color;
+        ctx.lineWidth = 5 * (1 - rp);
+        ctx.beginPath();
+        ctx.arc(nameX, nameY + 20, 30 + rp * 420, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalAlpha = env * slam;
+      ctx.translate(nameX, nameY);
+      ctx.scale(nameScale, nameScale);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // character name (smaller, above)
+      ctx.font = '900 30px "Space Grotesk", sans-serif';
+      ctx.lineWidth = 6; ctx.strokeStyle = '#04050a';
+      ctx.strokeText(b.name, 0, -30);
+      ctx.fillStyle = b.color;
+      ctx.shadowColor = b.color; ctx.shadowBlur = 12;
+      ctx.fillText(b.name, 0, -30);
+
+      // art title (big gold slam)
+      ctx.shadowBlur = 0;
+      ctx.font = '900 46px "Space Grotesk", sans-serif';
+      ctx.lineWidth = 8; ctx.strokeStyle = '#04050a';
+      ctx.strokeText(b.artName, 0, 14);
+      const goldGrad = ctx.createLinearGradient(0, -10, 0, 40);
+      goldGrad.addColorStop(0, '#fff6c8'); goldGrad.addColorStop(0.5, '#facc15'); goldGrad.addColorStop(1, '#e0a000');
+      ctx.fillStyle = goldGrad;
+      ctx.shadowColor = 'rgba(250,204,21,0.8)'; ctx.shadowBlur = 18;
+      ctx.fillText(b.artName, 0, 14);
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
   // ---------- Rage Art cinematic overlay (Persona 5 / P3 Reload Style) ----------
   // Renders a stylized diagonal side cut-in banner strictly on the caster's side of the court.
   // Center court, net, and shuttlecock remain 100% visible and unobstructed.
@@ -16060,6 +16373,7 @@
     drawAIDebug();
     ctx.restore(); // Restore screenshake
 
+    drawUltBurst();     // full-screen ult-activation cutscene (freeze → flood → pose → name slam)
     drawUltCinematic(); // full-screen, untranslated (Part 7)
     drawRetroOverlay(); // PIXEL_REVAMP Phase 2 — subtle CRT scanlines + vignette over the whole frame
     updateServeTag();
