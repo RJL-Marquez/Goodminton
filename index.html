@@ -8104,8 +8104,8 @@
     shuttle.shermanDragonReleaseTimer = 0; shuttle.shermanDragonTargetX = undefined;
     // Jordan's domain persists across points for its own 30s live window — only wipe the
     // silhouette/circle here if that live window isn't running (i.e. the domain already ended).
-    if (left) { left.shermanMandateActive = false; left.shermanDragonAirTimer = 0; left.jordanTempestActive = false; if (!left.jordanDomainLiveActive) { left.jordanSilhouette = 0; left.jordanEyeGlow = 0; left.jordanCircleRadius = 0; } }
-    if (right) { right.shermanMandateActive = false; right.shermanDragonAirTimer = 0; right.jordanTempestActive = false; if (!right.jordanDomainLiveActive) { right.jordanSilhouette = 0; right.jordanEyeGlow = 0; right.jordanCircleRadius = 0; } }
+    if (left) { left.shermanMandateActive = false; left.shermanDragonAirTimer = 0; left.jordanTempestActive = false; if (!left.jordanDomainLiveActive) { left.jordanSilhouette = 0; left.jordanEyeGlow = 0; left.jordanCircleRadius = 0; left.momentumChargeBlocked = false; } }
+    if (right) { right.shermanMandateActive = false; right.shermanDragonAirTimer = 0; right.jordanTempestActive = false; if (!right.jordanDomainLiveActive) { right.jordanSilhouette = 0; right.jordanEyeGlow = 0; right.jordanCircleRadius = 0; right.momentumChargeBlocked = false; } }
     shuttle.ultFx = null; // clear ult signature trail flavour
     shuttle.ultFastDrop = null;
     shuttle.ultSmashArc = false;
