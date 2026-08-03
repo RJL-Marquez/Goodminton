@@ -4491,9 +4491,11 @@
     const dir = p.side === 'left' ? 1 : -1;
     switch(id){
       case 'sherman':
+        triggerDomainExpansion(p, 'MANDATE OF HEAVEN', '#f59e0b');
         startShermanMandateOfHeaven(p);
         break;
       case 'rodrigo': {
+        triggerDomainExpansion(p, 'LA BOCA TANGO PLAZA', '#facc15');
         holdShuttle(0.20);
         // False impact VFX
         playSound('hit');
@@ -4504,6 +4506,7 @@
         break;
       }
       case 'amara': {                            // Puppeteer — unpredictable sky lob + Cleopatra transform, backdrop & blinding flash
+        triggerDomainExpansion(p, 'SUN GODDESS OF GIZA', '#22d3ee');
         p.solarJudgmentSunTimer = 1.8; // trigger blinding sun animation
         const realX = ultRandomX(p);
         ultLaunchToward(realX, 1500, 5.2);
@@ -4517,6 +4520,7 @@
         break;
       }
       case 'maya': {
+        triggerDomainExpansion(p, 'ARCHITECT\'S BLUEPRINT', '#c084fc');
         holdShuttle(0.35); // Overlong wind-up
         shuttle.kind = 'dink';
         const targetDist = 30; // lands very close past net
@@ -4540,6 +4544,7 @@
         break;
       }
       case 'sofia': {
+        triggerDomainExpansion(p, 'STARLIGHT BALLROOM', '#f472b6');
         holdShuttle(0.35);
         shuttle.kind = 'dink';
         shuttle.vx = dir * 140;
@@ -4550,6 +4555,7 @@
         break;
       }
       case 'diego': {
+        triggerDomainExpansion(p, 'COLOSSEUM OF RUINS', '#ff4444');
         const targetX = ultAwayFromOpponentX(p);
         ultLaunchToward(targetX, 220);
         shuttle.kind = 'smash';
@@ -4563,6 +4569,7 @@
         break;
       }
       case 'lindan': {
+        triggerDomainExpansion(p, 'IMPERIAL DRAGON PALACE', '#ffd54a');
         const targetX = p.side === 'left' ? COURT_RIGHT - 20 : COURT_LEFT + 20;
         ultLaunchToward(targetX, 480, 1.8); // fast downward drop
         shuttle.kind = 'clear';
@@ -4572,6 +4579,7 @@
         break;
       }
       case 'jordan': {
+        triggerDomainExpansion(p, 'VOLCANIC CALDERA', '#5b9bff');
         holdShuttle(0.35);
         const targetX = ultDeepCornerX(p);
         ultLaunchToward(targetX, 220);
@@ -4587,6 +4595,7 @@
         break;
       }
       case 'kenji': {
+        triggerDomainExpansion(p, 'BAMBOO WIND STORM', '#34d399');
         p.x += dir * 40; // visual sprint
         const targetX = ultDeepCornerX(p);
         ultLaunchToward(targetX, 320);
@@ -4597,6 +4606,7 @@
         break;
       }
       case 'priya': {
+        triggerDomainExpansion(p, 'REDLINE AFTERBURNER', '#ff2d6b');
         p.x -= dir * 15; // physical step back
         shuttle.kind = 'smash';
         shuttle.vx = dir * 1400;
@@ -4608,6 +4618,7 @@
         break;
       }
       case 'liam': {
+        triggerDomainExpansion(p, 'MONOCHROME ZONE', '#5c6770');
         const incomingWasSmash = shuttle.kind === 'smash';
         if (incomingWasSmash) {
           shuttle.kind = 'smash';
@@ -4628,6 +4639,7 @@
         break;
       }
       case 'ninjja': {                           // Absolute Zone — lightning fast, capped boost, desaturate hold
+        triggerDomainExpansion(p, 'VOID SHADOW REALM', '#6ef3ff');
         const targetX = ultAwayFromOpponentX(p);
         ultLaunchToward(targetX, 160);
         const boostSpeed = Math.min(SMASH_BASE_SPEED * 1.35, 2950);
@@ -4653,6 +4665,7 @@
         break;
       }
       case 'cristiano': {                      // Grounded Knuckleball Free Kick
+        triggerDomainExpansion(p, 'BERNABÉU SPOTLIGHT', '#ff5a2a');
         const targetX = ultRandomX(p);
         ultLaunchToward(targetX, 260);
         shuttle.isKnuckleball = true;
@@ -4676,7 +4689,29 @@
         }
         break;
       }
+      case 'benjamin': {
+        triggerDomainExpansion(p, 'HEAVENLY SANCTUARY', '#cbd5e1');
+        activateTransform(p, 'AMEN', performance.now() / 1000);
+        triggerShake(16, 0.4);
+        triggerStinger('BENJAMIN', 'AMEN ✝', '#cbd5e1', 1.8);
+        break;
+      }
+      case 'elijah': {
+        triggerDomainExpansion(p, 'FELINE FANTASY POND', '#f59e0b');
+        activateTransform(p, 'FURSONA_UNLEASHED', performance.now() / 1000);
+        triggerShake(14, 0.35);
+        triggerStinger('ELIJAH', 'FURSONA UNLEASHED 🐱', '#ffc4e2', 1.8);
+        break;
+      }
+      case 'mateo': {
+        triggerDomainExpansion(p, 'ABYSSAL ANCHOR', '#fb923c');
+        activateTransform(p, 'ANCHOR', performance.now() / 1000);
+        triggerShake(18, 0.45);
+        triggerStinger('MATEO', 'ANCHOR ⚓', '#fb923c', 1.8);
+        break;
+      }
       default:
+        triggerDomainExpansion(p, 'HERO DOMAIN', '#3b82f6');
         ultLaunchToward(ultAwayFromOpponentX(p), 220);
         break;
     }
@@ -4728,7 +4763,7 @@
       const targetX = targetXs[i];
 
       const dy = GROUND_Y - startY;
-      const vy = 240 + Math.random() * 30;
+      const vy = (240 + Math.random() * 30) * 1.5; // 1.5x faster meteor drop
       const estTime = dy / (vy + 20);
       const dx = targetX - startX;
       // Calculate initial vx to reach targetX with drag, giving distinct varied angles
@@ -4773,69 +4808,85 @@
       ctx.save();
       ctx.translate(item.x, item.y);
 
-      if(item.isReal){
-        // Still marked, but scaled down and dimmed to stay close to a decoy during the fall.
-        ctx.globalCompositeOperation = 'lighter';
-        const radGlow = ctx.createRadialGradient(0, 0, 2, 0, 0, 20);
-        radGlow.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
-        radGlow.addColorStop(0.35, 'rgba(255, 215, 0, 0.7)');
-        radGlow.addColorStop(0.7, 'rgba(255, 223, 100, 0.3)');
-        radGlow.addColorStop(1, 'rgba(255, 215, 0, 0)');
-        ctx.fillStyle = radGlow;
-        ctx.beginPath();
-        ctx.arc(0, 0, 20, 0, Math.PI * 2);
-        ctx.fill();
+      // Meteor streak trailing behind the fall direction — without this each item just
+      // reads as a glowing dot drifting down, not a meteor screaming out of the sky.
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const fallSpd = Math.hypot(item.vx, item.vy) || 1;
+      const dxn = -item.vx / fallSpd, dyn = -item.vy / fallSpd;
+      const streakLen = item.isReal ? 55 : 42;
+      const streakRgb = item.isReal ? [255, 235, 160] : hexToRgb(item.color);
+      const streakGrad = ctx.createLinearGradient(0, 0, dxn * streakLen, dyn * streakLen);
+      streakGrad.addColorStop(0, `rgba(${streakRgb[0]},${streakRgb[1]},${streakRgb[2]},0.7)`);
+      streakGrad.addColorStop(1, `rgba(${streakRgb[0]},${streakRgb[1]},${streakRgb[2]},0)`);
+      ctx.strokeStyle = streakGrad;
+      ctx.lineWidth = item.isReal ? 4 : 3;
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(dxn * streakLen, dyn * streakLen); ctx.stroke();
+      ctx.restore();
 
-        // Rotating 4-point starburst, scaled down to match the smaller glow
-        const starRot = nowSec * 4.0;
-        ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        for(let s = 0; s < 4; s++){
-          const a = starRot + (s * Math.PI / 2);
-          const r1 = 13;
-          ctx.moveTo(0, 0);
-          ctx.lineTo(Math.cos(a) * r1, Math.sin(a) * r1);
-        }
-        ctx.stroke();
-
-        ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        for(let s = 0; s < 4; s++){
-          const a = starRot + Math.PI/4 + (s * Math.PI / 2);
-          ctx.moveTo(0, 0);
-          ctx.lineTo(Math.cos(a) * 8, Math.sin(a) * 8);
-        }
-        ctx.stroke();
-
-        // Shining Core Shuttlecock Sprite
-        ctx.rotate(item.angle);
-        const SP = 1.7;
-        const dw = SHUT_W * SP, dh = SHUT_H * SP;
-        ctx.drawImage(_shutBuf, -dw/2, -dh + SP*3, dw, dh);
-
-      } else {
-        // Decoy Firework Shuttlecock
-        ctx.globalCompositeOperation = 'lighter';
-        const radGlow = ctx.createRadialGradient(0, 0, 2, 0, 0, 15);
-        radGlow.addColorStop(0, item.color);
-        radGlow.addColorStop(0.6, item.color + '66');
-        radGlow.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = radGlow;
-        ctx.beginPath();
-        ctx.arc(0, 0, 15, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Decoy Shuttlecock Sprite
-        ctx.rotate(item.angle);
-        const SP = 1.7;
-        const dw = SHUT_W * SP, dh = SHUT_H * SP;
-        ctx.drawImage(_shutBuf, -dw/2, -dh + SP*3, dw, dh);
-      }
+      // Every falling item — real or decoy — is drawn as the same diving dragon meteor
+      // (only the color tint differs), so the real one still can't be picked out by shape,
+      // matching the original intent of the old "stay close to a decoy" comment here.
+      ctx.globalCompositeOperation = 'lighter';
+      drawDragonMeteor(item, nowSec);
 
       ctx.restore();
     }
+  }
+
+  // Compact diving-dragon silhouette for a single falling meteor item (see
+  // drawShermanRainShuttles) — oriented head-first along its own fall direction, with a
+  // short serpentine tail. Deliberately smaller/simpler than drawFlyingDragonBody since up
+  // to 5 of these render simultaneously.
+  function drawDragonMeteor(item, nowSec) {
+    const angle = Math.atan2(item.vy, item.vx);
+    const rgb = hexToRgb(item.color);
+    const glowRgb = `${rgb[0]},${rgb[1]},${rgb[2]}`;
+
+    const aura = ctx.createRadialGradient(0, 0, 3, 0, 0, 26);
+    aura.addColorStop(0, `rgba(${glowRgb},0.55)`);
+    aura.addColorStop(0.6, `rgba(${glowRgb},0.22)`);
+    aura.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = aura;
+    ctx.beginPath(); ctx.arc(0, 0, 26, 0, Math.PI * 2); ctx.fill();
+
+    ctx.save();
+    ctx.rotate(angle + Math.PI / 2); // local -y (the head) now points along the fall direction
+
+    const N = 6;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < N; i++) {
+      const t = i / N, t2 = (i + 1) / N;
+      const wob1 = Math.sin(t * 7 + nowSec * 8) * 3 * t;
+      const wob2 = Math.sin(t2 * 7 + nowSec * 8) * 3 * t2;
+      ctx.strokeStyle = item.color;
+      ctx.lineWidth = 6 * (1 - t) + 1.5;
+      ctx.beginPath(); ctx.moveTo(wob1, 6 + t * 26); ctx.lineTo(wob2, 6 + t2 * 26); ctx.stroke();
+    }
+
+    ctx.fillStyle = item.color;
+    ctx.strokeStyle = '#fef08a';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(-7, 6);
+    ctx.quadraticCurveTo(-9, -7, 0, -11);
+    ctx.quadraticCurveTo(9, -7, 7, 6);
+    ctx.quadraticCurveTo(0, 9, -7, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.strokeStyle = '#fef08a';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(-3, -7); ctx.quadraticCurveTo(-8, -13, -5, -18); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(3, -7); ctx.quadraticCurveTo(8, -13, 5, -18); ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(-3, -3, 1.3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(3, -3, 1.3, 0, Math.PI * 2); ctx.fill();
+
+    ctx.restore();
   }
 
   function spawnDragonImpactShockwave(x, y) {
@@ -4921,6 +4972,41 @@
       ctx.stroke();
     }
 
+    // 5. Descending Pillar of Heaven — a wide beam of imperial light falling straight down
+    // onto him from the top of the screen, selling the "chosen by heaven" moment rather than
+    // just a glow sitting on the ground.
+    const pillarW = 70 + Math.sin(now * 3) * 6;
+    const pillarGrad = ctx.createLinearGradient(cx - pillarW / 2, 0, cx + pillarW / 2, 0);
+    pillarGrad.addColorStop(0, 'rgba(255, 215, 0, 0)');
+    pillarGrad.addColorStop(0.5, 'rgba(255, 240, 180, 0.35)');
+    pillarGrad.addColorStop(1, 'rgba(255, 215, 0, 0)');
+    ctx.fillStyle = pillarGrad;
+    ctx.fillRect(cx - pillarW / 2, 0, pillarW, headY);
+
+    // 6. Imperial cloud roundel + "Mandate of Heaven" hanzi hovering above his head
+    ctx.save();
+    ctx.translate(cx, headY - 46);
+    ctx.rotate(now * 0.4);
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.55)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, 30, 0, Math.PI * 2); ctx.stroke();
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * 30, Math.sin(a) * 30);
+      ctx.lineTo(Math.cos(a) * 40, Math.sin(a) * 40);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.fillStyle = '#ffd700';
+    ctx.font = 'bold 22px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = '#fbbf24';
+    ctx.shadowBlur = 12;
+    ctx.fillText('天命', cx, headY - 46);
+    ctx.shadowBlur = 0;
+
     // 4. Mandate Rising Gold Sparks
     if (Math.random() < 0.8) {
       particles.push({
@@ -4939,18 +5025,15 @@
     ctx.restore();
   }
 
-  function drawShermanCoiledDragon(p) {
-    if (!p || !p.shermanDragonAirTimer || p.shermanDragonAirTimer <= 0) return;
-    const progress = p.shermanDragonAirTimer / 0.95; // 1 -> 0
-    const alpha = Math.min(1, Math.sin((1 - Math.max(0, Math.min(1, progress))) * Math.PI) * 1.3);
-    const cx = p.x + PLAYER_W/2;
-    const cy = p.y + PLAYER_H/2;
+  // Shared flying-dragon renderer used by both Sherman ults: the air-ult "Imperial Dragon
+  // Descent" (dives into the real smash) and the ground-ult "Mandate of Heaven" flourish
+  // (dives into the already-held shuttle purely for show). Draws the fire aura, the
+  // loop-the-loop-then-dive ribbon body, and the head — everything except timing/bite
+  // logic, which differs enough between the two callers to stay in their own functions.
+  function drawFlyingDragonBody(cx, cy, dir, pathU, strikeLX, strikeLY, breathingFire) {
+    const now = performance.now() * 0.001;
 
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.globalCompositeOperation = 'lighter';
-
-    // 1. Dragon fire aura behind Sherman
+    // Dragon fire aura behind Sherman
     const auraGrad = ctx.createRadialGradient(cx, cy, 20, cx, cy, 190);
     auraGrad.addColorStop(0, 'rgba(239, 68, 68, 0.65)');
     auraGrad.addColorStop(0.5, 'rgba(245, 158, 11, 0.4)');
@@ -4960,68 +5043,138 @@
     ctx.arc(cx, cy, 190, 0, Math.PI * 2);
     ctx.fill();
 
-    // 2. Coiling Retro Pixel Dragon Body
-    const now = performance.now() * 0.001;
-    const dir = p.side === 'left' ? 1 : -1;
-
+    // Flight path: a cursive, roller-coaster-style loop-the-loop climbing up and over
+    // Sherman, then peeling off into a dive that ends exactly on the strike point. The HEAD
+    // travels along this path over time; the BODY is simply its own recent trail, so the
+    // whole thing reads as one creature actually flying rather than a shape that just
+    // reshapes itself in place.
     ctx.save();
     ctx.translate(cx, cy);
     ctx.scale(dir, 1);
 
-    // Dragon serpent body segments
-    const segments = 16;
-    for (let i = segments; i >= 0; i--) {
-      const t = i / segments;
-      const angle = t * Math.PI * 2.5 + now * 3.5;
-      const radius = 60 + Math.sin(t * Math.PI * 2) * 28;
-      const sx = Math.cos(angle) * radius - 20;
-      const sy = Math.sin(angle) * (radius * 0.6) - 10;
-      const segSize = 14 + (1 - t) * 12;
-
-      // Dragon scale body node
-      ctx.fillStyle = i % 2 === 0 ? '#dc2626' : '#fbbf24';
-      ctx.strokeStyle = '#991b1b';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(sx, sy, segSize, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      // Golden dorsal spine / fin
-      ctx.fillStyle = '#fef08a';
-      ctx.fillRect(sx - 3, sy - segSize - 6, 6, 8);
+    const LOOP_CX = 55, LOOP_CY = -175, LOOP_R = 78, LOOP_DRIFT = 35, LOOP_END_THETA = Math.PI * 2.4;
+    function dragonPathAt(t) { // t: 0 -> 1 across liftoff + loop + dive
+      if (t <= 0.75) {
+        // Liftoff off his shoulder, climbing into a full cursive loop (a bit past 360° so
+        // the track doesn't retrace itself, like a roller-coaster loop's entry/exit ramps).
+        const lt = t / 0.75;
+        const theta = lt * LOOP_END_THETA;
+        const drift = lt * LOOP_DRIFT;
+        const liftIn = Math.min(1, lt / 0.12); // quick ease off his shoulder onto the track
+        const x0 = 0, y0 = -30;
+        const xLoop = LOOP_CX + Math.sin(theta) * LOOP_R + drift;
+        const yLoop = LOOP_CY - Math.cos(theta) * LOOP_R;
+        return { x: x0 + (xLoop - x0) * liftIn, y: y0 + (yLoop - y0) * liftIn };
+      } else {
+        // Peel off the loop and dive straight into the strike point
+        const dt2 = (t - 0.75) / 0.25;
+        const peelX = LOOP_CX + Math.sin(LOOP_END_THETA) * LOOP_R + LOOP_DRIFT;
+        const peelY = LOOP_CY - Math.cos(LOOP_END_THETA) * LOOP_R;
+        const ease = dt2 * dt2 * (3 - 2 * dt2); // smoothstep dive
+        return { x: peelX + (strikeLX - peelX) * ease, y: peelY + (strikeLY - peelY) * ease };
+      }
     }
 
-    // Dragon Head at top
-    const headX = 35, headY = -75;
-    ctx.fillStyle = '#dc2626';
-    ctx.beginPath();
-    ctx.ellipse(headX, headY, 28, 20, -0.2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#fbbf24';
-    ctx.lineWidth = 3;
-    ctx.stroke();
+    const N = 42;
+    const trailSpan = 0.42; // how far back along the path the body trails behind the head
+    const wobAmp = 3 * (1 - Math.min(1, Math.max(0, pathU))); // settles out as it straightens into the dive
+    const pts = [];
+    for (let i = 0; i <= N; i++) {
+      const f = i / N; // 0 = tail, 1 = head
+      const u = Math.max(0, Math.min(1, pathU - trailSpan * (1 - f)));
+      const pos = dragonPathAt(u);
+      const wob = Math.sin(now * 9 + f * 10) * wobAmp;
+      pts.push({ x: pos.x + wob, y: pos.y, s: 1 - f });
+    }
 
-    // Eyes, Fangs, Whiskers
+    // Body ribbon: thick crimson, tapering from a heavy tail to a slightly slimmer neck
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      ctx.strokeStyle = '#dc2626';
+      ctx.lineWidth = 9 + 16 * a.s;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+    // Golden dorsal ridge riding the spine on top of the body
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 3.5 + 5 * a.s;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+    // Diamond scales along the body at intervals
     ctx.fillStyle = '#fef08a';
-    ctx.beginPath();
-    ctx.arc(headX + 10, headY - 4, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.moveTo(headX + 16, headY + 8);
-    ctx.lineTo(headX + 24, headY + 18);
-    ctx.lineTo(headX + 10, headY + 10);
-    ctx.fill();
+    for (let i = 3; i < pts.length; i += 4) {
+      const q = pts[i], sz = 4 + 6 * q.s;
+      ctx.beginPath();
+      ctx.moveTo(q.x, q.y - sz); ctx.lineTo(q.x + sz, q.y); ctx.lineTo(q.x, q.y + sz); ctx.lineTo(q.x - sz, q.y);
+      ctx.closePath(); ctx.fill();
+    }
 
+    // Dragon head — horns, a glowing eye, whiskers, and either a wisp of ember breath while
+    // flying, or a full fire-breath blast right as it strikes. Scaled up to match the thicker body.
+    const head = pts[pts.length - 1];
+    ctx.save();
+    ctx.translate(head.x, head.y);
+    ctx.scale(1.3, 1.3);
+
+    ctx.fillStyle = '#dc2626';
     ctx.strokeStyle = '#fbbf24';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.moveTo(headX + 22, headY);
-    ctx.quadraticCurveTo(headX + 48, headY - 22, headX + 65, headY + 12);
+    ctx.moveTo(-16, 14);
+    ctx.quadraticCurveTo(-6, -20, 20, -16);
+    ctx.quadraticCurveTo(32, -6, 24, 8);
+    ctx.quadraticCurveTo(6, 16, -16, 14);
+    ctx.closePath();
+    ctx.fill();
     ctx.stroke();
 
-    ctx.restore();
+    // Horns sweeping back
+    ctx.strokeStyle = '#fef08a';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(-6, -16); ctx.quadraticCurveTo(-18, -34, -10, -46); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(6, -18); ctx.quadraticCurveTo(12, -36, 22, -44); ctx.stroke();
+
+    // Glowing eye
+    ctx.fillStyle = '#fef08a';
+    ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 12;
+    ctx.beginPath(); ctx.arc(8, -6, 3.6, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Whiskers trailing off the snout
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(22, 2); ctx.quadraticCurveTo(42, -2, 52, 8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(20, -6); ctx.quadraticCurveTo(38, -16, 48, -12); ctx.stroke();
+
+    if (breathingFire) {
+      // A real blast of fire from the jaws right at the strike — much bigger than the idle wisp
+      const fireGrad = ctx.createLinearGradient(20, 0, 100, 0);
+      fireGrad.addColorStop(0, 'rgba(255,255,255,0.95)');
+      fireGrad.addColorStop(0.35, 'rgba(251,191,36,0.9)');
+      fireGrad.addColorStop(1, 'rgba(220,38,38,0)');
+      ctx.fillStyle = fireGrad;
+      ctx.beginPath();
+      ctx.moveTo(22, -12);
+      ctx.quadraticCurveTo(65, -26 + Math.sin(now * 22) * 7, 105, 0);
+      ctx.quadraticCurveTo(65, 26 + Math.cos(now * 19) * 7, 22, 12);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // Ember breath wisping from the jaw
+      ctx.fillStyle = 'rgba(251,191,36,0.55)';
+      ctx.beginPath();
+      ctx.moveTo(24, 4);
+      ctx.quadraticCurveTo(42, -6 + Math.sin(now * 10) * 4, 58, 6 + Math.cos(now * 8) * 5);
+      ctx.quadraticCurveTo(40, 12, 24, 10);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.restore(); // head
+    ctx.restore(); // dragon local space
 
     // Floating fire particles
     if (Math.random() < 0.7) {
@@ -5035,6 +5188,304 @@
         alpha: 1.0,
         decay: 2.0,
         gravity: -20
+      });
+    }
+  }
+
+  function drawShermanCoiledDragon(p) {
+    if (!p || !p.shermanDragonAirTimer || p.shermanDragonAirTimer <= 0) return;
+    // STRIKE_T matches the holdShuttle(1.25) freeze set at cast time — the dragon's bite
+    // lands exactly as that hold releases, so the strike reads as what launches the smash.
+    // Both values are in SIM seconds (scaled by the cast's 0.18 timeScale, which itself eases
+    // back to 1.0 at 0.45/s), tuned so the full loop-the-loop-then-dive reads as roughly
+    // 2.5 real seconds — see the "Air Ult: Imperial Dragon Descent" trigger site.
+    const TOTAL = 1.75, STRIKE_T = 1.25;
+    if (p.shermanDragonAirTimer >= TOTAL - 0.05) p._dragonBiteFired = false; // fresh cast
+    const elapsed = TOTAL - Math.max(0, Math.min(TOTAL, p.shermanDragonAirTimer));
+    const alpha = Math.min(1, Math.sin(Math.min(1, elapsed / TOTAL) * Math.PI) * 1.3);
+    const cx = p.x + PLAYER_W/2;
+    const cy = p.y + PLAYER_H/2;
+    const dir = p.side === 'left' ? 1 : -1;
+
+    // The bite: a one-shot impact fired exactly once, right as the dive completes and the
+    // real smash resumes. Reuses spawnDragonImpactShockwave — shake + roar + a ring burst
+    // right where the shuttle actually is, so the dragon's strike visibly IS what sends it.
+    if (elapsed >= STRIKE_T && !p._dragonBiteFired) {
+      p._dragonBiteFired = true;
+      spawnDragonImpactShockwave(shuttle.x, shuttle.y);
+    }
+
+    const pathU = Math.min(1, elapsed / STRIKE_T); // 0 -> 1 across the whole flight (bite at 1)
+
+    // Capture the strike point once, in this local (translated + dir-scaled) space, the
+    // instant the flight begins — shuttle.x/y is still its pre-launch hover position then.
+    if (elapsed < 0.02) {
+      p._dragonStrikeLX = (shuttle.x - cx) / dir;
+      p._dragonStrikeLY = (shuttle.y - cy);
+    }
+    const strikeLX = (p._dragonStrikeLX != null) ? p._dragonStrikeLX : 220;
+    const strikeLY = (p._dragonStrikeLY != null) ? p._dragonStrikeLY : -80;
+    const breathingFire = pathU >= 1 && (elapsed - STRIKE_T) < 0.35;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.globalCompositeOperation = 'lighter';
+    drawFlyingDragonBody(cx, cy, dir, pathU, strikeLX, strikeLY, breathingFire);
+    ctx.restore();
+  }
+
+  // Mandate of Heaven's opening flourish: the SAME dragon does its loop-the-loop and "hits"
+  // the shuttle Sherman already froze (startShermanMandateOfHeaven's holdShuttle(2.5)) —
+  // purely aesthetic, never touches shuttle.x/y/vx/vy. After the bite, a comet streak rises
+  // straight up off the shuttle's frozen position and fades out well short of the top of the
+  // screen, selling "knocked way up into the sky, out of sight" without the shuttle actually
+  // going anywhere — the real meteor rain is still triggerShermanFireworkRain() on schedule.
+  function drawShermanMandateDragonStrike(p) {
+    if (!p || !p.shermanMandateActive) return;
+    const DRAGON_T = 1.2, RISE_TAIL = 0.5; // real seconds — this cast runs at normal timeScale
+    if (p.shermanMandateTimer >= 2.5 - 0.05) p._mandateDragonBiteFired = false; // fresh cast
+    const elapsed = 2.5 - Math.max(0, Math.min(2.5, p.shermanMandateTimer));
+    if (elapsed >= DRAGON_T + RISE_TAIL) return; // flourish is done; his hand gesture takes over
+
+    const cx = p.x + PLAYER_W/2;
+    const cy = p.y + PLAYER_H/2;
+    const dir = p.side === 'left' ? 1 : -1;
+
+    if (elapsed >= DRAGON_T && !p._mandateDragonBiteFired) {
+      p._mandateDragonBiteFired = true;
+      spawnDragonImpactShockwave(shuttle.x, shuttle.y);
+    }
+
+    const pathU = Math.min(1, elapsed / DRAGON_T);
+    if (elapsed < 0.02) {
+      p._mandateStrikeLX = (shuttle.x - cx) / dir;
+      p._mandateStrikeLY = (shuttle.y - cy);
+    }
+    const strikeLX = (p._mandateStrikeLX != null) ? p._mandateStrikeLX : 40;
+    const strikeLY = (p._mandateStrikeLY != null) ? p._mandateStrikeLY : -60;
+    const breathingFire = pathU >= 1 && (elapsed - DRAGON_T) < 0.3;
+    const alpha = elapsed < DRAGON_T ? 1 : Math.max(0, 1 - (elapsed - DRAGON_T) / RISE_TAIL);
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.globalCompositeOperation = 'lighter';
+    drawFlyingDragonBody(cx, cy, dir, pathU, strikeLX, strikeLY, breathingFire);
+    ctx.restore();
+
+    if (elapsed >= DRAGON_T) {
+      const riseFrac = Math.min(1, (elapsed - DRAGON_T) / RISE_TAIL);
+      const riseY = shuttle.y - riseFrac * 260;
+      const streakAlpha = 1 - riseFrac;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const grad = ctx.createLinearGradient(shuttle.x, shuttle.y, shuttle.x, riseY);
+      grad.addColorStop(0, 'rgba(255, 215, 0, 0)');
+      grad.addColorStop(1, `rgba(255, 245, 200, ${streakAlpha})`);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 5;
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(shuttle.x, shuttle.y); ctx.lineTo(shuttle.x, riseY); ctx.stroke();
+      ctx.fillStyle = `rgba(255,255,255,${streakAlpha})`;
+      ctx.shadowColor = '#fef08a'; ctx.shadowBlur = 14;
+      ctx.beginPath(); ctx.arc(shuttle.x, riseY, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+  }
+
+  // Imperial Dragon Descent, phase 2/3: once the dragon's bite releases the shuttle (see the
+  // shermanDragonReleaseTimer block in updateShuttle), it launches on a huge arc that climbs
+  // well above COURT_TOP — while it's up there the dragon carries it through dense heavenly
+  // clouds, then dives back down head-first as it falls, so the shuttle itself is genuinely
+  // out of sight (not just obscured) until it's back low enough to be a fair target. Driven
+  // purely by shuttle state, not a per-player timer, since the flight duration up there varies.
+  function drawShermanSkyDragon() {
+    if (!shuttle.isShermanDragonSmash || !shuttle.active) return;
+    if (shuttle.y >= COURT_TOP) return; // back in the normal play zone — the plain shuttle takes over
+    const now = performance.now() * 0.001;
+    const cloudFade = Math.min(1, (COURT_TOP - shuttle.y) / 60);
+
+    // Dense heavenly cloud bank filling the upper sky, fading in near the threshold so the
+    // shuttle doesn't just abruptly vanish into it.
+    ctx.save();
+    ctx.globalAlpha = cloudFade;
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, COURT_TOP + 20);
+    skyGrad.addColorStop(0, 'rgba(255, 253, 240, 0.94)');
+    skyGrad.addColorStop(0.6, 'rgba(255, 248, 222, 0.78)');
+    skyGrad.addColorStop(1, 'rgba(255, 244, 200, 0)');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, W, COURT_TOP + 20);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    for (let r = 0; r < 3; r++) {
+      const rowY = 36 + r * 68;
+      const drift = (now * (7 + r * 3)) % (W + 220) - 110;
+      for (let i = 0; i < 6; i++) {
+        const px = ((i * 165 + drift) % (W + 220)) - 110;
+        const py = rowY + Math.sin(i * 2 + r) * 9;
+        const rad = 42 + (i % 3) * 11;
+        ctx.beginPath();
+        ctx.ellipse(px, py, rad, rad * 0.55, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    // Soft golden god-rays breaking through the clouds
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = 'rgba(255, 235, 150, 0.24)';
+    ctx.lineWidth = 18;
+    for (let i = 0; i < 4; i++) {
+      const rx = (W / 5) * (i + 1);
+      ctx.beginPath();
+      ctx.moveTo(rx - 30, 0);
+      ctx.lineTo(rx + 30, COURT_TOP);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.restore();
+
+    // The dragon itself, oriented head-first along its actual flight direction, carrying
+    // the shuttle through the clouds — ascending on the way up, diving on the way down.
+    const angle = Math.atan2(shuttle.vy, shuttle.vx || 0.001);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    const aura = ctx.createRadialGradient(shuttle.x, shuttle.y, 10, shuttle.x, shuttle.y, 90);
+    aura.addColorStop(0, 'rgba(255, 235, 150, 0.5)');
+    aura.addColorStop(0.5, 'rgba(239, 68, 68, 0.28)');
+    aura.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = aura;
+    ctx.beginPath(); ctx.arc(shuttle.x, shuttle.y, 90, 0, Math.PI * 2); ctx.fill();
+
+    ctx.translate(shuttle.x, shuttle.y);
+    ctx.rotate(angle + Math.PI / 2); // local -y (the head) now points along the travel direction
+
+    const N = 16;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (let i = 0; i < N; i++) {
+      const t = i / N, t2 = (i + 1) / N;
+      const wob1 = Math.sin(t * 6 + now * 6) * 10 * t;
+      const wob2 = Math.sin(t2 * 6 + now * 6) * 10 * t2;
+      ctx.strokeStyle = '#dc2626';
+      ctx.lineWidth = 16 * (1 - t) + 4;
+      ctx.beginPath(); ctx.moveTo(wob1, 14 + t * 70); ctx.lineTo(wob2, 14 + t2 * 70); ctx.stroke();
+    }
+    for (let i = 0; i < N; i++) {
+      const t = i / N, t2 = (i + 1) / N;
+      const wob1 = Math.sin(t * 6 + now * 6) * 10 * t;
+      const wob2 = Math.sin(t2 * 6 + now * 6) * 10 * t2;
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 5 * (1 - t) + 1.5;
+      ctx.beginPath(); ctx.moveTo(wob1, 14 + t * 70); ctx.lineTo(wob2, 14 + t2 * 70); ctx.stroke();
+    }
+
+    ctx.fillStyle = '#dc2626';
+    ctx.strokeStyle = '#fbbf24';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(-14, 12);
+    ctx.quadraticCurveTo(-18, -14, 0, -22);
+    ctx.quadraticCurveTo(18, -14, 14, 12);
+    ctx.quadraticCurveTo(0, 18, -14, 12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.strokeStyle = '#fef08a';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(-6, -14); ctx.quadraticCurveTo(-16, -26, -10, -36); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(6, -14); ctx.quadraticCurveTo(16, -26, 10, -36); ctx.stroke();
+
+    ctx.fillStyle = '#fef08a';
+    ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.arc(-6, -6, 2.6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(6, -6, 2.6, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.restore();
+
+    if (Math.random() < 0.5) {
+      particles.push({
+        x: shuttle.x + (Math.random() - 0.5) * 24,
+        y: shuttle.y + (Math.random() - 0.5) * 24,
+        vx: (Math.random() - 0.5) * 40,
+        vy: (Math.random() - 0.5) * 40,
+        color: '#fef9e7',
+        size: Math.random() * 4 + 2,
+        alpha: 0.8,
+        decay: 1.6,
+        gravity: 0
+      });
+    }
+  }
+
+  // Ground-scorch left behind by an unreturned Imperial Dragon Descent — cracked, charred
+  // fissures with a molten glow, fading in fast on impact and fading out as the 14s
+  // groundSlowTimer debuff runs out so the visual always matches how long the slow lasts.
+  function drawGroundCrackEffect(p) {
+    if (!p || !(p.groundSlowTimer > 0) || p.groundCrackX == null) return;
+    const gx = p.groundCrackX, gy = GROUND_Y;
+    const elapsed = 14 - p.groundSlowTimer;
+    const alpha = Math.min(1, elapsed / 0.3) * Math.min(1, p.groundSlowTimer / 1.0);
+    if (alpha <= 0) return;
+    const now = performance.now() * 0.001;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    const glow = ctx.createRadialGradient(gx, gy - 2, 3, gx, gy - 2, 60);
+    glow.addColorStop(0, 'rgba(255, 150, 30, 0.6)');
+    glow.addColorStop(0.5, 'rgba(200, 50, 10, 0.28)');
+    glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.ellipse(gx, gy, 60, 14, 0, 0, Math.PI * 2); ctx.fill();
+
+    function drawCrackBranch(startX, startY, dir, len, depth) {
+      if (depth <= 0 || len < 6) return;
+      let x = startX, y = startY;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      const segs = 3 + depth;
+      for (let s = 0; s < segs; s++) {
+        x += dir * (len / segs) * (0.7 + Math.random() * 0.6);
+        y = gy + (Math.random() - 0.5) * 6 * depth;
+        ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = '#160f08';
+      ctx.lineWidth = 1 + depth;
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(255, ${100 + depth * 20}, 40, 0.8)`;
+      ctx.lineWidth = 0.6 + depth * 0.4;
+      ctx.stroke();
+      if (Math.random() < 0.6) drawCrackBranch(x, y, dir, len * 0.5, depth - 1);
+    }
+    drawCrackBranch(gx, gy, 1, 55, 3);
+    drawCrackBranch(gx, gy, -1, 55, 3);
+
+    ctx.strokeStyle = 'rgba(255,100,40,0.22)';
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 3; i++) {
+      const shift = now * 2.2 + i * 2;
+      ctx.beginPath();
+      for (let sx = -45; sx <= 45; sx += 8) {
+        const sy = gy - 8 - i * 11 + Math.sin(sx * 0.2 + shift) * 4;
+        if (sx === -45) ctx.moveTo(gx + sx, sy); else ctx.lineTo(gx + sx, sy);
+      }
+      ctx.stroke();
+    }
+
+    if (Math.random() < 0.15) {
+      particles.push({
+        x: gx + (Math.random() - 0.5) * 50,
+        y: gy - Math.random() * 10,
+        vx: (Math.random() - 0.5) * 20,
+        vy: -Math.random() * 60 - 20,
+        color: Math.random() < 0.5 ? '#ff5a2a' : '#ffae42',
+        size: Math.random() * 3 + 1,
+        alpha: 0.9,
+        decay: 1.8,
+        gravity: -10
       });
     }
 
@@ -5174,6 +5625,12 @@
       }
     }
     return m;
+  }
+  // Ground-scorch debuff: Sherman's Imperial Dragon Descent leaves a cracked, superheated
+  // patch under the opponent when it lands unreturned — 25% slower on foot for 14s (ticked
+  // only while state==='rally', see the p.groundSlowTimer decrement in updatePlayer).
+  function groundSlowMultFor(p){
+    return (p.groundSlowTimer && p.groundSlowTimer > 0) ? 0.75 : 1;
   }
   // Extra reach from a passive (Mateo Root: planted-stance hits reach further; Ninjja Untouchable: +25% reach).
   function passiveReachBonus(p){
@@ -7158,6 +7615,7 @@
         const id = effectiveUltId(p);
         const opp = p.side === 'left' ? right : left;
         if(id === 'cristiano'){
+          triggerDomainExpansion(p, 'BERNABÉU SPOTLIGHT', '#ff5a2a');
           p.bicycleKickTimer = 0.65;
           timeScale = 0.15; // slow down time first for dramatic backflip setup
           holdShuttle(0.32); // freeze shuttle mid-air in front of feet until contact
@@ -7174,6 +7632,7 @@
         }
         else if(id === 'maya'){
           // Air Ult: "Sight Line" (reticle fake)
+          triggerDomainExpansion(p, 'ARCHITECT\'S BLUEPRINT', '#c084fc');
           holdShuttle(0.40);
           const startX = p.side === 'left' ? NET_X + 130 : NET_X - 130;
           const targetX = p.side === 'left' ? COURT_RIGHT - 60 : COURT_LEFT + 60;
@@ -7187,6 +7646,7 @@
         }
         else if(id === 'jordan'){
           // Air Ult: "Hammer Drop"
+          triggerDomainExpansion(p, 'VOLCANIC CALDERA', '#5b9bff');
           holdShuttle(0.20);
           shuttle.kind = 'smash';
           shuttle.vx = dir * 150; // short horizontal travel
@@ -7198,6 +7658,7 @@
         }
         else if(id === 'kenji'){
           // Air Ult: "Hang Time"
+          triggerDomainExpansion(p, 'BAMBOO WIND STORM', '#34d399');
           holdShuttle(0.15);
           ultLaunchToward(p.side === 'left' ? COURT_RIGHT - 30 : COURT_LEFT + 30, 1800); // extreme high clear
           shuttle.kind = 'clear';
@@ -7207,6 +7668,7 @@
         }
         else if(id === 'amara'){
           // Air Ult: "Solar Judgment"
+          triggerDomainExpansion(p, 'SUN GODDESS OF GIZA', '#22d3ee');
           holdShuttle(0.40); // freeze shuttle mid-air for dramatic windup
           timeScale = 0.15; // slow down time first for dramatic windup
           p.solarJudgmentSunTimer = 1.8; // trigger blinding sun animation
@@ -7228,6 +7690,7 @@
         }
         else if(id === 'sofia'){
           // Air Ult: "Ghost Step"
+          triggerDomainExpansion(p, 'STARLIGHT BALLROOM', '#f472b6');
           holdShuttle(0.15);
           ultLaunchToward(p.side === 'left' ? COURT_RIGHT - 40 : COURT_LEFT + 40, 100);
           shuttle.kind = 'float';
@@ -7239,6 +7702,7 @@
         }
         else if(id === 'diego'){
           // Air Ult: "El Mazo"
+          triggerDomainExpansion(p, 'COLOSSEUM OF RUINS', '#ff4444');
           holdShuttle(0.15);
           shuttle.kind = 'smash';
           shuttle.vx = dir * 1200;
@@ -7249,6 +7713,7 @@
         }
         else if(id === 'priya'){
           // Air Ult: "Afterburner"
+          triggerDomainExpansion(p, 'REDLINE AFTERBURNER', '#ff2d6b');
           holdShuttle(0.10);
           shuttle.kind = 'smash';
           shuttle.vx = dir * 750;
@@ -7260,6 +7725,7 @@
         }
         else if(id === 'liam'){
           // Air Ult: "Aerial Answer"
+          triggerDomainExpansion(p, 'MONOCHROME ZONE', '#5c6770');
           holdShuttle(0.35);
           p.vy = 0; // hang longer in air
           ultLaunchToward(p.side === 'left' ? COURT_RIGHT - 30 : COURT_LEFT + 30, 800);
@@ -7270,6 +7736,7 @@
         }
         else if(id === 'rodrigo'){
           // Air Ult: "Volea Fantasma"
+          triggerDomainExpansion(p, 'LA BOCA TANGO PLAZA', '#facc15');
           holdShuttle(0.30);
           shuttle.kind = 'dink';
           shuttle.vx = dir * 140;
@@ -7280,6 +7747,7 @@
         }
         else if(id === 'lindan'){
           // Air Ult: "Dian Sha"
+          triggerDomainExpansion(p, 'IMPERIAL DRAGON PALACE', '#ffd54a');
           holdShuttle(0.20);
           p.dianShaTimer = 0.45;
           shuttle.kind = 'smash';
@@ -7292,17 +7760,14 @@
         }
         else if(id === 'sherman'){
           // Air Ult: Imperial Dragon Descent 🐉
-          holdShuttle(0.40);
+          triggerDomainExpansion(p, 'MANDATE OF HEAVEN', '#f59e0b');
+          shuttle.vx = 0;
+          shuttle.vy = 0;
+          shuttle.shermanDragonReleaseTimer = 1.25;
+          shuttle.shermanDragonTargetX = ultRandomX(p); // randomized each cast, but always inside the opponent's court
           timeScale = 0.18; // slow down time for dramatic dragon summon
-          shuttle.resumeTimeScale = true;
-          shuttle.kind = 'smash';
-          shuttle.hitByMaxPower = true;
           shuttle.isShermanDragonSmash = true;
-          p.shermanDragonAirTimer = 0.95;
-
-          const targetX = p.side === 'left' ? COURT_RIGHT - 70 : COURT_LEFT + 70;
-          ultLaunchToward(targetX, 1200); // extremely fast downward smash
-          shuttle.vy = 880;
+          p.shermanDragonAirTimer = 1.75;
 
           playSound('subbass');
           triggerShake(26, 0.55);
@@ -7438,6 +7903,7 @@
     shuttle.isUltimateShot = false;
     shuttle.isShermanRain = false; shuttle.rainShuttles = [];
     shuttle.isShermanDragonSmash = false;
+    shuttle.shermanDragonReleaseTimer = 0; shuttle.shermanDragonTargetX = undefined;
     if (left) { left.shermanMandateActive = false; left.shermanDragonAirTimer = 0; }
     if (right) { right.shermanMandateActive = false; right.shermanDragonAirTimer = 0; }
     shuttle.ultFx = null; // clear ult signature trail flavour
@@ -7476,6 +7942,7 @@
     shuttle.isShermanRain = false;
     shuttle.rainShuttles = [];
     shuttle.isShermanDragonSmash = false;
+    shuttle.shermanDragonReleaseTimer = 0; shuttle.shermanDragonTargetX = undefined;
     if (left) { left.shermanMandateActive = false; left.shermanDragonAirTimer = 0; }
     if (right) { right.shermanMandateActive = false; right.shermanDragonAirTimer = 0; }
     // Track local stats
@@ -9913,7 +10380,7 @@
   // ---------- update ----------
   function updatePlayer(p, dt, leftKey, rightKey){
     let vx = 0;
-    const spMult = speedMultFor(p.character) * passiveSpeedMult(p); // Part 3: Adrenaline/Flair
+    const spMult = speedMultFor(p.character) * passiveSpeedMult(p) * groundSlowMultFor(p); // Part 3: Adrenaline/Flair
 
     if (p.absoluteZoneTimer > 0) p.absoluteZoneTimer = Math.max(0, p.absoluteZoneTimer - dt);
     if (p.absoluteZoneFlash > 0) p.absoluteZoneFlash = Math.max(0, p.absoluteZoneFlash - dt);
@@ -9946,7 +10413,7 @@
     if(p.dashTimer > 0){
       // dash distance uses the tier-based multiplier (normal speed scaling for 4★,
       // plus the extra 5★ bonus) rather than the plain movement multiplier above
-      vx = p.dashDir * DASH_SPEED * dashDistanceMultFor(p.character) * moveEdge;
+      vx = p.dashDir * DASH_SPEED * dashDistanceMultFor(p.character) * moveEdge * groundSlowMultFor(p);
       p.dashTimer -= dt;
     } else {
       if(keys[leftKey]) vx -= MOVE_SPEED * spMult * moveEdge;
@@ -10022,6 +10489,7 @@
       if(p.lightFeetTimer > 0) p.lightFeetTimer = Math.max(0, p.lightFeetTimer - dt);
       if(p.inTheZoneTimer > 0) p.inTheZoneTimer = Math.max(0, p.inTheZoneTimer - dt);
       if(p.recoveryStanceTimer > 0) p.recoveryStanceTimer = Math.max(0, p.recoveryStanceTimer - dt);
+      if(p.groundSlowTimer > 0) p.groundSlowTimer = Math.max(0, p.groundSlowTimer - dt); // Sherman ground-scorch debuff; frozen off-rally
 
       if(p.solarJudgmentSunTimer > 0) p.solarJudgmentSunTimer = Math.max(0, p.solarJudgmentSunTimer - dt);
 
@@ -10226,6 +10694,43 @@
         }
       }
       return; // Freeze flight update while paused
+    }
+
+    // Sherman Imperial Dragon Descent: the dragon eats the shuttle and carries it off; once
+    // it releases, the shuttle launches on a huge randomized arc up into the clouds and back
+    // down (see drawShermanSkyDragon). The launch is computed HERE, at release, not at cast
+    // time — the generic holdShuttle()/pendingVx path below always restores whatever velocity
+    // the shuttle had BEFORE the swing on release, which would silently discard anything set
+    // at cast time instead (the same reason Amara's Puppeteer hesitation above launches from
+    // inside its own timer-expiry check rather than up front).
+    if (shuttle.shermanDragonReleaseTimer !== undefined && shuttle.shermanDragonReleaseTimer > 0) {
+      shuttle.shermanDragonReleaseTimer -= dt;
+      shuttle.vx = 0;
+      shuttle.vy = 0;
+      if (shuttle.shermanDragonReleaseTimer <= 0) {
+        shuttle.shermanDragonReleaseTimer = 0;
+        const targetX = shuttle.shermanDragonTargetX;
+        ultLaunchToward(targetX, 1500, 4.5); // huge arc up into the clouds, steep dive back down
+        shuttle.kind = 'smash';
+        shuttle.hitByMaxPower = true;
+        if (timeScale < 1.0) timeScale = 1.0;
+        playSound('smash');
+        triggerShake(18, 0.4);
+        for (let k = 0; k < 20; k++) {
+          particles.push({
+            x: shuttle.x,
+            y: shuttle.y,
+            vx: (Math.random() - 0.5) * 380,
+            vy: (Math.random() - 0.5) * 380,
+            color: Math.random() < 0.5 ? '#ff5a2a' : '#ffd700',
+            size: Math.random() * 5 + 2,
+            alpha: 1.0,
+            decay: 2.5,
+            gravity: 20
+          });
+        }
+      }
+      return; // Freeze flight update while the dragon carries it
     }
 
     // La Pausa hold (Part 6): the struck shuttle hangs frozen in mid-air, then
@@ -10542,7 +11047,18 @@
       } else {
         const landedLeft = shuttle.x < NET_X;
         awardPoint(landedLeft ? 'right' : 'left', 'SHUTTLE_LANDED');
+
+        // Imperial Dragon Descent landed unreturned: scorch the ground under whoever just
+        // got beaten by it — a cracked, superheated patch that slows them 25% for 14s.
+        if (shuttle.isShermanDragonSmash && lastHitBy) {
+          const oppP = lastHitBy === 'left' ? right : left;
+          oppP.groundSlowTimer = 14;
+          oppP.groundCrackX = shuttle.x;
+          triggerShake(22, 0.5);
+          playSound('subbass');
+        }
       }
+      shuttle.isShermanDragonSmash = false;
       isServeFlight = false;
     }
   }
@@ -11864,16 +12380,18 @@
     ctx.fillStyle = oppGlow;
     ctx.fillRect(minX, 0, width, GROUND_Y + 40);
 
-    // 2. Rolling Smoky Fog Clouds on Ground
-    const smokePuffsCount = 7;
+    // 2. Rolling Smoky Fog Clouds on Ground — thick enough to genuinely obscure the ground,
+    // not just tint it (this pass runs UNDER the court lines; drawGroundFogOverLines below
+    // adds a second pass ON TOP of them so the markings are actually swallowed by the fog).
+    const smokePuffsCount = 9;
     for (let i = 0; i < smokePuffsCount; i++) {
       const px = minX + (width / (smokePuffsCount - 1)) * i + Math.sin(now * 1.5 + i * 1.2) * 20;
       const py = GROUND_Y - 18 + Math.cos(now * 1.8 + i) * 8;
-      const rad = 45 + Math.sin(now * 2 + i * 0.8) * 12;
+      const rad = 58 + Math.sin(now * 2 + i * 0.8) * 14;
 
       const sGrad = ctx.createRadialGradient(px, py, 5, px, py, rad);
-      sGrad.addColorStop(0, 'rgba(30, 41, 59, 0.70)');
-      sGrad.addColorStop(0.5, 'rgba(51, 65, 85, 0.45)');
+      sGrad.addColorStop(0, 'rgba(30, 41, 59, 0.82)');
+      sGrad.addColorStop(0.5, 'rgba(51, 65, 85, 0.58)');
       sGrad.addColorStop(1, 'rgba(15, 23, 42, 0.0)');
 
       ctx.fillStyle = sGrad;
@@ -11921,6 +12439,42 @@
       }
     }
 
+    ctx.restore();
+  }
+
+  // Drawn AFTER the court/service lines are painted (see drawCourt) so the ground markings
+  // on the opponent's side are genuinely swallowed by fog instead of sitting cleanly on top
+  // of it — a dense ground-hugging fog bank right at line height.
+  function drawGroundFogOverLines(oppSide) {
+    const minX = oppSide === 'left' ? COURT_LEFT : NET_X;
+    const maxX = oppSide === 'left' ? NET_X : COURT_RIGHT;
+    const width = maxX - minX;
+    const now = performance.now() * 0.001;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(minX, GROUND_Y - 46, width, 86);
+    ctx.clip();
+
+    const fogGrad = ctx.createLinearGradient(0, GROUND_Y - 46, 0, GROUND_Y + 40);
+    fogGrad.addColorStop(0, 'rgba(15, 23, 42, 0)');
+    fogGrad.addColorStop(0.5, 'rgba(30, 41, 59, 0.65)');
+    fogGrad.addColorStop(1, 'rgba(8, 10, 18, 0.82)');
+    ctx.fillStyle = fogGrad;
+    ctx.fillRect(minX, GROUND_Y - 46, width, 86);
+
+    const puffs = 6;
+    for (let i = 0; i < puffs; i++) {
+      const px = minX + (width / (puffs - 1)) * i + Math.sin(now * 1.3 + i * 1.6) * 24;
+      const py = GROUND_Y - 6 + Math.cos(now * 1.7 + i) * 6;
+      const rad = 52 + Math.sin(now * 2.2 + i) * 14;
+      const g = ctx.createRadialGradient(px, py, 4, px, py, rad);
+      g.addColorStop(0, 'rgba(51, 65, 85, 0.85)');
+      g.addColorStop(0.6, 'rgba(30, 41, 59, 0.55)');
+      g.addColorStop(1, 'rgba(15, 23, 42, 0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(px, py, rad, 0, Math.PI * 2); ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -12005,6 +12559,240 @@
     ctx.restore();
   }
 
+  // ===========================================================================
+  // DOMAIN EXPANSION SYSTEM — Character Arena Transformations
+  // ===========================================================================
+  let activeDomain = null; // { ownerSide: 'left'|'right', charId: string, name: string, color: string, timer: number, maxTimer: number }
+
+  function triggerDomainExpansion(p, name, color, duration = 15.0) {
+    if (!p) return;
+    const charId = p.character ? p.character.id : 'sherman';
+    activeDomain = {
+      ownerSide: p.side,
+      charId: charId,
+      name: name,
+      color: color,
+      timer: duration,
+      maxTimer: duration
+    };
+    p.domainExpansionActive = true;
+    p.domainExpansionTimer = duration;
+    playSound('subbass');
+    triggerShake(20, 0.5);
+    spawnFloatText(p.x + PLAYER_W/2, p.y - 40, 'DOMAIN EXPANSION: ' + name.toUpperCase() + ' 🔮', color);
+    triggerStinger(p.character ? p.character.name.toUpperCase() : 'HERO', 'DOMAIN EXPANSION: ' + name, color, 2.4);
+  }
+
+  function updateDomainExpansion(dt) {
+    if (activeDomain) {
+      activeDomain.timer -= dt;
+      if (activeDomain.timer <= 0) {
+        activeDomain = null;
+      }
+    }
+  }
+
+  // ---------- Unique Domain Expansion Arena Drawing Functions ----------
+  function drawShermanMandateDomainFull(p) {
+    const cx = W / 2, now = performance.now() * 0.001;
+    ctx.save();
+    const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
+    skyGrad.addColorStop(0, '#1e1b4b');
+    skyGrad.addColorStop(0.5, '#78350f');
+    skyGrad.addColorStop(1, '#f59e0b');
+    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
+
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = 'rgba(254, 240, 138, 0.25)'; ctx.lineWidth = 14;
+    for (let i = 0; i < 7; i++) {
+      const rx = (i / 6) * W;
+      ctx.beginPath(); ctx.moveTo(cx, -50); ctx.lineTo(rx, GROUND_Y); ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.fillStyle = '#ffd700'; ctx.font = 'bold 36px serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.shadowColor = '#f59e0b'; ctx.shadowBlur = 15;
+    ctx.fillText('天命 🐉 帝王', cx, 80 + Math.sin(now * 2) * 8);
+    ctx.shadowBlur = 0; ctx.restore();
+  }
+
+  function drawBlueprintDomainFull(p) {
+    const cx = W / 2, now = performance.now() * 0.001;
+    ctx.save();
+    ctx.fillStyle = '#030712'; ctx.fillRect(0, 0, W, GROUND_Y);
+
+    ctx.strokeStyle = 'rgba(6, 182, 212, 0.35)'; ctx.lineWidth = 1.5;
+    for (let x = 0; x < W; x += 40) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, GROUND_Y); ctx.stroke();
+    }
+    for (let y = 0; y < GROUND_Y; y += 40) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    ctx.fillStyle = '#22d3ee'; ctx.font = '14px monospace'; ctx.textAlign = 'left';
+    ctx.fillText('f(x) = -g/(2v²cos²θ) * x² + tan(θ)x', 40, 60);
+    ctx.fillText('TARGET LOCK: [' + Math.round(shuttle.x) + ', ' + Math.round(shuttle.y) + ']', 40, 85);
+    ctx.fillText('OPTIMAL ANGLE: 42.8°', W - 220, 60);
+    ctx.restore();
+  }
+
+  function drawVolcanicDomainFull(p) {
+    const cx = W / 2, now = performance.now() * 0.001;
+    ctx.save();
+    const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
+    skyGrad.addColorStop(0, '#180202'); skyGrad.addColorStop(0.6, '#7f1d1d'); skyGrad.addColorStop(1, '#dc2626');
+    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
+
+    ctx.fillStyle = '#f97316';
+    for (let i = 0; i < 8; i++) {
+      const lx = 60 + i * 160 + Math.sin(now * 3 + i) * 10;
+      ctx.beginPath(); ctx.arc(lx, GROUND_Y - 5, 25 + Math.sin(now * 4 + i) * 8, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawBernabeuDomainFull(p) {
+    const cx = W / 2, now = performance.now() * 0.001;
+    ctx.save();
+    const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
+    skyGrad.addColorStop(0, '#020617'); skyGrad.addColorStop(0.7, '#1e293b'); skyGrad.addColorStop(1, '#0f172a');
+    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
+
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)'; ctx.lineWidth = 20;
+    ctx.beginPath(); ctx.moveTo(100, 0); ctx.lineTo(cx, GROUND_Y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W - 100, 0); ctx.lineTo(cx, GROUND_Y); ctx.stroke();
+
+    for (let i = 0; i < 12; i++) {
+      if (Math.random() < 0.25) {
+        const fx = Math.random() * W, fy = Math.random() * (GROUND_Y - 100);
+        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(fx, fy, Math.random() * 8 + 3, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.restore(); ctx.restore();
+  }
+
+  function drawRedlineDomainFull(p) {
+    const cx = W / 2, now = performance.now() * 0.001;
+    ctx.save();
+    ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, W, GROUND_Y);
+
+    ctx.strokeStyle = 'rgba(244, 63, 94, 0.6)'; ctx.lineWidth = 3;
+    for (let i = 0; i < 15; i++) {
+      const sx = (i * 90 + now * 800) % W;
+      ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx - 100, GROUND_Y); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawDragonPalaceDomainFull(p) {
+    const cx = W / 2, now = performance.now() * 0.001;
+    ctx.save();
+    const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
+    skyGrad.addColorStop(0, '#450a0a'); skyGrad.addColorStop(1, '#991b1b');
+    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
+
+    ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 28px serif'; ctx.textAlign = 'center';
+    ctx.fillText('林丹 🐉 丹砂', cx, 70);
+    ctx.restore();
+  }
+
+  function drawTangoDomainFull(p) {
+    const cx = W / 2, now = performance.now() * 0.001;
+    ctx.save();
+    const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
+    skyGrad.addColorStop(0, '#451a03'); skyGrad.addColorStop(1, '#b45309');
+    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
+
+    if (p) {
+      const pcx = p.x + PLAYER_W / 2;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const spot = ctx.createRadialGradient(pcx, GROUND_Y, 10, pcx, GROUND_Y, 180);
+      spot.addColorStop(0, 'rgba(254, 240, 138, 0.8)'); spot.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = spot; ctx.fillRect(pcx - 180, GROUND_Y - 40, 360, 80);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  function drawColosseumDomainFull(p) {
+    const cx = W / 2, now = performance.now() * 0.001;
+    ctx.save();
+    const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
+    skyGrad.addColorStop(0, '#1c1917'); skyGrad.addColorStop(1, '#78350f');
+    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
+
+    ctx.fillStyle = '#44403c';
+    for (let i = 0; i < 6; i++) {
+      ctx.fillRect(40 + i * 220, 100, 35, GROUND_Y - 100);
+    }
+    ctx.restore();
+  }
+
+  function drawBambooDomainFull(p) {
+    const cx = W / 2, now = performance.now() * 0.001;
+    ctx.save();
+    const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
+    skyGrad.addColorStop(0, '#022c22'); skyGrad.addColorStop(1, '#0f766e');
+    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
+
+    ctx.fillStyle = '#065f46';
+    for (let i = 0; i < 12; i++) {
+      ctx.fillRect(20 + i * 110, 0, 16, GROUND_Y);
+    }
+    ctx.restore();
+  }
+
+  function drawStarlightDomainFull(p) {
+    const cx = W / 2, now = performance.now() * 0.001;
+    ctx.save();
+    const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
+    skyGrad.addColorStop(0, '#311042'); skyGrad.addColorStop(1, '#831843');
+    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
+
+    ctx.fillStyle = '#f472b6'; ctx.beginPath(); ctx.arc(cx, 40, 30, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawMonochromeDomainFull(p) {
+    ctx.save();
+    ctx.fillStyle = '#000000'; ctx.fillRect(0, 0, W, GROUND_Y);
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(W, GROUND_Y); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawVoidShadowDomainFull(p) {
+    const cx = W / 2, now = performance.now() * 0.001;
+    ctx.save();
+    ctx.fillStyle = '#020617'; ctx.fillRect(0, 0, W, GROUND_Y);
+    ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2;
+    if (Math.random() < 0.2) {
+      const lx = Math.random() * W;
+      ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx + (Math.random() - 0.5) * 80, GROUND_Y); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawPastelPondDomainFull(p) {
+    const cx = W / 2, now = performance.now() * 0.001;
+    ctx.save();
+    const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
+    skyGrad.addColorStop(0, '#fbcfe8'); skyGrad.addColorStop(1, '#c084fc');
+    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
+    ctx.restore();
+  }
+
+  function drawAbyssalAnchorDomainFull(p) {
+    const cx = W / 2, now = performance.now() * 0.001;
+    ctx.save();
+    const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
+    skyGrad.addColorStop(0, '#030712'); skyGrad.addColorStop(1, '#0284c7');
+    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
+    ctx.restore();
+  }
+
   function drawEgyptianCourtFull(p) {
     const minX = 0;
     const maxX = W;
@@ -12074,6 +12862,43 @@
     ctx.beginPath();
     ctx.arc(sunX, sunY, 32, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
+
+    // 2.5 Colossal Eye of Ra watermark hanging over the domain — the sky itself
+    // keeping judgment over the court, echoing the Solar Judgment ult's motif.
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const eyeAlpha = 0.10 + Math.sin(now * 0.5) * 0.035;
+    ctx.globalAlpha = eyeAlpha;
+    ctx.translate(cx, 118);
+    const eyeW = 260, eyeH = 90;
+    // almond eye outline
+    ctx.strokeStyle = '#fbbf24';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(-eyeW/2, 0);
+    ctx.quadraticCurveTo(-eyeW*0.15, -eyeH*0.75, eyeW*0.42, 0);
+    ctx.quadraticCurveTo(-eyeW*0.15, eyeH*0.55, -eyeW/2, 0);
+    ctx.stroke();
+    // iris
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath(); ctx.arc(-eyeW*0.06, 4, 22, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#1e1b4b';
+    ctx.beginPath(); ctx.arc(-eyeW*0.06, 4, 10, 0, Math.PI*2); ctx.fill();
+    // brow sweep above
+    ctx.beginPath();
+    ctx.moveTo(-eyeW*0.52, -eyeH*0.18);
+    ctx.quadraticCurveTo(-eyeW*0.1, -eyeH*0.95, eyeW*0.48, -eyeH*0.28);
+    ctx.stroke();
+    // teardrop mark + spiral flourish beneath (Eye of Horus flavor)
+    ctx.beginPath();
+    ctx.moveTo(-eyeW*0.06, eyeH*0.35);
+    ctx.quadraticCurveTo(-eyeW*0.02, eyeH*0.75, -eyeW*0.14, eyeH*0.95);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(eyeW*0.42, 0);
+    ctx.quadraticCurveTo(eyeW*0.56, eyeH*0.3, eyeW*0.46, eyeH*0.55);
+    ctx.stroke();
     ctx.restore();
 
     // 3. Heat Shimmer Waves across whole court
@@ -12226,6 +13051,72 @@
       ctx.shadowBlur = 0;
     });
 
+    // 6.5 The Great Sphinx — a silent guardian anchoring the far edge of the domain,
+    // watching over the whole court the way it watches over the real Giza plateau.
+    ctx.save();
+    const sphX = COURT_LEFT + 60, sphBaseY = GROUND_Y;
+    const sphGrad = ctx.createLinearGradient(sphX - 90, sphBaseY - 90, sphX + 60, sphBaseY);
+    sphGrad.addColorStop(0, '#78350f');
+    sphGrad.addColorStop(1, '#451a03');
+    ctx.fillStyle = sphGrad;
+    // crouching lion body, paws stretched toward the court
+    ctx.beginPath();
+    ctx.moveTo(sphX - 92, sphBaseY);
+    ctx.quadraticCurveTo(sphX - 96, sphBaseY - 46, sphX - 60, sphBaseY - 62);
+    ctx.lineTo(sphX - 30, sphBaseY - 62);
+    ctx.quadraticCurveTo(sphX - 10, sphBaseY - 60, sphX - 4, sphBaseY - 38);
+    ctx.lineTo(sphX + 58, sphBaseY - 30);
+    ctx.lineTo(sphX + 58, sphBaseY - 12);
+    ctx.lineTo(sphX + 30, sphBaseY - 8);
+    ctx.lineTo(sphX + 30, sphBaseY);
+    ctx.closePath();
+    ctx.fill();
+    // paw striations
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 1.5;
+    for (let f = 0; f < 3; f++) {
+      ctx.beginPath();
+      ctx.moveTo(sphX + 32 + f * 9, sphBaseY - 30);
+      ctx.lineTo(sphX + 32 + f * 9, sphBaseY - 4);
+      ctx.stroke();
+    }
+    // head with pharaoh nemes headdress (striped side-flaps)
+    ctx.fillStyle = sphGrad;
+    ctx.beginPath();
+    ctx.moveTo(sphX - 66, sphBaseY - 60);
+    ctx.quadraticCurveTo(sphX - 74, sphBaseY - 118, sphX - 48, sphBaseY - 128);
+    ctx.lineTo(sphX - 14, sphBaseY - 128);
+    ctx.quadraticCurveTo(sphX - 2, sphBaseY - 112, sphX - 8, sphBaseY - 92);
+    ctx.lineTo(sphX - 8, sphBaseY - 62);
+    ctx.closePath();
+    ctx.fill();
+    // nemes stripes (gold bands catching the dusk light)
+    ctx.strokeStyle = 'rgba(254,240,138,0.35)';
+    ctx.lineWidth = 3;
+    for (let s = 0; s < 4; s++) {
+      ctx.beginPath();
+      ctx.moveTo(sphX - 70 + s * 12, sphBaseY - 118 + s * 4);
+      ctx.lineTo(sphX - 70 + s * 12, sphBaseY - 62);
+      ctx.stroke();
+    }
+    // side flap flaring out behind the neck
+    ctx.fillStyle = '#9a3412';
+    ctx.beginPath();
+    ctx.moveTo(sphX - 8, sphBaseY - 96);
+    ctx.quadraticCurveTo(sphX + 18, sphBaseY - 76, sphX + 6, sphBaseY - 44);
+    ctx.lineTo(sphX - 8, sphBaseY - 50);
+    ctx.closePath();
+    ctx.fill();
+    // glowing golden eye scanning the court — the domain's sentinel gaze
+    const gazeAlpha = 0.55 + Math.sin(now * 1.4) * 0.25;
+    ctx.fillStyle = `rgba(254, 240, 138, ${gazeAlpha})`;
+    ctx.shadowColor = '#fbbf24';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.ellipse(sphX - 32, sphBaseY - 96, 4.5, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
     // 7. Dual Nile Oases with Lagoon, Papyrus & Swaying Palms on both sides
     const oases = [
       { x: COURT_LEFT + 110, scale: 1.0 },
@@ -12351,6 +13242,17 @@
         ctx.restore();
       }
     }
+
+    // 9. Domain framing vignette — a deep amber/royal-purple edge darkening so the
+    // whole court reads as an enclosed sanctum rather than an open background.
+    ctx.save();
+    const domainVig = ctx.createRadialGradient(cx, GROUND_Y * 0.55, GROUND_Y * 0.55, cx, GROUND_Y * 0.55, Math.max(width, GROUND_Y) * 0.72);
+    domainVig.addColorStop(0, 'rgba(0,0,0,0)');
+    domainVig.addColorStop(0.75, 'rgba(30, 12, 40, 0.18)');
+    domainVig.addColorStop(1, 'rgba(11, 6, 20, 0.55)');
+    ctx.fillStyle = domainVig;
+    ctx.fillRect(minX, 0, width, GROUND_Y + 40);
+    ctx.restore();
 
     ctx.restore();
   }
@@ -12618,6 +13520,53 @@
     ctx.restore();
   }
 
+  // Solar Judgment glare chase — drawn AFTER the shuttle/trail each frame (see draw()) so it
+  // actually sits on top of the ball instead of underneath it. Paints the real shuttle position
+  // plus two wobbling "mirage" blooms of identical size/brightness nearby; because all three
+  // look the same, the opponent can't tell the real one apart from the decoys by eye, which is
+  // what actually makes the trajectory hard to read (the ground-level glare alone never touched
+  // the shuttle itself, since drawCourt() runs before the shuttle is drawn).
+  function drawSolarJudgmentGlareChase(){
+    const amaraP = (left && left.solarJudgmentSunTimer > 0) ? left : ((right && right.solarJudgmentSunTimer > 0) ? right : null);
+    if(!amaraP || !shuttle.active) return;
+    const progress = amaraP.solarJudgmentSunTimer / 1.8;
+    if(progress <= 0) return;
+    const t = performance.now() * 0.001;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    const spots = [
+      { x: shuttle.x, y: shuttle.y },
+      { x: shuttle.x + Math.sin(t*9.0)*34,        y: shuttle.y + Math.cos(t*7.0)*22 },
+      { x: shuttle.x + Math.sin(t*6.4 + 2.1)*46,  y: shuttle.y + Math.cos(t*8.3 + 1.4)*28 }
+    ];
+    for(let i = 0; i < spots.length; i++){
+      const s = spots[i];
+      const flicker = 0.75 + Math.sin(t*30 + i*7) * 0.2;
+      const r = 30 * progress * flicker;
+      const glow = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r);
+      glow.addColorStop(0, `rgba(255,255,255,${0.95*progress})`);
+      glow.addColorStop(0.45, `rgba(254,240,138,${0.7*progress})`);
+      glow.addColorStop(1, 'rgba(254,240,138,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    // A horizontal band of glare at the ball's current height, so even the altitude is fuzzy
+    const bandAlpha = 0.26 * progress;
+    const bandGrad = ctx.createLinearGradient(0, shuttle.y - 26, 0, shuttle.y + 26);
+    bandGrad.addColorStop(0, 'rgba(254,240,138,0)');
+    bandGrad.addColorStop(0.5, `rgba(255,255,255,${bandAlpha})`);
+    bandGrad.addColorStop(1, 'rgba(254,240,138,0)');
+    ctx.fillStyle = bandGrad;
+    ctx.fillRect(0, shuttle.y - 26, W, 52);
+
+    ctx.restore();
+  }
+
   let divinePhantomHits = [];
 
   function spawnDivinePhantomHit(x, y, dir) {
@@ -12678,6 +13627,7 @@
   }
 
   function drawCourt(){
+    updateDomainExpansion(0.016);
     const bg = BACKGROUNDS.find(function(b){ return b.id === selectedBackgroundId; }) || BACKGROUNDS[0];
 
     // scoring bounce is the only thing that animates the environment per point.
@@ -12694,8 +13644,39 @@
     ctx.drawImage(_envCanvas, 0, 0, _envCanvas.width, _envCanvas.height, 0, 0, W, H);
     ctx.imageSmoothingEnabled = true; // restore for players/UI drawn afterward
 
+    let domainPlayer = null;
+    if (activeDomain && activeDomain.timer > 0) {
+      domainPlayer = (activeDomain.ownerSide === 'left') ? left : right;
+    }
+
+    if (domainPlayer) {
+      const dId = domainPlayer.character ? domainPlayer.character.id : 'sherman';
+      switch (dId) {
+        case 'sherman': drawShermanMandateDomainFull(domainPlayer); break;
+        case 'amara': drawEgyptianCourtFull(domainPlayer); break;
+        case 'benjamin':
+          drawAngelicCourtSide(domainPlayer.side);
+          drawBenjaminSmokeAndRainOpponentSide(domainPlayer.side === 'left' ? 'right' : 'left', 0.016);
+          break;
+        case 'maya': drawBlueprintDomainFull(domainPlayer); break;
+        case 'jordan': drawVolcanicDomainFull(domainPlayer); break;
+        case 'cristiano': drawBernabeuDomainFull(domainPlayer); break;
+        case 'priya': drawRedlineDomainFull(domainPlayer); break;
+        case 'lindan': drawDragonPalaceDomainFull(domainPlayer); break;
+        case 'rodrigo': drawTangoDomainFull(domainPlayer); break;
+        case 'diego': drawColosseumDomainFull(domainPlayer); break;
+        case 'kenji': drawBambooDomainFull(domainPlayer); break;
+        case 'sofia': drawStarlightDomainFull(domainPlayer); break;
+        case 'liam': drawMonochromeDomainFull(domainPlayer); break;
+        case 'ninjja': drawVoidShadowDomainFull(domainPlayer); break;
+        case 'elijah': drawPastelPondDomainFull(domainPlayer); break;
+        case 'mateo': drawAbyssalAnchorDomainFull(domainPlayer); break;
+        default: drawShermanMandateDomainFull(domainPlayer); break;
+      }
+    }
+
     const cleopatraPlayer = (left && left.transform && left.transform.type === 'CLEOPATRA') ? left : ((right && right.transform && right.transform.type === 'CLEOPATRA') ? right : null);
-    if (cleopatraPlayer) {
+    if (!domainPlayer && cleopatraPlayer) {
       drawEgyptianCourtFull(cleopatraPlayer);
       if (cleopatraPlayer.cleopatraIsFlashing) {
         const oppSide = cleopatraPlayer.side === 'left' ? 'right' : 'left';
@@ -12707,15 +13688,15 @@
     }
 
     const amenPlayer = (left && left.transform && left.transform.type === 'AMEN') ? left : ((right && right.transform && right.transform.type === 'AMEN') ? right : null);
-    if (amenPlayer) {
+    const amenOppSide = amenPlayer ? (amenPlayer.side === 'left' ? 'right' : 'left') : null;
+    if (!domainPlayer && amenPlayer) {
       drawAngelicCourtSide(amenPlayer.side);
-      const oppSide = amenPlayer.side === 'left' ? 'right' : 'left';
-      drawBenjaminSmokeAndRainOpponentSide(oppSide, 0.016);
+      drawBenjaminSmokeAndRainOpponentSide(amenOppSide, 0.016);
     }
 
     // outer boundary (doubles line) — full-resolution on the main ctx, on TOP of the
     // pixelated environment so the rally is always easy to track.
-    const hasTransformBackdrop = !!(cleopatraPlayer || amenPlayer);
+    const hasTransformBackdrop = !!(domainPlayer || cleopatraPlayer || amenPlayer);
     const courtLineColor = hasTransformBackdrop ? '#fef08a' : bg.line;
     ctx.strokeStyle = courtLineColor;
     ctx.lineWidth = 2;
@@ -12757,6 +13738,13 @@
     ctx.fillStyle = 'rgba(20,20,20,0.5)';
     ctx.fillRect(NET_X-NET_WIDTH/2-2, NET_TOP-6, 3, NET_HEIGHT+6);
     ctx.fillRect(NET_X+NET_WIDTH/2-1, NET_TOP-6, 3, NET_HEIGHT+6);
+
+    // Benjamin's AMEN smoke: a final fog pass ON TOP of the lines just painted above, so the
+    // ground markings on the opponent's side are genuinely hard to read rather than sitting
+    // in clean gold right through the smoke.
+    if (amenPlayer) {
+      drawGroundFogOverLines(amenOppSide);
+    }
   }
 
   // AttackDirectionIndicator — a small chevron near the player's chest showing the
@@ -13110,13 +14098,40 @@
       legFront = -0.6; legBack = 0.35;
     }
 
+    // AMEN: a held reverent prayer stance for the whole transform — unconditional, so it is
+    // never interrupted by the normal swing/charge arm animation on every auto-return. The
+    // actual "hit" is sold entirely by the divine phantom-hit silhouette (spawnDivinePhantomHit)
+    // that appears wherever the ball is struck, not by his own body visibly swinging.
     if (p.transform && p.transform.type === 'AMEN') {
       legFront = 0;
       legBack = 0;
-      if (p.swingTimer <= 0 && !p.charging && p.visualSwingDelay <= 0) {
-        armFront = 0.5;
-        armBack = 0.5;
+      armFront = 0.95;
+      armBack = 0.95;
+    }
+
+    // Mandate of Heaven: while the dragon flourish plays he just watches (neutral stance);
+    // once the shuttle is knocked up out of sight he raises a hand to point at it high above,
+    // holds, then sweeps it down commanding the shuttle to fall — timed to finish exactly as
+    // the meteor rain actually starts (triggerShermanFireworkRain), so the gesture reads as
+    // what calls it down rather than a coincidence.
+    if (p.shermanMandateActive) {
+      const mElapsed = 2.5 - Math.max(0, Math.min(2.5, p.shermanMandateTimer));
+      legFront = 0;
+      legBack = 0;
+      if (mElapsed < 1.3) {
+        armFront = -0.3;
+      } else if (mElapsed < 1.7) {
+        const t = Math.max(0, Math.min(1, (mElapsed - 1.3) / 0.4));
+        const ease = t * t * (3 - 2 * t);
+        armFront = -0.3 + (2.9 - (-0.3)) * ease; // raises to point straight up at the sky
+      } else if (mElapsed < 2.1) {
+        armFront = 2.9; // holds, pointing at the shuttle high above
+      } else {
+        const t = Math.max(0, Math.min(1, (mElapsed - 2.1) / 0.4));
+        const ease = t * t * (3 - 2 * t);
+        armFront = 2.9 + (-1.2 - 2.9) * ease; // commanding downward sweep
       }
+      armBack = -0.3;
     }
 
     const cx = p.x + PLAYER_W/2;
@@ -13156,8 +14171,8 @@
       });
     }
 
-    if (p.transform && p.transform.type === 'AMEN' && p.swingTimer <= 0 && !p.charging) {
-      pixExpr = 'closed';
+    if (p.transform && p.transform.type === 'AMEN') {
+      pixExpr = 'closed'; // serene, eyes-closed prayer face held through every hit
     }
     // Elijah's Fursona Unleashed: render cat ears/tail/whiskers while the transform is live.
     const pixFurry = !!(p.character.id === 'elijah' && p.transform && p.transform.type === 'FURSONA_UNLEASHED');
@@ -13465,6 +14480,20 @@
       ctx.globalAlpha=0.6*f; ctx.fillStyle=col; ctx.beginPath(); ctx.arc(x,y,2.4*f+1.2,0,Math.PI*2); ctx.fill(); }
     ctx.globalAlpha=1;
   }
+  function fxSolarGlare(){ // Amara — Solar Judgment: a blazing white-gold blot tuned to blend
+    // INTO the sun's own glare rather than contrast against it (the old cyan comet stood out
+    // sharply against the gold flash, which defeated the whole point of "hard to track").
+    // Flickering, oversized blooms instead of a clean line so no single frame pins the shuttle down.
+    const n = trail.length, t = performance.now() * 0.001;
+    for(let i=0;i<n;i++){
+      const f = (i+1)/n;
+      const flicker = 0.75 + Math.sin(t*26 + i*1.3) * 0.25;
+      ctx.globalAlpha = f*f*0.6*flicker;
+      ctx.fillStyle = (i % 2 === 0) ? '#fff7d6' : '#fef08a';
+      ctx.beginPath(); ctx.arc(trail[i].x, trail[i].y, SHUTTLE_RADIUS*(0.6+2.1*f), 0, Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
   function fxComet(col, scale){ // Cristiano — fat fiery comet with a white-hot core
     fxEnergyComet(col, scale);
     const n=trail.length;
@@ -13500,6 +14529,7 @@
     else if(fx.id === 'diego')     fxWrecking(fx.color);
     else if(fx.id === 'jordan')    fxTracer(fx.color);
     else if(fx.id === 'ninjja')    fxTracer('#6ef3ff');
+    else if(fx.id === 'amara')     fxSolarGlare();
     else                           fxEnergyComet(fx.color, 1.0);
     ctx.restore();
   }
@@ -13605,6 +14635,9 @@
   }
   function drawShuttle(){
     if (shuttle.isShermanRain) return;
+    // Hidden in the clouds — drawShermanSkyDragon draws the dragon carrying it instead, and
+    // it reappears (with the glow below) once it's back down at COURT_TOP.
+    if (shuttle.isShermanDragonSmash && shuttle.y < COURT_TOP) return;
     if(!_shutReady) buildShuttleSprite();
 
     if (shuttle.isShermanDragonSmash) {
@@ -14315,7 +15348,11 @@
       targetCamX = (p.x + PLAYER_W/2 - W/2) * 0.5;
       targetCamY = (p.y + PLAYER_H/2 - H/2) * 0.5;
       targetCamZoom = 1.22;
-    } else if (dynamicCameraEnabled && state === 'rally' && shuttle.active) {
+    } else if (dynamicCameraEnabled && state === 'rally' && shuttle.active && shakeTime <= 0
+               && !(shuttle.isShermanDragonSmash && shuttle.y < COURT_TOP)) {
+      // Gated off during screenshake (and while Sherman's shuttle is hidden in the clouds):
+      // otherwise the camera's own panning toward shuttle.x/y leaks a directional hint about
+      // where a deceptive shot is actually headed before it's meant to be readable.
       targetCamX = (shuttle.x - W/2) * 0.12;
       targetCamY = (shuttle.y - H/2) * 0.08;
       targetCamZoom = (left.charging || right.charging) ? 1.08 : 1.02;
@@ -14359,6 +15396,21 @@
       ctx.fillStyle = `rgba(5, 5, 14, ${shermanCourtDarkness.toFixed(3)})`;
       ctx.fillRect(0, 0, W, GROUND_Y + 40);
 
+      // Imperial night sky — a field of twinkling stars fading in with the darkness, so the
+      // court reads as heaven's own night rather than a flat dimmer over the daylight scene
+      ctx.save();
+      ctx.globalAlpha = shermanCourtDarkness;
+      const starsNow = performance.now() * 0.001;
+      for (let i = 0; i < 60; i++) {
+        const sx = (i * 137 + 41) % W;
+        const sy = (i * 71 + 13) % (GROUND_Y * 0.7);
+        const tw = 0.35 + Math.sin(starsNow * 2 + i * 1.7) * 0.35;
+        ctx.fillStyle = `rgba(255,255,255,${Math.max(0, tw)})`;
+        const r = (i % 5 === 0) ? 1.6 : 1;
+        ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+
       // Glowing Mandate of Heaven Sherman
       const shermanP = (left && left.character && left.character.id === 'sherman') ? left : ((right && right.character && right.character.id === 'sherman') ? right : null);
       if (shermanP) {
@@ -14382,12 +15434,25 @@
       ctx.restore();
     }
 
+    drawGroundCrackEffect(left);
+    drawGroundCrackEffect(right);
     drawPlayer(left);
     drawPlayer(right);
     if (left && left.shermanDragonAirTimer > 0) drawShermanCoiledDragon(left);
     if (right && right.shermanDragonAirTimer > 0) drawShermanCoiledDragon(right);
+    if (left && left.shermanMandateActive) drawShermanMandateDragonStrike(left);
+    if (right && right.shermanMandateActive) drawShermanMandateDragonStrike(right);
     drawUltMarker(); // world-space deception marker (Part 6)
-    if(shuttle.active || state==='serve') { drawUltShuttleFx(); drawTrail(); drawShuttle(); drawShermanRainShuttles(); }
+    // Imperial Dragon Descent hides the shuttle (and its trail/fx, which would otherwise
+    // give away its position through the clouds) while it's up above COURT_TOP.
+    const shermanHiddenInClouds = shuttle.isShermanDragonSmash && shuttle.y < COURT_TOP;
+    if(shuttle.active || state==='serve') {
+      if (!shermanHiddenInClouds) { drawUltShuttleFx(); drawTrail(); }
+      drawShermanSkyDragon();
+      drawShuttle();
+      drawShermanRainShuttles();
+    }
+    drawSolarJudgmentGlareChase(); // must run AFTER the shuttle so the glare actually sits on top of it
 
     // Draw particles inside world space
     drawParticles();
