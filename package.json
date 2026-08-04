@@ -17,5 +17,9 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "jpeg-js": "^0.4.4",
+    "pngjs": "^7.0.0"
   }
 }

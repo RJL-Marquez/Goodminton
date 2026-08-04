@@ -42,9 +42,15 @@
     var sign = diff > 0 ? 1 : (diff < 0 ? -1 : 0);
     return 1 + diff * linear + sign * diff * diff * kicker;
   }
-  function speedMultFor(ch) { return statMult(ch && ch.stats && ch.stats.speed, 0.10, 0.02); }
-  function chargeSpeedMultFor(ch) { return statMult(ch && ch.stats && ch.stats.speed, C.CHARGE_SPEED_LINEAR, C.CHARGE_SPEED_KICKER); }
-  function chargeTimeFor(ch) { return C.MAX_CHARGE_TIME / chargeSpeedMultFor(ch); }
+  function speedMultFor(ch, p) {
+    if (ch && ch.id === 'jordan' && p && p.jordanDomainLiveActive) return statMult(5, 0.10, 0.02);
+    return statMult(ch && ch.stats && ch.stats.speed, 0.10, 0.02);
+  }
+  function chargeSpeedMultFor(ch, p) {
+    if (ch && ch.id === 'jordan' && p && p.jordanDomainLiveActive) return statMult(5, C.CHARGE_SPEED_LINEAR, C.CHARGE_SPEED_KICKER);
+    return statMult(ch && ch.stats && ch.stats.speed, C.CHARGE_SPEED_LINEAR, C.CHARGE_SPEED_KICKER);
+  }
+  function chargeTimeFor(ch, p) { return C.MAX_CHARGE_TIME / chargeSpeedMultFor(ch, p); }
   function powerMultFor(ch) { return statMult(ch && ch.stats && ch.stats.power, 0.12, 0.03); }
   function powerMultForRegular(ch) { return statMult(ch && ch.stats && ch.stats.power, C.POWER_REGULAR_LINEAR, C.POWER_REGULAR_KICKER); }
   function reachFor(ch) {
@@ -57,7 +63,10 @@
     }
     return base;
   }
-  function dashDistanceMultFor(ch) { return statMult(ch && ch.stats && ch.stats.speed, C.DASH_DIST_LINEAR, C.DASH_DIST_KICKER); }
+  function dashDistanceMultFor(ch, p) {
+    if (ch && ch.id === 'jordan' && p && p.jordanDomainLiveActive) return statMult(5, C.DASH_DIST_LINEAR, C.DASH_DIST_KICKER);
+    return statMult(ch && ch.stats && ch.stats.speed, C.DASH_DIST_LINEAR, C.DASH_DIST_KICKER);
+  }
 
   // ==== MOMENTUM ENGINE (MOMENTUM_SPEC Parts 0-2) =========================
   // Phase 1: the meter and its per-character fill weights only. No ultimates,
@@ -605,9 +614,9 @@
   // ---- per-player movement (verbatim, reads held input off the player) ----
   function updatePlayer(w, p, dt) {
     var vx = 0;
-    var spMult = speedMultFor(p.character);
+    var spMult = speedMultFor(p.character, p);
     if (p.dashTimer > 0) {
-      vx = p.dashDir * C.DASH_SPEED * dashDistanceMultFor(p.character);
+      vx = p.dashDir * C.DASH_SPEED * dashDistanceMultFor(p.character, p);
       p.dashTimer -= dt;
     } else {
       if (p.inLeft) vx -= C.MOVE_SPEED * spMult;

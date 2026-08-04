@@ -2459,6 +2459,11 @@
             </div>
 
             <div class="menuSettingRow">
+              <div class="menuSettingLabel">Hit Meter</div>
+              <button class="menuTextLink inlineTextBtn" id="btnHitMeter" title="Toggle timing & charge meter overhead (Default: OFF)">OFF</button>
+            </div>
+
+            <div class="menuSettingRow">
               <div class="menuSettingLabel">Customize Controls</div>
               <button class="menuTextLink inlineTextBtn" id="btnCustomizeControls" title="Remap movement, jump, hit and attack-angle keys">BUTTON MAPPING</button>
             </div>
@@ -2835,7 +2840,7 @@
 
 <!-- Phase 5: shared wire protocol + serialization + browser transport. These are
      the exact same files the dedicated server (server/index.js) uses, loaded here
-     as plain UMD <script>s so window.Protocol / window.Serialization / window.NetClient
+     as plain UMD scripts so window.Protocol / window.Serialization / window.NetClient
      exist for the main game script below. Only meaningful when this page is actually
      served BY server/index.js (npm start in server/) — a bare double-clicked
      index.html has no server to open a socket to, same as any other online feature. -->
@@ -2855,6 +2860,45 @@
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
+
+  // ---------- external art assets ----------
+  // Everything else in this game is drawn procedurally — this is the first (and so far only)
+  // hand-authored image asset, used for Jordan's ultimate splash-art cut-in. Loaded once at
+  // startup; drawJordanUltBurst() / drawJordanFaceCloseup() fall back to the procedural
+  // silhouette if it hasn't finished loading yet (e.g. a very fast first-frame race).
+  const ART_ASSETS = {};
+  function loadArtAsset(key, src){
+    const img = new Image();
+    const entry = { img: img, blackImg: null, ready: false, w: 0, h: 0 };
+    ART_ASSETS[key] = entry;
+    img.onload = function(){
+      entry.w = img.naturalWidth; entry.h = img.naturalHeight;
+      // Precompute a flat-black silhouette cutout once at load time (not per-frame): draw the
+      // art into an offscreen buffer, then 'source-in' a solid black fill so every opaque
+      // pixel crushes to pure black while the original alpha/edges (hair wisps, soft fades)
+      // are preserved exactly. Jordan reads as totally black except the eyes we glow on top.
+      const off = document.createElement('canvas');
+      off.width = entry.w; off.height = entry.h;
+      const octx = off.getContext('2d');
+      octx.drawImage(img, 0, 0);
+      octx.globalCompositeOperation = 'source-in';
+      octx.fillStyle = '#000000';
+      octx.fillRect(0, 0, entry.w, entry.h);
+      entry.blackImg = off;
+      entry.ready = true;
+    };
+    img.src = src;
+  }
+  loadArtAsset('jordanSplash', 'assets/characters/jordan-ultimate-splash.png');
+  // Eye-glow anchor points, measured directly from the source PNG (pixel-scanned for the
+  // brightest cyan cluster) as fractions of the image's own width/height — stays correct
+  // no matter how the image gets scaled/positioned on canvas.
+  const JORDAN_SPLASH_EYE_L = { fx: 0.4139, fy: 0.3860 };
+  const JORDAN_SPLASH_EYE_R = { fx: 0.5705, fy: 0.3656 };
+  // Tight head/face crop of the same source image (measured against the silhouette's own
+  // width-per-row, from hair-top to just-above-shoulders) — reused for the FACE closeup beat
+  // so it doesn't need a second asset; just a punched-in region of this one.
+  const JORDAN_SPLASH_FACE_CROP = { fx: 0.3200, fy: 0.2000, fw: 0.3500, fh: 0.3800 };
 
   // ---------- centralized version ----------
   // Single source of truth for the game version — see VERSIONING.md.
@@ -3060,8 +3104,8 @@
   const CHARACTERS = [
     {id:'maya',   name:'Maya',   skin:'#c68863', hair:'#1b1b1b', hairStyle:'bun',      shirt:'#1f8a8c', shirt2:'#eafffb', shorts:'#123f40', shoe:'#e9e4d8',
       stats:{speed:3, power:3, control:5}, tagline:'Precision over power — rarely misses her spot.'},
-    {id:'jordan', name:'Jordan', skin:'#f0c9a0', hair:'#5a3b23', hairStyle:'short',    shirt:'#2b3a67', shirt2:'#ff9d3d', shorts:'#1c2745', shoe:'#f2ede1', demeanor:'nonchalant',
-      stats:{speed:2, power:5, control:3}, tagline:'Every swing is meant to end the rally.'},
+    {id:'jordan', name:'Jordan', skin:'#f0c9a0', hair:'#121316', hairStyle:'curtain',  shirt:'#2b3a67', shirt2:'#ff9d3d', shorts:'#1c2745', shoe:'#f2ede1', demeanor:'nonchalant',
+      stats:{speed:2, power:5, control:3}, tagline:'The Storm King — every swing is meant to end the rally.'},
     {id:'kenji',  name:'Kenji',  skin:'#e8b892', hair:'#161513', hairStyle:'spiky',    shirt:'#b5222c', shirt2:'#161513', shorts:'#161513', shoe:'#e9e4d8',
       stats:{speed:5, power:2, control:4}, tagline:'Outruns the shuttle before he outhits it.'},
     {id:'amara',  name:'Amara',  skin:'#6b4226', hair:'#161513', hairStyle:'braids',   shirt:'#6a2ba8', shirt2:'#f2c94c', shorts:'#3a1660', shoe:'#f2ede1',
@@ -3106,7 +3150,10 @@
   }
   // speed: a max-speed (5) character now moves/dashes ~28% faster than neutral, a
   // min-speed (1) character ~28% slower — roughly double the old spread
-  function speedMultFor(ch){ return statMult(ch && ch.stats && ch.stats.speed, 0.10, 0.02); }
+  function speedMultFor(ch, p){
+    if (ch && ch.id === 'jordan' && p && p.jordanDomainLiveActive) return statMult(5, 0.10, 0.02);
+    return statMult(ch && ch.stats && ch.stats.speed, 0.10, 0.02);
+  }
   // charge speed: the Speed stat also controls how quickly a player winds up a hit —
   // a max-speed (5) character reaches full charge noticeably faster than neutral, a
   // min-speed (1) character noticeably slower, so Speed stays useful even for players who
@@ -3114,10 +3161,13 @@
   // coefficients so it can be balanced independently of movement speed).
   const CHARGE_SPEED_LINEAR = 0.13;
   const CHARGE_SPEED_KICKER = 0.03;
-  function chargeSpeedMultFor(ch){ return statMult(ch && ch.stats && ch.stats.speed, CHARGE_SPEED_LINEAR, CHARGE_SPEED_KICKER); }
+  function chargeSpeedMultFor(ch, p){
+    if (ch && ch.id === 'jordan' && p && p.jordanDomainLiveActive) return statMult(5, CHARGE_SPEED_LINEAR, CHARGE_SPEED_KICKER);
+    return statMult(ch && ch.stats && ch.stats.speed, CHARGE_SPEED_LINEAR, CHARGE_SPEED_KICKER);
+  }
   // the actual time (seconds) this character needs to hold a charge to reach 100% —
   // higher Speed shrinks it below MAX_CHARGE_TIME, lower Speed stretches it beyond
-  function chargeTimeFor(ch){ return MAX_CHARGE_TIME / chargeSpeedMultFor(ch); }
+  function chargeTimeFor(ch, p){ return MAX_CHARGE_TIME / chargeSpeedMultFor(ch, p); }
   // power: a max-power (5) character now hits serves/clears/smashes ~36% harder than
   // neutral, a min-power (1) character ~36% softer — the shuttle itself visibly flies
   // faster off a high-power character's racket. Smashes ALWAYS use this full-strength
@@ -3157,10 +3207,7 @@
   // with its own linear/kicker constants so dash distance can be balanced independently of
   // ordinary movement speed.
   function dashDistanceMultFor(ch, p){
-    // Jordan's dash is boosted to a flat 4★ tier only while his 30s live domain is up —
-    // independent of his 2★ base Speed stat (still normal movement/charge speed) — ninja-style
-    // burst tied to Tempest King's Dominion, not a permanent kit change.
-    if (ch && ch.id === 'jordan' && p && p.jordanDomainLiveActive) return statMult(4, DASH_DIST_LINEAR, DASH_DIST_KICKER);
+    if (ch && ch.id === 'jordan' && p && p.jordanDomainLiveActive) return statMult(5, DASH_DIST_LINEAR, DASH_DIST_KICKER);
     return statMult(ch && ch.stats && ch.stats.speed, DASH_DIST_LINEAR, DASH_DIST_KICKER);
   }
 
@@ -3432,7 +3479,7 @@
   let timeScale = 1.0;
   let activeStinger = null; // { text, subtext, timer, duration, color }
   
-  function triggerStinger(text, subtext, color = '#ec4899', duration = 2.0) {
+  function triggerStinger(text, subtext, color = '#ec4899', duration = 1.0) {
     activeStinger = { text, subtext, timer: duration, duration, color };
     playSound('subbass');
     triggerShake(12, 0.4);
@@ -3443,8 +3490,8 @@
     if (!activeStinger) return;
     const f = activeStinger.timer / activeStinger.duration; // 1 down to 0
     let opacity = 1;
-    if (f > 0.8) opacity = (1 - f) / 0.2;
-    else if (f < 0.2) opacity = f / 0.2;
+    if (f > 0.85) opacity = (1 - f) / 0.15;
+    else if (f < 0.15) opacity = f / 0.15;
     
     ctx.save();
     const bannerH = 90;
@@ -3464,8 +3511,12 @@
     ctx.shadowColor = activeStinger.color;
     ctx.shadowBlur = 12;
     
-    const letterSpacing = Math.round((1 - f) * 12);
-    const textToShow = activeStinger.text.split('').join(String.fromCharCode(8202).repeat(letterSpacing));
+    // Fast snappy text reveal in first 25% of stinger duration
+    const reveal = Math.min(1, (1 - f) / 0.25);
+    const charCount = Math.max(1, Math.floor(reveal * activeStinger.text.length));
+    const partialText = activeStinger.text.substring(0, charCount);
+    const letterSpacing = Math.round((1 - reveal) * 6);
+    const textToShow = partialText.split('').join(String.fromCharCode(8202).repeat(letterSpacing));
     
     ctx.font = '900 28px "Space Grotesk", sans-serif';
     ctx.fillText(textToShow, W / 2, H / 2 - 10);
@@ -3473,7 +3524,8 @@
     ctx.shadowBlur = 0;
     ctx.font = '700 10px "Space Grotesk", sans-serif';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
-    ctx.fillText(activeStinger.subtext.toUpperCase(), W / 2, H / 2 + 20);
+    const subCharCount = Math.max(1, Math.floor(reveal * activeStinger.subtext.length));
+    ctx.fillText(activeStinger.subtext.substring(0, subCharCount).toUpperCase(), W / 2, H / 2 + 20);
     ctx.restore();
   }
 
@@ -3548,6 +3600,7 @@
   // read this or any of the state below; they keep using releaseHit()'s default angles.
   let advancedControlsEnabled = false;
   let dynamicCameraEnabled = true;
+  let showHitMeter = false;
 
   // AngleLimits — every manual attack angle is clamped/stepped against these. Kept as a
   // single set of constants so future tuning (or new advanced-control features) only
@@ -4284,8 +4337,13 @@
 
   let ultBurst = null; // {timer, dur, side, character, name, artName, color, accent}
   function triggerUltBurst(p, artId){
+    // Jordan's splash art beat is timed to exactly cover his own JORDAN_TEMPEST_BURST phase so
+    // it hands off cleanly to the face-closeup camera move (see tickJordanTempest for the
+    // phase timeline). Other characters use the generic 0.85s beat.
+    const isJordan = p.character && p.character.id === 'jordan';
+    const dur = isJordan ? JORDAN_TEMPEST_BURST : 0.85;
     ultBurst = {
-      timer: 0.85, dur: 0.85,
+      timer: dur, dur: dur,
       side: p.side,
       character: p.character,
       name: ((p.character && p.character.name) || '').toUpperCase(),
@@ -4306,8 +4364,11 @@
   // Ballistic aim: set the shuttle onto an arc that lands near targetX. Ignores
   // horizontal drag, so it lands a touch short — fine for a prototype, and the
   // deception marker (not pinpoint placement) is the point for Amara/Maya.
-  function ultLaunchToward(targetX, arcH, downwardGravityMult){
-    const gUp = SHUTTLE_GRAVITY;
+  function ultLaunchToward(targetX, arcH, downwardGravityMult, upwardGravityMult){
+    // upwardGravityMult (optional): scales the ASCENT gravity only. Peak height stays at arcH,
+    // but tUp = sqrt(2*arcH/gUp) shrinks — used by Jordan to keep his signature high arc and
+    // fast fall while cutting the sluggish "hangs at the peak" dead-time.
+    const gUp = (upwardGravityMult && upwardGravityMult > 1) ? SHUTTLE_GRAVITY * upwardGravityMult : SHUTTLE_GRAVITY;
     const gDown = (downwardGravityMult && downwardGravityMult > 1) ? SHUTTLE_GRAVITY * downwardGravityMult : SHUTTLE_GRAVITY;
     const x0 = shuttle.x, y0 = shuttle.y;
     const vyUp = -Math.sqrt(2 * gUp * Math.max(20, arcH));
@@ -4319,6 +4380,7 @@
     const drag = HORIZONTAL_DRAG;
     shuttle.vx = (targetX - x0) * drag / (1 - Math.exp(-drag * T));
     shuttle.kind = 'float';
+    shuttle.ultFastAscent = (upwardGravityMult && upwardGravityMult > 1) ? upwardGravityMult : null;
     shuttle.ultFastDrop = (downwardGravityMult && downwardGravityMult > 1) ? downwardGravityMult : null;
     shuttle.ultSmashArc = false;
     shuttle.hitByMaxPower = false; shuttle.maxPowerDiveApplied = false;
@@ -4545,18 +4607,8 @@
         triggerStinger('RODRIGO', 'LA PAUSA', '#facc15', 1.8);
         break;
       }
-      case 'amara': {                            // Puppeteer — unpredictable sky lob + Cleopatra transform, backdrop & blinding flash
-        triggerDomainExpansion(p, 'SUN GODDESS OF GIZA', '#22d3ee');
-        p.solarJudgmentSunTimer = 1.8; // trigger blinding sun animation
-        const realX = ultRandomX(p);
-        ultLaunchToward(realX, 1500, 5.2);
-        shuttle.ultMarker = null;
-
-        // Activate Cleopatra transform (duration 20s, stats maxed to 5, turns on Cleopatra dress/armor & blinding flash!)
-        activateTransform(p, 'CLEOPATRA', performance.now() / 1000);
-
-        triggerShake(14, 0.35);
-        triggerStinger('AMARA', 'PUPPETEER', '#22d3ee', 1.8);
+      case 'amara': {                            // Puppeteer — cinematic buildup → Cleopatra + 4-shuttlecock decoy mind-game
+        startAmaraPuppeteerCinematic(p);
         break;
       }
       case 'maya': {
@@ -4828,10 +4880,28 @@
   // ===========================================================================
   // JORDAN — TEMPEST KING'S DOMINION  (cinematic ultimate)
   // ===========================================================================
-  const JORDAN_TEMPEST_BUILDUP = 2.5;       // hand-raise / circle-expand cinematic, seconds
+  // Buildup is a 4-beat cinematic — timeline breakdown:
+  //   SPLASH  — Storm-4 style cover-art cut-in (improved iconic silhouette, no bg storm yet)
+  //   CONSUME — camera zooms in to Jordan in the court; a bright orb forms in his raised hand
+  //             and slowly consumes him body-first into a pure void silhouette
+  //   FACE    — full-screen close-up of Jordan's face (half of the frame). His background
+  //             fades from court to void as this beat plays.
+  //   EXPAND  — back to 2D view; the void SCATTERS outward as the storm-domain circle
+  //             expands from Jordan across the arena. Jordan slowly raises his hand toward
+  //             the sky throughout. Once the circle fills the screen the shuttle launches.
+  // Both players are movement-locked (see the sim-loop tempest gate) for the whole buildup
+  // — control returns only when the shuttle is airborne.
+  const JORDAN_TEMPEST_SPLASH   = 0.15;
+  const JORDAN_TEMPEST_CONSUME  = 0.35;
+  const JORDAN_TEMPEST_FACE     = 1.0;
+  const JORDAN_TEMPEST_EXPAND   = 1.6;
+  const JORDAN_TEMPEST_BUILDUP  = JORDAN_TEMPEST_SPLASH + JORDAN_TEMPEST_CONSUME + JORDAN_TEMPEST_FACE + JORDAN_TEMPEST_EXPAND;
+  // Legacy alias so anywhere still referencing the old "burst" length keeps working. The
+  // triggerUltBurst() call for Jordan now uses JORDAN_TEMPEST_SPLASH directly.
+  const JORDAN_TEMPEST_BURST = JORDAN_TEMPEST_SPLASH;
   const JORDAN_DOMAIN_LIVE_DURATION = 30.0; // live rally window once the domain is fully formed
   function startJordanTempestCinematic(p, isAir) {
-    triggerDomainExpansion(p, 'TEMPEST KING\'S DOMINION', '#5b9bff', JORDAN_TEMPEST_BUILDUP + JORDAN_DOMAIN_LIVE_DURATION);
+    triggerDomainExpansion(p, 'TEMPEST KING\'S DOMINION', '#d4d4d8', JORDAN_TEMPEST_BUILDUP + JORDAN_DOMAIN_LIVE_DURATION);
     shuttle.vx = 0;
     shuttle.vy = 0;
     shuttle.jordanTempestRelease = JORDAN_TEMPEST_BUILDUP;
@@ -4843,7 +4913,14 @@
     p.jordanSilhouette = 0;
     p.jordanEyeGlow = 0;
     p.jordanCircleRadius = 0;
-    p._tempestCircleImpact = false;
+    p.jordanFaceCloseup = 0;       // face-overlay opacity, 0..1
+    p.jordanConsumeOrb = 0;        // orb-in-hand growth, 0..1
+    p.jordanBgVoid = 0;            // court→void background fade, 0..1
+    p.jordanArmRaise = 0;          // hand-to-sky raise progress across the expand beat, 0..1
+    p._tempestConsumeImpact = false;
+    p._tempestFaceImpact = false;
+    p._tempestEyeImpact = false;
+    p._tempestExpandImpact = false;
     p._tempestFullImpact = false;
     p._tempestLaunched = false;
     p.jordanDomainLiveActive = false;
@@ -4851,44 +4928,120 @@
     p.jordanPauseCharges = 3;
     p.jordanPauseActive = false;
     p.jordanPauseTimer = 0;
-    timeScale = 0.12;
-    hitFreezeFrames = 7;
+    timeScale = 0.15;
+    hitFreezeFrames = 5;
     playSound('bell');
     const ultName = isAir ? 'THUNDER BREAK DESCENT' : 'JUDGMENT OF THE STORM KING';
-    triggerStinger('JORDAN', ultName, '#5b9bff', 2.8);
+    triggerStinger('JORDAN', ultName, '#d4d4d8', 0.9);
+  }
+
+  // Phase timeline shorthand — cumulative elapsed cutoffs for readability everywhere.
+  function jordanTempestPhaseTimes(){
+    const a = JORDAN_TEMPEST_SPLASH;                            // splash ends
+    const b = a + JORDAN_TEMPEST_CONSUME;                       // consume ends
+    const c = b + JORDAN_TEMPEST_FACE;                          // face ends
+    const d = c + JORDAN_TEMPEST_EXPAND;                        // expand ends → launch
+    return { splashEnd:a, consumeEnd:b, faceEnd:c, expandEnd:d };
   }
 
   function tickJordanTempest(p, dt) {
     if (!p.jordanTempestActive) return;
     p.jordanTempestTimer -= dt;
-    const elapsed = 2.5 - Math.max(0, p.jordanTempestTimer);
+    const elapsed = JORDAN_TEMPEST_BUILDUP - Math.max(0, p.jordanTempestTimer);
+    const T = jordanTempestPhaseTimes();
 
-    if (elapsed < 1.2) timeScale = Math.min(timeScale, 0.18);
-    else if (elapsed < 1.8) timeScale = Math.min(timeScale, 0.35);
+    // Phase-gated timeScale — punchier than before, no long slow-mo tails.
+    if (elapsed < T.splashEnd)       timeScale = Math.min(timeScale, 0.18);
+    else if (elapsed < T.consumeEnd) timeScale = Math.min(timeScale, 0.25);
+    else if (elapsed < T.faceEnd)    timeScale = Math.min(timeScale, 0.30);
+    else                             timeScale = Math.min(timeScale, 0.45);
 
-    // Eyes light up first, well before the world turns monochrome or his body goes silhouette.
-    p.jordanEyeGlow = Math.min(1, elapsed / 0.3);
-    if (elapsed > 0.3) {
-      p.jordanCircleRadius = Math.min(1, (elapsed - 0.3) / 1.5);
+    // Eyes stay un-glowing during splash & consume; they light up when he opens them in the close-up!
+    if (elapsed < T.consumeEnd) {
+      p.jordanEyeGlow = 0;
+    } else if (elapsed < T.faceEnd) {
+      const uFace = (elapsed - T.consumeEnd) / JORDAN_TEMPEST_FACE;
+      p.jordanEyeGlow = uFace < 0.28 ? 0 : (uFace > 0.52 ? 1 : (uFace - 0.28) / 0.24);
+    } else {
+      p.jordanEyeGlow = 1;
     }
-    if (elapsed > 0.5) {
-      p.jordanSilhouette = Math.min(1, (elapsed - 0.5) / 1.0);
+
+    // CONSUME beat: the orb in his hand grows AND consumes his body from bottom to top.
+    if (elapsed < T.splashEnd) {
+      p.jordanConsumeOrb = 0; p.jordanSilhouette = 0;
+    } else if (elapsed < T.consumeEnd) {
+      const u = (elapsed - T.splashEnd) / JORDAN_TEMPEST_CONSUME;
+      p.jordanConsumeOrb = Math.min(1, u * 1.2);
+      p.jordanSilhouette = Math.max(0, Math.min(1, u));
+    } else {
+      p.jordanConsumeOrb = 1;
+      p.jordanSilhouette = 1;
     }
 
-    if (elapsed > 0.3 && !p._tempestCircleImpact) {
-      p._tempestCircleImpact = true;
-      hitFreezeFrames = Math.max(hitFreezeFrames, 4);
+    // FACE beat: front-view close-up overlay fades in fast, then back out at the end.
+    if (elapsed < T.consumeEnd || elapsed >= T.faceEnd) {
+      p.jordanFaceCloseup = 0;
+      p.jordanFaceProgress = 0;
+    } else {
+      const u = (elapsed - T.consumeEnd) / JORDAN_TEMPEST_FACE;
+      // in for 0..0.7, hold 0.7..0.85, out 0.85..1
+      p.jordanFaceCloseup = u < 0.20 ? (u / 0.20)
+                           : u > 0.85 ? Math.max(0, 1 - (u - 0.85) / 0.15)
+                           : 1;
+      // Raw linear progress across the WHOLE face beat (decoupled from the opacity ease
+      // above) — drives the slow upward camera pan across the portrait, see drawJordanFaceCloseup.
+      p.jordanFaceProgress = u;
+    }
+
+    // Background void fade — starts during FACE, holds through EXPAND.
+    if (elapsed < T.consumeEnd)      p.jordanBgVoid = 0;
+    else if (elapsed < T.faceEnd)    p.jordanBgVoid = Math.min(1, (elapsed - T.consumeEnd) / (JORDAN_TEMPEST_FACE * 0.7));
+    else                             p.jordanBgVoid = 1;
+
+    // EXPAND beat: storm circle grows AND Jordan slowly raises his hand to the sky.
+    if (elapsed < T.faceEnd) {
+      p.jordanCircleRadius = 0;
+      p.jordanArmRaise = 0;
+    } else {
+      const u = Math.min(1, (elapsed - T.faceEnd) / JORDAN_TEMPEST_EXPAND);
+      p.jordanCircleRadius = u;
+      // Smoothstep ease so the raise looks deliberate rather than robotic.
+      p.jordanArmRaise = u * u * (3 - 2 * u);
+    }
+
+    // Phase-transition sound / hit-freeze accents.
+    if (elapsed >= T.splashEnd && !p._tempestConsumeImpact) {
+      p._tempestConsumeImpact = true;
+      hitFreezeFrames = Math.max(hitFreezeFrames, 2);
       playSound('subbass');
     }
-    if (elapsed > 1.8 && !p._tempestFullImpact) {
+    if (elapsed >= T.consumeEnd && !p._tempestFaceImpact) {
+      p._tempestFaceImpact = true;
+      hitFreezeFrames = Math.max(hitFreezeFrames, 2);
+      playSound('subbass');
+    }
+    if ((p.jordanFaceProgress || 0) >= 0.36 && !p._tempestEyeImpact) {
+      p._tempestEyeImpact = true;
+      hitFreezeFrames = Math.max(hitFreezeFrames, 3);
+      playSound('bell');
+      triggerShake(14, 0.3);
+    }
+    if (elapsed >= T.faceEnd && !p._tempestExpandImpact) {
+      p._tempestExpandImpact = true;
+      hitFreezeFrames = Math.max(hitFreezeFrames, 3);
+      playSound('subbass');
+    }
+    if (elapsed >= JORDAN_TEMPEST_BUILDUP - 0.02 && !p._tempestFullImpact) {
       p._tempestFullImpact = true;
       hitFreezeFrames = Math.max(hitFreezeFrames, 5);
       playSound('bell');
       triggerShake(18, 0.35);
     }
 
+    // Jordan himself is force-frozen throughout the buildup (the opponent is frozen in the
+    // sim loop's tempest gate) — no drift, no fall-through in the air variant.
     if (p.jordanTempestIsAir) {
-      p.vy = Math.min(p.vy, -20);
+      p.vx = 0; p.vy = 0;
     } else {
       p.vx = 0;
     }
@@ -4896,6 +5049,10 @@
     if (p.jordanTempestTimer <= 0) {
       p.jordanTempestActive = false;
       p.jordanCircleRadius = 1;
+      p.jordanFaceCloseup = 0;
+      p.jordanConsumeOrb = 0;
+      p.jordanArmRaise = 0;
+      timeScale = 1.0; // snap the sim back to full speed so the shuttle rockets up immediately
       executeJordanTempestLaunch(p);
     }
   }
@@ -4904,7 +5061,10 @@
     if (p._tempestLaunched) return; // guard: the buildup timer and the shuttle-hold timer both
     p._tempestLaunched = true;      // cross zero the same frame — only fire the launch once
     const targetX = ultRandomX(p); // randomized landing spot anywhere in the opponent's court — not a fixed deep-corner read
-    ultLaunchToward(targetX, 1500, 5.2); // Amara-style high arc, fast drop — same fall logic, not an unreturnable shot
+    // High arc + fast ascent + fast drop: preserves the signature peak height and the
+    // hammer-down fall speed but slashes the dead-air "hovers at the peak" middle beat, so the
+    // whole shot feels punchy instead of a sky-lob.
+    ultLaunchToward(targetX, 1500, 5.2, 3.6);
     shuttle.kind = 'smash';
     shuttle.hitByMaxPower = true;
     if (p.jordanTempestIsAir) {
@@ -4929,10 +5089,12 @@
     if (jOpp) jOpp.momentumChargeBlocked = true;
   }
 
-  // True while ANY Jordan domain is currently live — used to gate momentum gain for both
-  // players (see the Simulation.applyMomentumGain call sites in releaseHit/doServe).
-  function jordanDomainSuppressesMomentum(){
-    return !!((left && left.jordanDomainLiveActive) || (right && right.jordanDomainLiveActive));
+  // Suppresses momentum gain ONLY for the player who owns a live Jordan domain — Jordan
+  // himself doesn't quietly recharge toward his next ultimate while his is running, but the
+  // OPPONENT keeps building their meter and can cast their own ultimate completely normally
+  // (jordanDomainLiveActive is only ever set on the Jordan player, never the opponent).
+  function jordanDomainSuppressesMomentumFor(p){
+    return !!(p && p.jordanDomainLiveActive);
   }
 
   // Domain live window (Part: Tempest King's Dominion) — keeps Jordan's silhouette and the
@@ -4948,9 +5110,8 @@
     if (activeDomain && activeDomain.charId === 'jordan' && activeDomain.ownerSide === p.side) {
       activeDomain.timer = Math.max(activeDomain.timer, p.jordanDomainLiveTimer);
     }
-    // Pause the 30s clock during off-court time (point-pause/celebration between rallies) —
-    // matches how Amara/Benjamin's domain timing only burns down during live play.
-    if (state !== 'rally' && state !== 'serve') return;
+    // Pause the domain timer whenever game is paused or not actively in a rally
+    if (paused || state !== 'rally') return;
     p.jordanDomainLiveTimer -= dt;
     if (p.jordanDomainLiveTimer <= 1.0) {
       p.jordanSilhouette = Math.max(0, p.jordanDomainLiveTimer);
@@ -4973,6 +5134,486 @@
       p.momentumChargeBlocked = false;
       if (jOpp) jOpp.momentumChargeBlocked = false;
     }
+  }
+
+  // ===========================================================================
+  // AMARA — SUN GODDESS OF GIZA / PUPPETEER  (cinematic ultimate + decoy mind-game)
+  // ===========================================================================
+  // Buildup is a 4-beat cinematic (mirrors Jordan's tempest structure — no face closeup
+  // yet, that's planned later):
+  //   POWDER    — Amara launches the shuttle skyward and blows a plume of glittering
+  //               powder that chases it up from below.
+  //   RIFT      — the powder trail tears a glowing rift in the sky that widens open.
+  //   TRANSFORM — the camera slams in on Amara; a golden glow sweeps over her and her
+  //               Cleopatra armor materializes out of the light.
+  //   EXPAND    — the rift scatters outward into the full Egyptian domain as the camera
+  //               pulls back; play resumes at normal speed and the puppeteer phase begins.
+  // Both players are movement-locked for the whole buildup (see the sim-loop buildup gate).
+  //
+  // Puppeteer phase: the real shuttle hangs frozen & invisible at the top alongside three
+  // decoys. Amara's directional keys drop them one at a time — the DOWN key drops the real
+  // shuttle into play, the other three drop harmless decoys into random spots on the
+  // opponent's court. A decoy the opponent runs into blinds their half for a second. The
+  // opponent's half strobes at full intensity the whole time so the real drop is a guess.
+  const AMARA_POWDER    = 0.5;   // dust rockets up fast, leaving a trail
+  const AMARA_RIFT      = 0.55;  // the trail tears into a quantum rip
+  const AMARA_TRANSFORM = 1.0;
+  const AMARA_EXPAND    = 1.15;  // the rip widens open to reveal the domain behind it
+  const AMARA_BUILDUP   = AMARA_POWDER + AMARA_RIFT + AMARA_TRANSFORM + AMARA_EXPAND;
+  const AMARA_LIVE_MAXHOLD  = 7.0;   // if she never commits, the real shuttle auto-drops
+  const AMARA_CLEOPATRA_DUR = 20.0;  // matches TRANSFORM_CONFIG.CLEOPATRA — the flash window
+
+  // Active falling decoy shuttlecocks (see tickAmaraDecoys / drawAmaraDecoys). Module-scoped
+  // so it survives across frames; wiped in setupServe and the full-reset paths.
+  let amaraDecoys = [];
+
+  // Cumulative elapsed cutoffs for the four buildup beats — readability everywhere.
+  function amaraPhaseTimes(){
+    const a = AMARA_POWDER;
+    const b = a + AMARA_RIFT;
+    const c = b + AMARA_TRANSFORM;
+    const d = c + AMARA_EXPAND;
+    return { powderEnd:a, riftEnd:b, transformEnd:c, expandEnd:d };
+  }
+
+  function startAmaraPuppeteerCinematic(p){
+    p.amaraBuildupActive = true;
+    p.amaraBuildupTimer = AMARA_BUILDUP;
+    p.amaraPowder = 0;
+    p.amaraRift = 0;
+    p.amaraGlow = 0;
+    p.amaraArmor = 0;
+    p.amaraDomainReveal = 0;
+    p.amaraLiveActive = false;
+    p.amaraLiveTimer = 0;
+    p.amaraRealDropped = false;
+    p._amaraRiftImpact = false;
+    p._amaraTransformImpact = false;
+    p._amaraExpandImpact = false;
+    p._amaraLiveStarted = false;
+    // Freeze the real shuttle, invisible, hanging at the top for the whole ultimate.
+    shuttle.active = true;
+    shuttle.amaraFrozen = true;
+    shuttle.amaraOwner = p.side;
+    shuttle.vx = 0; shuttle.vy = 0;
+    shuttle.kind = 'float';
+    shuttle.ultMarker = null;
+    shuttle.ultFx = null;
+    shuttle.x = W / 2;
+    shuttle.y = 40;
+    amaraDecoys = [];
+    trail.length = 0;
+    timeScale = 0.12;
+    hitFreezeFrames = 5;
+    playSound('bell');
+    playSound('subbass');
+    triggerShake(12, 0.35);
+    spawnFloatText(p.x + PLAYER_W/2, p.y - 30, 'PUPPETEER 🌙', '#22d3ee');
+    triggerStinger('AMARA', 'SUN GODDESS OF GIZA', '#22d3ee', 1.2);
+  }
+
+  function tickAmaraPuppeteer(p, dt){
+    if(!p.amaraBuildupActive) return;
+    p.amaraBuildupTimer -= dt;
+    const elapsed = AMARA_BUILDUP - Math.max(0, p.amaraBuildupTimer);
+    const T = amaraPhaseTimes();
+
+    // Phase-gated slow-mo — snappy, no long tails.
+    if (elapsed < T.powderEnd)         timeScale = Math.min(timeScale, 0.16);
+    else if (elapsed < T.riftEnd)      timeScale = Math.min(timeScale, 0.22);
+    else if (elapsed < T.transformEnd) timeScale = Math.min(timeScale, 0.30);
+    else                               timeScale = Math.min(timeScale, 0.45);
+
+    // POWDER — the plume chases the shuttle up.
+    p.amaraPowder = elapsed < T.powderEnd ? (elapsed / AMARA_POWDER) : 1;
+    // Spawn a fast rising glitter trail from her hand so the dust actually leaves a streak
+    // in its wake (drawn by drawParticles, which persists them for a few frames).
+    if (elapsed < T.powderEnd){
+      const hx = p.x + PLAYER_W/2, hy = p.y + PLAYER_H*0.25;
+      for (let k=0;k<3;k++){
+        particles.push({
+          x: hx + (Math.random()*2-1)*10,
+          y: hy - Math.random()*8,
+          vx: ((W/2 - hx)/AMARA_POWDER)*0.4 + (Math.random()*2-1)*30,
+          vy: -520 - Math.random()*260,          // rockets upward fast
+          color: Math.random()<0.5 ? '#22d3ee' : '#fef08a',
+          size: Math.random()*3+1.5,
+          alpha: 1.0,
+          decay: 1.6,
+          gravity: -40                            // keeps drifting up, no fall
+        });
+      }
+    }
+
+    // RIFT — the tear widens once the powder reaches the top.
+    if (elapsed < T.powderEnd)    p.amaraRift = 0;
+    else if (elapsed < T.riftEnd) p.amaraRift = (elapsed - T.powderEnd) / AMARA_RIFT;
+    else                          p.amaraRift = 1;
+
+    // TRANSFORM — glow sweeps in and the Cleopatra armor materializes bottom→top.
+    if (elapsed < T.riftEnd) { p.amaraGlow = 0; p.amaraArmor = 0; }
+    else if (elapsed < T.transformEnd) {
+      const u = (elapsed - T.riftEnd) / AMARA_TRANSFORM;
+      p.amaraGlow = u < 0.5 ? (u / 0.5) : 1;
+      p.amaraArmor = Math.min(1, u * 1.15);
+      // Materialize the Cleopatra transform right as the armor begins forming so
+      // drawPlayer renders her armored form for the rest of the beat.
+      if (!p.transform && u > 0.15) activateTransform(p, 'CLEOPATRA', performance.now() / 1000);
+    } else {
+      p.amaraGlow = Math.max(0, 1 - (elapsed - T.transformEnd) / AMARA_EXPAND);
+      p.amaraArmor = 1;
+    }
+
+    // EXPAND — the domain scatters open.
+    if (elapsed < T.transformEnd) p.amaraDomainReveal = 0;
+    else {
+      p.amaraDomainReveal = Math.min(1, (elapsed - T.transformEnd) / AMARA_EXPAND);
+      if (!p._amaraExpandImpact) {
+        p._amaraExpandImpact = true;
+        // Domain background stays up through the whole hold window + the Cleopatra buff.
+        triggerDomainExpansion(p, 'SUN GODDESS OF GIZA', '#22d3ee', AMARA_EXPAND + AMARA_LIVE_MAXHOLD + AMARA_CLEOPATRA_DUR);
+        hitFreezeFrames = Math.max(hitFreezeFrames, 4);
+        playSound('subbass');
+        triggerShake(16, 0.35);
+      }
+    }
+
+    // Phase-transition accents.
+    if (elapsed >= T.powderEnd && !p._amaraRiftImpact) {
+      p._amaraRiftImpact = true;
+      hitFreezeFrames = Math.max(hitFreezeFrames, 3);
+      playSound('subbass');
+    }
+    if (elapsed >= T.riftEnd && !p._amaraTransformImpact) {
+      p._amaraTransformImpact = true;
+      hitFreezeFrames = Math.max(hitFreezeFrames, 4);
+      playSound('bell');
+      triggerShake(14, 0.3);
+    }
+
+    // Amara stays put; the shuttle stays frozen up top.
+    p.vx = 0;
+    shuttle.vx = 0; shuttle.vy = 0;
+
+    if (p.amaraBuildupTimer <= 0) {
+      p.amaraBuildupActive = false;
+      p.amaraPowder = 0; p.amaraRift = 0; p.amaraGlow = 0;
+      p.amaraDomainReveal = 1;
+      timeScale = 1.0;
+      startAmaraPuppeteerLive(p);
+    }
+  }
+
+  function startAmaraPuppeteerLive(p){
+    if (p._amaraLiveStarted) return;
+    p._amaraLiveStarted = true;
+    p.amaraLiveActive = true;
+    p.amaraLiveTimer = AMARA_LIVE_MAXHOLD;
+    // Four shuttlecocks share the top: one slot per directional key. The DOWN slot is the
+    // real one, the other three are decoys. `dropped` guards one drop per key.
+    p.amaraSlots = {
+      up:    { dropped:false, real:false },
+      left:  { dropped:false, real:false },
+      right: { dropped:false, real:false },
+      down:  { dropped:false, real:true  }
+    };
+    p.amaraRealDropped = false;
+    shuttle.amaraFrozen = true;
+    shuttle.amaraOwner = p.side;
+    spawnFloatText(p.x + PLAYER_W/2, p.y - 40, 'CHOOSE… ⬇ = REAL ⭐', '#fbbf24');
+  }
+
+  // Drop one of Amara's four held shuttlecocks. slotName is 'up'|'left'|'right'|'down'.
+  function amaraTryDrop(p, slotName){
+    if (!p.amaraLiveActive || !p.amaraSlots) return;
+    const slot = p.amaraSlots[slotName];
+    if (!slot || slot.dropped) return;
+    slot.dropped = true;
+
+    const oppSide = p.side === 'left' ? 'right' : 'left';
+    const oppMinX = oppSide === 'right' ? NET_X + 55 : COURT_LEFT + 55;
+    const oppMaxX = oppSide === 'right' ? COURT_RIGHT - 55 : NET_X - 55;
+    const lo = Math.min(oppMinX, oppMaxX), hi = Math.max(oppMinX, oppMaxX);
+    const targetX = lo + Math.random() * (hi - lo);
+
+    if (slot.real){
+      // Commit: the real shuttle drops into play toward a random opponent-side spot.
+      p.amaraRealDropped = true;
+      p.amaraLiveActive = false;   // held phase over → constant strobe stops, rally resumes
+      p.amaraLiveTimer = 0;
+      const startX = W/2 + (Math.random()*2-1)*80;
+      shuttle.amaraFrozen = false;
+      shuttle.active = true;
+      shuttle.x = startX;
+      shuttle.y = 40;
+      shuttle.ultMarker = null;
+      // It's already at the top — near-zero upward pop (arc floored to 20px but the ascent
+      // gravity is cranked 6x so tUp ≈ 0.08s) then a hard 4.5x fast-drop, so it plummets
+      // almost the instant she commits, matching Jordan's slam-down feel. Targeting stays
+      // accurate because ultLaunchToward still solves vx for the real landing spot.
+      ultLaunchToward(targetX, 20, 4.5, 6);
+      shuttle.kind = 'float';
+      shuttle.hitterSide = p.side;
+      playSound('smash');
+      triggerShake(14, 0.35);
+      spawnFloatText(startX, 70, 'REAL SHUTTLE! ⭐', '#22d3ee');
+    } else {
+      // Decoy: a glittering fake falls into a random opponent-side spot.
+      const startX = W/2 + (Math.random()*2-1)*120;
+      amaraDecoys.push({
+        x: startX,
+        y: 30,
+        // Big immediate downward + horizontal kick so it screams toward its spot the instant
+        // the key is pressed (paired with the higher gravity in tickAmaraDecoys).
+        vx: (targetX - startX) * 1.6,
+        vy: 340 + Math.random()*90,
+        minX: lo, maxX: hi,
+        color: '#22d3ee',
+        hit: false,
+        angle: Math.PI/2,
+        seed: Math.random()*100
+      });
+      playSound('net');
+    }
+  }
+
+  // Physics + opponent-contact blind for the falling decoys. Runs every sim step; decoys
+  // that reach the ground puff harmlessly (they're fake — they never score).
+  function tickAmaraDecoys(dt){
+    if (!amaraDecoys.length) return;
+    if (paused || state !== 'rally') return;
+    const g = 2000; // px/s^2 — hard, fast fall (matches the real shuttle's slam-down)
+    // The distracted side = whoever is NOT the Amara that owns the frozen shuttle.
+    const owner = shuttle.amaraOwner;
+    const opp = owner === 'left' ? right : (owner === 'right' ? left : null);
+    const keep = [];
+    for (let i=0;i<amaraDecoys.length;i++){
+      const d = amaraDecoys[i];
+      if (d.hit) continue;
+      d.vy += g * dt;
+      d.vx -= 0.8 * d.vx * dt;
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      if (d.x < d.minX){ d.x = d.minX; d.vx = 0; }
+      if (d.x > d.maxX){ d.x = d.maxX; d.vx = 0; }
+      d.angle = Math.atan2(d.vy, d.vx) - Math.PI/2;
+      if (Math.random() < 0.4) spawnHitParticles(d.x, d.y, 1, false, d.color);
+
+      // Opponent "hits" the decoy by running into it (within their reach box) → blind.
+      if (opp){
+        const headX = opp.x + PLAYER_W/2;
+        const inX = Math.abs(d.x - headX) <= 46;
+        const inY = d.y >= opp.y - 40 && d.y <= opp.y + PLAYER_H + 20;
+        if (inX && inY){
+          d.hit = true;
+          amaraBlindOpponent(opp, 1.0);
+          spawnHitParticles(d.x, d.y, 20, true, '#e0f7ff');
+          triggerShake(8, 0.2);
+          playSound('smash');
+          spawnFloatText(headX, opp.y - 20, 'DECOY! BLIND 🌀', '#22d3ee');
+          continue;
+        }
+      }
+      // Landed harmlessly.
+      if (d.y + SHUTTLE_RADIUS >= GROUND_Y){
+        spawnHitParticles(d.x, GROUND_Y, 12, true, d.color);
+        playSound('net');
+        continue;
+      }
+      keep.push(d);
+    }
+    amaraDecoys = keep;
+  }
+
+  function amaraBlindOpponent(opp, dur){
+    if (!opp) return;
+    opp.amaraBlindTimer = Math.max(opp.amaraBlindTimer || 0, dur);
+  }
+
+  // Held-phase timer — keeps the domain background alive and auto-drops the real shuttle
+  // if Amara dithers past the max-hold window.
+  function tickAmaraLive(p, dt){
+    if (!p.amaraLiveActive) return;
+    if (activeDomain && activeDomain.charId === 'amara' && activeDomain.ownerSide === p.side){
+      activeDomain.timer = Math.max(activeDomain.timer, p.amaraLiveTimer + AMARA_CLEOPATRA_DUR);
+    }
+    if (paused || state !== 'rally') return;
+    p.amaraLiveTimer -= dt;
+    if (p.amaraLiveTimer <= 0 && !p.amaraRealDropped){
+      amaraTryDrop(p, 'down'); // she took too long — the real shuttle drops on its own
+    }
+  }
+
+  // World-space cinematic overlays for the buildup (powder plume, sky rift, transform glow,
+  // domain-reveal ring). Drawn over the players each frame while a buildup is running.
+  function drawAmaraCinematic(){
+    const p = (left && left.amaraBuildupActive) ? left : ((right && right.amaraBuildupActive) ? right : null);
+    if (!p) return;
+    const now = performance.now() * 0.001;
+    const ax = p.x + PLAYER_W/2;
+    const handY = p.y + PLAYER_H * 0.25;
+    const topX = W/2, topY = 40;
+
+    // POWDER — glittering cyan-gold powder streaming from Amara's hand up to the tear point.
+    if ((p.amaraPowder||0) > 0 && (p.amaraDomainReveal||0) <= 0){
+      const prog = p.amaraPowder;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const steps = 26;
+      for (let i=0;i<steps;i++){
+        const t = i/steps;
+        if (t > prog) break;
+        const px = ax + (topX - ax) * t + Math.sin(t*6 + now*4) * 26 * (1-t);
+        const py = handY + (topY - handY) * t;
+        const r = (1-t)*7 + 2 + Math.sin(now*10 + i)*1.5;
+        const a = (1-t)*0.5 + 0.15;
+        const gr = ctx.createRadialGradient(px,py,0,px,py,r*2.4);
+        gr.addColorStop(0, `rgba(224,247,255,${a})`);
+        gr.addColorStop(0.5, `rgba(34,211,238,${a*0.7})`);
+        gr.addColorStop(1, 'rgba(251,191,36,0)');
+        ctx.fillStyle = gr;
+        ctx.beginPath(); ctx.arc(px,py,r*2.4,0,Math.PI*2); ctx.fill();
+      }
+      for (let i=0;i<14;i++){
+        const t = (now*0.6 + i/14) % 1;
+        if (t > prog) continue;
+        const px = ax + (topX-ax)*t + Math.sin(t*9 + i)*30*(1-t);
+        const py = handY + (topY-handY)*t;
+        ctx.fillStyle = i%2 ? 'rgba(254,240,138,0.9)' : 'rgba(224,247,255,0.9)';
+        ctx.beginPath(); ctx.arc(px,py,1.6,0,Math.PI*2); ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // RIFT — a vertical glowing tear at the top that widens (the domain-clip tear in the
+    // court dispatch takes over once the EXPAND reveal begins).
+    if ((p.amaraRift||0) > 0 && (p.amaraDomainReveal||0) <= 0){
+      const r = p.amaraRift;
+      const h = 60 + r * 220;
+      const w = r * (26 + Math.sin(now*8)*4);
+      ctx.save();
+      ctx.translate(topX, topY + h*0.35);
+      ctx.globalCompositeOperation = 'lighter';
+      const og = ctx.createRadialGradient(0,0,2,0,0,h*0.9);
+      og.addColorStop(0, `rgba(34,211,238,${0.5*r})`);
+      og.addColorStop(0.4, `rgba(168,85,247,${0.3*r})`);
+      og.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = og;
+      ctx.beginPath(); ctx.ellipse(0,0,w*2.4,h*0.9,0,0,Math.PI*2); ctx.fill();
+      const cg = ctx.createLinearGradient(0,-h*0.5,0,h*0.5);
+      cg.addColorStop(0,'rgba(255,255,255,0)');
+      cg.addColorStop(0.5,`rgba(255,255,255,${0.9*r})`);
+      cg.addColorStop(1,'rgba(255,255,255,0)');
+      ctx.fillStyle = cg;
+      ctx.beginPath();
+      ctx.moveTo(0,-h*0.5);
+      ctx.quadraticCurveTo(w, 0, 0, h*0.5);
+      ctx.quadraticCurveTo(-w, 0, 0, -h*0.5);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+
+    // TRANSFORM — golden light column + halo + rising motes over Amara as her armor forms.
+    if ((p.amaraGlow||0) > 0){
+      const g = p.amaraGlow;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const colGrad = ctx.createLinearGradient(ax, 0, ax, p.y + PLAYER_H);
+      colGrad.addColorStop(0, 'rgba(254,240,138,0)');
+      colGrad.addColorStop(0.5, `rgba(254,240,138,${0.35*g})`);
+      colGrad.addColorStop(1, `rgba(251,191,36,${0.15*g})`);
+      ctx.fillStyle = colGrad;
+      ctx.fillRect(ax-55, 0, 110, p.y + PLAYER_H);
+      const halo = ctx.createRadialGradient(ax, p.y+PLAYER_H*0.4, 4, ax, p.y+PLAYER_H*0.4, 130);
+      halo.addColorStop(0, `rgba(255,255,255,${0.6*g})`);
+      halo.addColorStop(0.4, `rgba(34,211,238,${0.35*g})`);
+      halo.addColorStop(1, 'rgba(251,191,36,0)');
+      ctx.fillStyle = halo;
+      ctx.beginPath(); ctx.arc(ax, p.y+PLAYER_H*0.4, 130, 0, Math.PI*2); ctx.fill();
+      for (let i=0;i<16;i++){
+        const t = (now*0.8 + i/16) % 1;
+        const py = p.y + PLAYER_H - t*(PLAYER_H+60);
+        const px = ax + Math.sin(t*7 + i)*40;
+        ctx.fillStyle = `rgba(254,240,138,${(1-t)*0.9*g})`;
+        ctx.beginPath(); ctx.arc(px, py, 2, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // EXPAND — an expanding luminous ring opening the domain outward from Amara.
+    if ((p.amaraDomainReveal||0) > 0 && (p.amaraDomainReveal||0) < 1){
+      const u = p.amaraDomainReveal;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const R = u * Math.hypot(W, H) * 0.75;
+      ctx.strokeStyle = `rgba(254,240,138,${(1-u)*0.8})`;
+      ctx.lineWidth = 10 * (1-u) + 2;
+      ctx.beginPath(); ctx.arc(ax, p.y+PLAYER_H*0.4, R, 0, Math.PI*2); ctx.stroke();
+      ctx.strokeStyle = `rgba(34,211,238,${(1-u)*0.6})`;
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(ax, p.y+PLAYER_H*0.4, R*0.82, 0, Math.PI*2); ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // The falling decoy shuttlecocks — each a glittering cyan fake with a powder aura.
+  function drawAmaraDecoys(){
+    if (!amaraDecoys.length) return;
+    const now = performance.now() * 0.001;
+    for (let i=0;i<amaraDecoys.length;i++){
+      const d = amaraDecoys[i];
+      if (d.hit) continue;
+      ctx.save();
+      ctx.translate(d.x, d.y);
+      ctx.globalCompositeOperation = 'lighter';
+      const aura = ctx.createRadialGradient(0,0,2,0,0,22);
+      aura.addColorStop(0,'rgba(224,247,255,0.55)');
+      aura.addColorStop(0.5,'rgba(34,211,238,0.3)');
+      aura.addColorStop(1,'rgba(34,211,238,0)');
+      ctx.fillStyle = aura;
+      ctx.beginPath(); ctx.arc(0,0,22,0,Math.PI*2); ctx.fill();
+      ctx.rotate(d.angle);
+      ctx.fillStyle = '#e0f7ff';
+      ctx.beginPath(); ctx.arc(0,7,4,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle = 'rgba(224,247,255,0.85)';
+      ctx.lineWidth = 1.4;
+      for (let f=-2; f<=2; f++){
+        ctx.beginPath(); ctx.moveTo(0,7); ctx.lineTo(f*5, -12); ctx.stroke();
+      }
+      ctx.restore();
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = `rgba(254,240,138,${0.5+0.4*Math.sin(now*12+d.seed)})`;
+      ctx.beginPath(); ctx.arc(d.x, d.y, 2, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // A ragged vertical "quantum tear" ripped open along the dust trail at screen-center,
+  // widening with `reveal` (0→1). Used as a clip so Amara's domain shows THROUGH the rip —
+  // like tearing paper open to the scene behind it. At reveal≈1 it covers the whole screen.
+  function amaraTearPath(c, cx, reveal){
+    const yTop = -30, yBot = GROUND_Y + 60;
+    const steps = 26;
+    const t = performance.now() * 0.001;
+    for (let i=0;i<=steps;i++){               // right edge, top → bottom
+      const f = i/steps;
+      const y = yTop + (yBot - yTop)*f;
+      const bulge = 0.55 + 0.45*Math.sin(f*Math.PI);       // widest near the vertical middle
+      const jit = 0.85 + 0.30*Math.sin(i*12.9898)*Math.cos(i*4.1414 + t*3);
+      const half = (0.60 + 0.55*bulge) * W * reveal * jit;
+      const x = cx + half;
+      if (i===0) c.moveTo(x, y); else c.lineTo(x, y);
+    }
+    for (let i=steps;i>=0;i--){                // left edge, bottom → top
+      const f = i/steps;
+      const y = yTop + (yBot - yTop)*f;
+      const bulge = 0.55 + 0.45*Math.sin(f*Math.PI);
+      const jit = 0.85 + 0.30*Math.sin(i*7.2330 + 2.1)*Math.cos(i*3.7100 + t*3);
+      const half = (0.60 + 0.55*bulge) * W * reveal * jit;
+      c.lineTo(cx - half, y);
+    }
+    c.closePath();
   }
 
   function drawShermanRainShuttles(){
@@ -6239,6 +6880,24 @@
       return;
     }
 
+    // Amara Puppeteer — while she holds the four decoys, her movement keys become
+    // shuttle-drop triggers (one drop per key). DOWN (KeyS / ArrowDown) drops the real
+    // shuttle and ends the hold; the other three drop decoys. Consumes the key so it
+    // doesn't also jump/dash her.
+    const amaraDropP = (isHumanControlled(left)  && left.amaraLiveActive)  ? left
+                     : (isHumanControlled(right) && right.amaraLiveActive) ? right : null;
+    if (amaraDropP){
+      const isLeftAmara = amaraDropP.side === 'left';
+      const upK    = isLeftAmara ? keyBindings.p1Jump  : keyBindings.p2Jump;
+      const leftK  = isLeftAmara ? keyBindings.p1Left  : keyBindings.p2Left;
+      const rightK = isLeftAmara ? keyBindings.p1Right : keyBindings.p2Right;
+      const downK  = isLeftAmara ? 'KeyS' : 'ArrowDown';
+      if (e.code === downK)  { e.preventDefault(); amaraTryDrop(amaraDropP, 'down');  return; }
+      if (e.code === upK)    { e.preventDefault(); amaraTryDrop(amaraDropP, 'up');    return; }
+      if (e.code === leftK)  { e.preventDefault(); amaraTryDrop(amaraDropP, 'left');  return; }
+      if (e.code === rightK) { e.preventDefault(); amaraTryDrop(amaraDropP, 'right'); return; }
+    }
+
     // every gameplay input below is gated per player through isHumanControlled(), so a
     // side driven by an AI ('ai' right player, 'aivai' both players) can never have its
     // charge/jump/dash state disturbed by stray keyboard input. All actions are looked
@@ -7323,7 +7982,7 @@
     shuttle.vy = 0;
     playSound('bell');
     triggerShake(6, 0.2);
-    spawnFloatText(p.x + PLAYER_W/2, p.y - 30, 'TIME STANDS STILL (' + p.jordanPauseCharges + ' LEFT)', '#5b9bff');
+    spawnFloatText(p.x + PLAYER_W/2, p.y - 30, 'TIME STANDS STILL (' + p.jordanPauseCharges + ' LEFT)', '#d4d4d8');
   }
 
   function startCharge(p, now){
@@ -7525,6 +8184,7 @@
     const incomingWasSmash = shuttle.kind === 'smash';
     shuttle.ultFx = null; // a struck shuttle drops any previous ult trail (re-set below if THIS is an ult)
     shuttle.ultFastDrop = null;
+    shuttle.ultFastAscent = null;
     shuttle.ultSmashArc = false;
 
     // on the ground it's always an underhand-style return; in the air, a charge of
@@ -7611,11 +8271,8 @@
     }
     p.swingTimer = SWING_DURATION;
     p.swingPowerFrac = 0.6 + 0.4*chargeFrac;
+    p.swingKind = kind;
     p.visualSwingDelay = 0.08;
-    // Fursona Unleashed: Elijah says "Meow~" (uwu) on every shuttle he strikes while transformed.
-    if(p.character.id === 'elijah' && p.transform && p.transform.type === 'FURSONA_UNLEASHED'){
-      spawnFloatText(p.x + PLAYER_W/2, p.y - 8, 'Meow~', '#ffc4e2');
-    }
     const dir = p.side === 'left' ? 1 : -1;
 
     if(kind === 'smash'){
@@ -7641,7 +8298,6 @@
           shuttle.dinkDiveApplied = false;
           shuttle.netCollisionResolved = false;
           triggerShake(16, 0.4);
-          spawnFloatText(shuttle.x, shuttle.y - 18, 'OVERCHARGED HEAVEN SMASH! 💥✝', '#ff4444');
           playSound('smash');
           spawnHitParticles(shuttle.x, shuttle.y, 25, true, '#ffd700');
         } else {
@@ -7659,7 +8315,6 @@
           shuttle.dinkDiveApplied = false;
           shuttle.netCollisionResolved = false;
           triggerShake(12, 0.32);
-          spawnFloatText(shuttle.x, shuttle.y - 18, 'HEAVEN SMASH! ⚡✝', '#ffd700');
           playSound('smash');
           spawnHitParticles(shuttle.x, shuttle.y, 20, true, '#ffd700');
         }
@@ -7698,7 +8353,6 @@
         // DYNAMIC JUICE & SHAKE BASED ON CHARGE METER FULLNESS
         if (chargeFrac >= 0.95) {
           triggerShake(14, 0.35);
-          spawnFloatText(shuttle.x, shuttle.y - 15, 'MAX CHARGE SMASH! ⚡', '#ffce54');
           for(let k = 0; k < 14; k++){
             const a = (k / 14) * Math.PI * 2;
             particles.push({
@@ -7715,7 +8369,6 @@
           }
         } else if (chargeFrac >= 0.75) {
           triggerShake(10, 0.28);
-          spawnFloatText(shuttle.x, shuttle.y - 12, 'POWER SMASH!', '#38bdf8');
         } else {
           triggerShake(6, 0.22);
         }
@@ -7826,9 +8479,9 @@
     }
 
     // ---- Momentum gain for this clean contact (MOMENTUM_SPEC Part 1/2) ----
-    // Suppressed entirely while Jordan's domain is live — nobody charges toward their next
-    // ultimate while his is still running.
-    if (!jordanDomainSuppressesMomentum()) {
+    // Only the Jordan who owns a live domain is frozen from recharging; the opponent keeps
+    // building (and can cast) their own ultimate normally throughout his domain.
+    if (!jordanDomainSuppressesMomentumFor(p)) {
       const moOpp = p.side === 'left' ? right : left;
       Simulation.applyMomentumGain(p, moOpp, {
         event: kind,
@@ -8079,10 +8732,7 @@
     if(typeof now === 'number') p.lastHitTime = now;
     p.swingTimer = SWING_DURATION;
     p.swingPowerFrac = 0.6 + 0.4*chargeFrac;
-    // Fursona Unleashed: Elijah says "Meow~" (uwu) on every shuttle he strikes while transformed.
-    if(p.character.id === 'elijah' && p.transform && p.transform.type === 'FURSONA_UNLEASHED'){
-      spawnFloatText(p.x + PLAYER_W/2, p.y - 8, 'Meow~', '#ffc4e2');
-    }
+    p.swingKind = 'serve';
     const dir = p.side === 'left' ? 1 : -1;
     const speed = SERVE_BASE_SPEED * power * powerMultForRegular(p.character);
     const angle = 32 * Math.PI/180;
@@ -8092,9 +8742,9 @@
     isServeFlight = true;
     state = 'rally';
 
-    // Momentum: the serve is a clean contact too (MOMENTUM_SPEC Part 2.1). Suppressed while
-    // Jordan's domain is live, same as the hit-momentum gain above.
-    if (!jordanDomainSuppressesMomentum()) {
+    // Momentum: the serve is a clean contact too (MOMENTUM_SPEC Part 2.1). Only the domain
+    // owner (Jordan) is frozen from recharging; the opponent serves-to-charge normally.
+    if (!jordanDomainSuppressesMomentumFor(p)) {
       Simulation.applyMomentumGain(p, p.side === 'left' ? right : left, {
         event: 'serve', aerial: false, moved: false,
         rallyHitCount: rallyHitCount, now: now, clean: true
@@ -8145,6 +8795,11 @@
     if (right) { right.jordanPauseActive = false; right.jordanPauseTimer = 0; }
     shuttle.isUltimateShot = false;
     shuttle.isShermanRain = false; shuttle.rainShuttles = [];
+    // Amara Puppeteer: rally-scoped state (Cleopatra transform + domain persist across
+    // points on their own timers and are intentionally NOT cleared here).
+    shuttle.amaraFrozen = false; shuttle.amaraOwner = null; amaraDecoys = [];
+    if (left)  { left.amaraBuildupActive = false;  left.amaraLiveActive = false;  left._amaraLiveStarted = false; }
+    if (right) { right.amaraBuildupActive = false; right.amaraLiveActive = false; right._amaraLiveStarted = false; }
     shuttle.isShermanDragonSmash = false;
     shuttle.shermanDragonReleaseTimer = 0; shuttle.shermanDragonTargetX = undefined;
     // Jordan's domain persists across points for its own 30s live window — only wipe the
@@ -8153,6 +8808,7 @@
     if (right) { right.shermanMandateActive = false; right.shermanDragonAirTimer = 0; right.jordanTempestActive = false; if (!right.jordanDomainLiveActive) { right.jordanSilhouette = 0; right.jordanEyeGlow = 0; right.jordanCircleRadius = 0; right.momentumChargeBlocked = false; } }
     shuttle.ultFx = null; // clear ult signature trail flavour
     shuttle.ultFastDrop = null;
+    shuttle.ultFastAscent = null;
     shuttle.ultSmashArc = false;
     shuttle.hitByMaxPower = false;
     shuttle.maxPowerDiveApplied = false;
@@ -8324,7 +8980,105 @@
     playSound('matchWin');
   }
 
+  // Shared teardown: called at the very top of both startGame() and restartGame() so a new/
+  // reset match ALWAYS begins with every ult/domain/cinematic/overlay flag cleared. Fixes:
+  //   • new-match starts with a stale ult meter already loaded
+  //   • re-picking Jordan (or any character) after changing opponent leaves you inside the
+  //     previous match's domain/silhouette
+  //   • the pause-menu Restart button zeros scores but leaves players stuck in ult form
+  function clearAllUltAndOverlayState(){
+    // Globals: overlays, camera cinematic, sim-speed hitches, screen shake, domain, banners
+    if (typeof activeDomain !== 'undefined')   activeDomain   = null;
+    if (typeof ultBurst !== 'undefined')       ultBurst       = null;
+    if (typeof ultCinematic !== 'undefined')   ultCinematic   = null;
+    if (typeof activeStinger !== 'undefined')  activeStinger  = null;
+    if (typeof hitFreezeFrames !== 'undefined') hitFreezeFrames = 0;
+    if (typeof timeScale !== 'undefined')      timeScale      = 1.0;
+    if (typeof shakeTime !== 'undefined')      shakeTime      = 0;
+    if (typeof pointPauseTimer !== 'undefined') pointPauseTimer = 0;
+    if (typeof pointCelebrateSide !== 'undefined') pointCelebrateSide = null;
+    if (typeof floatTexts !== 'undefined' && floatTexts) floatTexts.length = 0;
+    if (typeof particles !== 'undefined' && particles) particles.length = 0;
+    if (typeof camX !== 'undefined')     camX = camY = 0;
+    if (typeof camZoom !== 'undefined')  { camZoom = 1; targetCamX = 0; targetCamY = 0; targetCamZoom = 1; }
+    // Shuttle: nuke every optional ult/hold flag so nothing lingers into the fresh serve
+    if (typeof shuttle !== 'undefined' && shuttle) {
+      shuttle.vx = 0; shuttle.vy = 0; shuttle.active = false;
+      shuttle.ultFx = null; shuttle.ultFastDrop = null; shuttle.ultFastAscent = null; shuttle.ultSmashArc = false;
+      shuttle.jordanTempestRelease = 0; shuttle.jordanTempestIsAir = false; shuttle.jordanTempestOwner = null;
+      shuttle.jordanPauseHeld = false;
+      shuttle.jordanSkip = false; shuttle.noDrag = false;
+      shuttle.puppeteerRealX = undefined; shuttle.puppeteerPauseTimer = 0; shuttle.puppeteerHesitated = false;
+      shuttle.isShermanRain = false; shuttle.rainShuttles = [];
+      shuttle.amaraFrozen = false; shuttle.amaraOwner = null; amaraDecoys = [];
+      shuttle.isShermanDragonSmash = false; shuttle.shermanDragonReleaseTimer = 0; shuttle.shermanDragonTargetX = undefined;
+      shuttle.sightLineReticle = null; shuttle.ultMarker = null;
+      shuttle.hitByMaxPower = false; shuttle.maxPowerDiveApplied = false;
+      shuttle.dinkDiveApplied = false; shuttle.netCollisionResolved = false;
+      shuttle.priyaIgnitionTrail = false; shuttle.diegoScatter = false;
+      shuttle.isKnuckleball = false;
+      shuttle.cristianoUltScoredBy = null; shuttle.cristianoUltKind = null;
+      shuttle.hideMarkerBeforeCrossNet = false;
+      shuttle.isUltimateShot = false; shuttle.held = false; shuttle.holdTimer = 0;
+    }
+    // Per-player: every named ult/transform/cinematic/passive-timer flag we've added.
+    // Kept as a single function so a future character's flag can just be appended once.
+    [left, right].forEach(function(p){
+      if (!p) return;
+      // Momentum + charging pipeline
+      Simulation.resetMomentum(p);
+      p.charging = false; p.chargeStart = 0;
+      p.ultCharging = false; p.ultPrimed = false; p.ultChargeProgress = 0;
+      p.momentumChargeBlocked = false;
+      p.aiUltIntent = null;
+      // Movement/hit bookkeeping
+      p.dashTimer = 0; p.dashDir = 0; p.lastDashTime = -999;
+      p.swingTimer = 0; p.swingPowerFrac = 1; p.visualSwingDelay = 0;
+      p.lastHitTime = -999; p.lastSwingTime = 0; p.nextCooldownMult = 1;
+      p.dashGhosts = [];
+      // Transform (Ninjja Absolute Zone / Elijah / Benjamin / Amara / etc.)
+      p.transform = null; p.baseCharacter = null;
+      p.absoluteZoneTimer = 0; p.absoluteZoneFlash = 0;
+      // Sherman
+      p.shermanMandateActive = false; p.shermanMandateTimer = 0; p.shermanDragonAirTimer = 0;
+      // Jordan — Tempest King's Dominion (splash → closeup → expand → live-domain)
+      p.jordanTempestActive = false; p.jordanTempestTimer = 0; p.jordanTempestIsAir = false;
+      p.jordanDomainLiveActive = false; p.jordanDomainLiveTimer = 0;
+      p.jordanSilhouette = 0; p.jordanEyeGlow = 0; p.jordanCircleRadius = 0; p.jordanFaceCloseup = 0;
+      p._tempestCloseupImpact = false; p._tempestExpandImpact = false;
+      p._tempestFullImpact = false; p._tempestLaunched = false;
+      p.jordanPauseCharges = 0; p.jordanPauseActive = false; p.jordanPauseTimer = 0;
+      // Amara — Sun Goddess of Giza / Puppeteer (buildup cinematic + decoy mind-game)
+      p.amaraBuildupActive = false; p.amaraBuildupTimer = 0;
+      p.amaraLiveActive = false; p.amaraLiveTimer = 0; p._amaraLiveStarted = false;
+      p.amaraRealDropped = false; p.amaraSlots = null;
+      p.amaraPowder = 0; p.amaraRift = 0; p.amaraGlow = 0; p.amaraArmor = 0; p.amaraDomainReveal = 0;
+      p.amaraBlindTimer = 0;
+      p._amaraRiftImpact = false; p._amaraTransformImpact = false; p._amaraExpandImpact = false;
+      // Other character-specific timed states
+      p.craterTimer = 0;
+      p.deadWeightSwings = 0; p.deadWeightStack = 0; p.deadWeightTimer = 0;
+      p.todoGasTimer = 0; p.todoGasStacks = 0;
+      p.solarJudgmentSunTimer = 0;
+      p.legendTimer = 0; p.secondGearTimer = 0;
+      p.lightFeetTimer = 0;
+      p.mayaDinkCount = 0; p.mayaFlowState = false;
+      p.staminaDebuffTimer = 0; p.burnoutTimer = 0;
+      p.bicycleKickTimer = 0;
+      p.moPeakLogged = false;
+      // Passive bookkeeping
+      p.flairStacks = 0; p.followThroughUntil = 0; p.lastShotKind = null;
+      // Stamina full for a fresh match
+      refillStamina(p);
+    });
+    // Recompute the state machine to a clean serve on the next tick — setupServe() will
+    // reset positions, pick the server, and put state back to 'serve'.
+    if (typeof state !== 'undefined') state = 'serve';
+    if (typeof isServeFlight !== 'undefined') isServeFlight = false;
+  }
+
   function startGame(){
+    clearAllUltAndOverlayState();
     resetMatchStats();
     // Clear any mid-pause sub-flow state — relevant when this run through
     // startGame() was reached via "Change Characters" from the pause menu,
@@ -8364,6 +9118,7 @@
   }
 
   function restartGame(){
+    clearAllUltAndOverlayState();
     resetMatchStats();
     document.getElementById('gameOverOverlay').classList.add('hidden');
     left.x = COURT_LEFT+180; left.y = GROUND_Y-PLAYER_H; left.vx=0; left.vy=0; left.onGround=true;
@@ -9963,6 +10718,11 @@
     document.getElementById('btnDynamicCamera').textContent = dynamicCameraEnabled ? 'ON' : 'OFF';
   });
 
+  document.getElementById('btnHitMeter').addEventListener('click', ()=>{
+    showHitMeter = !showHitMeter;
+    document.getElementById('btnHitMeter').textContent = showHitMeter ? 'ON' : 'OFF';
+  });
+
   document.querySelectorAll('.keybindBtn').forEach(function(btn){
     btn.addEventListener('click', function(){
       listeningForAction = btn.getAttribute('data-action');
@@ -10500,37 +11260,8 @@
   function triggerPointBanter(winner, loser) {
     if (!winner || !winner.character) return;
     const winId = winner.character.id;
-    const loseId = loser && loser.character ? loser.character.id : '';
-
-    if (winId === 'benjamin') {
-      const benQuotes = [
-        'Repent, average mortal! ✝',
-        'The light rejects thy dark playstyle!',
-        'Thou art weighed and found wanting!',
-        'Cleanse thy sluggish footwork!',
-        'Divine perfection triumphs!'
-      ];
-      const q = benQuotes[Math.floor(Math.random() * benQuotes.length)];
-      spawnFloatText(winner.x + PLAYER_W/2, winner.y - 28, q, '#fef08a');
-    } else if (loseId === 'benjamin') {
-      const benLoseQuotes = [
-        'A mere fluke of earthly chance!',
-        'Insolent sinner!',
-        'Heaven tests my patience...',
-        'Thy trick won\'t work again!'
-      ];
-      const q = benLoseQuotes[Math.floor(Math.random() * benLoseQuotes.length)];
-      spawnFloatText(loser.x + PLAYER_W/2, loser.y - 28, q, '#cbd5e1');
-    } else if (winId === 'amara') {
-      spawnFloatText(winner.x + PLAYER_W/2, winner.y - 28, 'Kneel before the Pharaoh! ☀️', '#fcd34d');
-    } else if (winId === 'cristiano') {
+    if (winId === 'cristiano') {
       spawnFloatText(winner.x + PLAYER_W/2, winner.y - 28, 'SIUUUU! ⚽', '#ef4444');
-    } else if (winId === 'elijah') {
-      spawnFloatText(winner.x + PLAYER_W/2, winner.y - 28, 'Meow~ Outplayed! 🐾', '#f472b6');
-    } else if (winId === 'diego') {
-      spawnFloatText(winner.x + PLAYER_W/2, winner.y - 28, 'BOOM! Unstoppable! 💥', '#4ade80');
-    } else if (winId === 'priya') {
-      spawnFloatText(winner.x + PLAYER_W/2, winner.y - 28, 'Too hot to handle! 🔥', '#f97316');
     }
   }
 
@@ -10747,6 +11478,7 @@
       if(p.groundSlowTimer > 0) p.groundSlowTimer = Math.max(0, p.groundSlowTimer - dt); // Sherman ground-scorch debuff; frozen off-rally
 
       if(p.solarJudgmentSunTimer > 0) p.solarJudgmentSunTimer = Math.max(0, p.solarJudgmentSunTimer - dt);
+      if(p.amaraBlindTimer > 0) p.amaraBlindTimer = Math.max(0, p.amaraBlindTimer - dt); // Amara decoy blind
 
       if (p.transform && p.transform.type === 'CLEOPATRA') {
         if (!p.cleopatraFlashTimer) {
@@ -10849,6 +11581,7 @@
          : shuttle.dinkDiveApplied ? shuttle.dinkPostNetGravity
          : shuttle.kind === 'dink' ? DINK_PRE_NET_GRAVITY
          : (shuttle.ultFastDrop && shuttle.vy > 0) ? SHUTTLE_GRAVITY * shuttle.ultFastDrop
+         : (shuttle.ultFastAscent && shuttle.vy < 0) ? SHUTTLE_GRAVITY * shuttle.ultFastAscent
          : (shuttle.ultFx && shuttle.ultFx.art && shuttle.kind !== 'smash' && shuttle.vy > 0) ? SHUTTLE_GRAVITY * 2.5
          : SHUTTLE_GRAVITY;
   }
@@ -10934,6 +11667,10 @@
       }
       return;
     }
+
+    // Amara Puppeteer hold — the real shuttle hangs frozen & invisible up top until she
+    // drops it with the DOWN key (amaraTryDrop clears the flag). No physics, no scoring.
+    if (shuttle.amaraFrozen) { shuttle.vx = 0; shuttle.vy = 0; return; }
 
     // Amara Puppeteer timing hold and re-launch
     if (shuttle.puppeteerRealX !== undefined && shuttle.puppeteerPauseTimer > 0) {
@@ -11264,7 +12001,7 @@
             y: GROUND_Y - 5,
             vx: (Math.random() - 0.5) * 250,
             vy: -Math.random() * 350 - 50,
-            color: '#5b9bff',
+            color: '#d4d4d8',
             size: Math.random() * 5 + 2,
             alpha: 1.0,
             decay: 2.5,
@@ -11376,9 +12113,19 @@
           const jordanPaused = left.jordanPauseActive ? left : (right.jordanPauseActive ? right : null);
           const jordanFrozenSide = jordanPaused ? (jordanPaused.side === 'left' ? 'right' : 'left') : null;
 
-          if(!jordanPaused) updateAI(simDt, nowSec);
+          // Jordan's Tempest buildup: EVERYONE is locked (both players and their AIs) for the
+          // whole splash → consume → face → expand cinematic. Control returns only once the
+          // buildup ends and the shuttle launches.
+          const tempestActive = !!(left.jordanTempestActive || right.jordanTempestActive);
 
-          if(state === 'rally' || state === 'serve'){
+          // Amara's Puppeteer buildup locks everyone the same way while the powder → rift →
+          // transform → expand cinematic plays out; control returns when the domain forms.
+          const amaraBuildup = !!(left.amaraBuildupActive || right.amaraBuildupActive);
+          const cinematicLock = tempestActive || amaraBuildup;
+
+          if(!jordanPaused && !cinematicLock) updateAI(simDt, nowSec);
+
+          if((state === 'rally' || state === 'serve') && !cinematicLock){
             if(jordanFrozenSide !== 'left'){
               updatePlayer(left, simDt,
                 isHumanControlled(left)  ? keyBindings.p1Left  : AI_KEYMAP.left.moveLeft,
@@ -11435,6 +12182,11 @@
           tickJordanTempest(right, simDt);
           tickJordanDomainLive(left, simDt);
           tickJordanDomainLive(right, simDt);
+          tickAmaraPuppeteer(left, simDt);   // Amara buildup cinematic (Puppeteer)
+          tickAmaraPuppeteer(right, simDt);
+          tickAmaraLive(left, simDt);        // held-phase timer / auto-drop
+          tickAmaraLive(right, simDt);
+          tickAmaraDecoys(simDt);            // falling decoy shuttlecocks
           applyPassiveMomentumTrickle(left, simDt);  // Cristiano Spotlight (Part 3)
           applyPassiveMomentumTrickle(right, simDt);
           regenStamina(left, simDt);  // Stamina regen while grounded & idle (Part 5.1)
@@ -11822,6 +12574,17 @@
         ctx.beginPath(); ctx.ellipse(0, hcy, hr * 1.1, hr * 0.8, -0.1, 0, Math.PI*2); ctx.fill();
         ctx.beginPath(); ctx.ellipse(-hr * 0.3, hcy - hr * 0.8, hr * 0.8, hr * 0.5, 0.4, 0, Math.PI*2); ctx.fill();
         break;
+
+      case 'curtain':
+        ctx.beginPath(); ctx.ellipse(0, hcy + 2, hr * 1.1, hr * 0.95, 0, 0, Math.PI*2); ctx.fill();
+        ctx.fillRect(-hr * 1.15, hcy + 6, hr * 0.4, 28);
+        ctx.fillRect(hr * 0.75, hcy + 6, hr * 0.4, 28);
+        ctx.beginPath();
+        ctx.moveTo(-hr * 0.8, hcy - 4);
+        ctx.quadraticCurveTo(-hr * 0.3, hcy + 8, -hr * 0.1, hcy + 13);
+        ctx.quadraticCurveTo(0, hcy + 8, hr * 0.2, hcy - 4);
+        ctx.closePath(); ctx.fill();
+        break;
         
       default: // 'short'
         ctx.beginPath(); ctx.ellipse(0, hcy + 2, hr * 1.08, hr * 0.95, 0, 0, Math.PI*2); ctx.fill();
@@ -11910,15 +12673,18 @@
     bun:[' HHHHHH ','HHHHHHHH','H      H'],
     ponytail:[' HHHHHH ','HHHHHHHH','HH     H'],
     braids:[' HHHHHH ','HHHHHHHH','H      H'],
-    long:[' HHHHHH ','HHHHHHHH','H      H']
+    long:[' HHHHHH ','HHHHHHHH','H      H'],
+    curtain:[' HHHHHH ','HHHHHHHH','HH    HH']
   };
-  function drawPixHair(px,hx,hy,ch){
+  function drawPixHair(px,hx,hy,ch,hairSway){
+    var hxS = hx;
     var st=ch.hairStyle||'short';
-    _pxmap(px,hx,hy,HAIR_TOP[st]||HAIR_TOP.short,{H:'H'});
-    if(st==='bun'){ _pxrect(px,hx+3,hy-2,2,2,'H'); _pxrect(px,hx+3,hy-1,2,1,'h'); }
-    else if(st==='ponytail'){ _pxrect(px,hx-2,hy+1,2,5,'H'); px(hx-2,hy+5,'h'); }   // tail off the back (-x)
-    else if(st==='braids'){ _pxrect(px,hx-1,hy+2,2,5,'H'); _pxrect(px,hx+7,hy+2,2,5,'H'); }
-    else if(st==='long'){ _pxrect(px,hx-1,hy+1,2,9,'H'); _pxrect(px,hx+7,hy+1,2,9,'H'); }
+    _pxmap(px,hxS,hy,HAIR_TOP[st]||HAIR_TOP.short,{H:'H'});
+    if(st==='bun'){ _pxrect(px,hxS+3,hy-2,2,2,'H'); _pxrect(px,hxS+3,hy-1,2,1,'h'); }
+    else if(st==='ponytail'){ _pxrect(px,hxS-2,hy+1,2,5,'H'); px(hxS-2,hy+5,'h'); }   // tail off the back (-x)
+    else if(st==='braids'){ _pxrect(px,hxS-1,hy+2,2,5,'H'); _pxrect(px,hxS+7,hy+2,2,5,'H'); }
+    else if(st==='long'){ _pxrect(px,hxS-1,hy+1,2,9,'H'); _pxrect(px,hxS+7,hy+1,2,9,'H'); }
+    else if(st==='curtain'){ _pxrect(px,hxS-1,hy+1,2,5,'H'); _pxrect(px,hxS+7,hy+1,2,5,'H'); px(hxS+2,hy+2,'H'); px(hxS+5,hy+2,'H'); }
   }
   // Stiff peaked/military cap — retro-pixel, blocky silhouette, no photoreal shading.
   // Drawn in place of hair (front = +x, matching drawPixFace/racket convention).
@@ -12029,16 +12795,17 @@
   function buildPixFigure(ch, ang, expr, t){
     _pixCtx.clearRect(0,0,BUF_W,BUF_H);
     var pal=pixPalette(ch), px=_mkpx(pal);
-    var hipX=OX+7, hipY=OY+17, shX=OX+7, shY=OY+8;
     var bob=(ang.air||ang.onGround===false)?0:Math.round(Math.sin(t*3)*0.5);
-    var yo=bob;
+    var yo=bob + (ang.torsoYOffset || 0);
+    var xo=(ang.torsoXOffset || 0);
+    var hipX=OX+7+xo, hipY=OY+17+yo, shX=OX+7+xo, shY=OY+8+yo;
     var hasJkt=!!ch.jacket, slv=hasJkt?'J':null, slvB=hasJkt?'j':null, slvLen=hasJkt?3:0;
     // back leg (shorts + bare shin + shoe) + back arm
-    _pxleg(px,hipX-1,hipY+yo,ang.legBack,8,3,'p','k','E');
-    _pxlimb(px,shX-1,shY+2+yo,ang.armBack,7,2,'k',null,slvB,slvLen);
+    _pxleg(px,hipX-1,hipY,ang.legBack,8,3,'p','k','E');
+    _pxlimb(px,shX-1,shY+2,ang.armBack,7,2,'k',null,slvB,slvLen);
     // Fursona Unleashed — big fluffy ginger cat tail sweeping off the back hip (behind torso)
     if(ang.furry){
-      var _tx=hipX-1, _ty=hipY+yo-2;
+      var _tx=hipX-1, _ty=hipY-2;
       var _tail=[
         [_tx,_ty+2],[_tx-1,_ty+1],[_tx-2,_ty],[_tx-3,_ty-1],
         [_tx-4,_ty-3],[_tx-4,_ty-5],[_tx-3,_ty-7],[_tx-2,_ty-9],
@@ -12053,23 +12820,23 @@
       px(_tip[0]-1,_tip[1]-1,'#f4c98a'); px(_tip[0],_tip[1]-1,'#f4c98a'); px(_tip[0]+1,_tip[1]-1,'#f4c98a'); px(_tip[0],_tip[1]-2,'#f4c98a'); // fluffy tip
     }
     // front leg
-    _pxleg(px,hipX+1,hipY+yo,ang.legFront,8,3,'P','K','E');
+    _pxleg(px,hipX+1,hipY,ang.legFront,8,3,'P','K','E');
     // torso — Cleopatra dress, jacket (open, with a shirt placket down the middle) or plain shirt
     if(ch.isCleopatra){
-      _pxmap(px,OX+3,shY+yo,['sSSTSSs','SSTTTSS','SSSSSSS','STTTTTS','SSSSSSS','sSSSSSs','sSSSSSs','SSTTTSS','TTtTtTT'],pal);
+      _pxmap(px,OX+3+xo,shY,['sSSTSSs','SSTTTSS','SSSSSSS','STTTTTS','SSSSSSS','sSSSSSs','sSSSSSs','SSTTTSS','TTtTtTT'],pal);
     } else if(hasJkt){
-      _pxmap(px,OX+3,shY+yo,['jJJSJJj','JJJSJJJ','JJJSJJJ','JTTSTTJ','JJJSJJJ','jJJSJJj','jJJSJJj','PPPPPPP','PPpPpPP'],pal);
+      _pxmap(px,OX+3+xo,shY,['jJJSJJj','JJJSJJJ','JJJSJJJ','JTTSTTJ','JJJSJJJ','jJJSJJj','jJJSJJj','PPPPPPP','PPpPpPP'],pal);
     } else {
-      _pxmap(px,OX+3,shY+yo,['sSSSSSs','SSSSSSS','SSSSSSS','STTTTTS','SSSSSSS','sSSSSSs','sSSSSSs','PPPPPPP','PPpPpPP'],pal);
+      _pxmap(px,OX+3+xo,shY,['sSSSSSs','SSSSSSS','SSSSSSS','STTTTTS','SSSSSSS','sSSSSSs','sSSSSSs','PPPPPPP','PPpPpPP'],pal);
     }
     if(ch.medals){
-      px(OX+3,shY+yo,'#e8c257'); px(OX+9,shY+yo,'#e8c257');                 // gold epaulette tips at each shoulder
-      px(OX+4,shY+yo+3,'#e8c257'); px(OX+8,shY+yo+3,'#e8c257');             // two small medal-bar dots on the chest
+      px(OX+3+xo,shY,'#e8c257'); px(OX+9+xo,shY,'#e8c257');                 // gold epaulette tips at each shoulder
+      px(OX+4+xo,shY+3,'#e8c257'); px(OX+8+xo,shY+3,'#e8c257');             // two small medal-bar dots on the chest
     }
     // head: skin -> hair (or cap) -> nose -> face
-    var hx=OX+3, hy=(shY-8)+yo;
+    var hx=OX+3+xo, hy=(shY-8);
     _pxmap(px,hx,hy,HEAD_SKIN,pal);
-    if(ch.cap) drawPixCap(px,hx,hy,ch); else drawPixHair(px,hx,hy,ch);
+    if(ch.cap) drawPixCap(px,hx,hy,ch); else drawPixHair(px,hx,hy,ch,ang.hairSway);
     if(ch.isCleopatra){
       // Beautiful golden diadem/crown with central red gem
       px(hx+1, hy, '#fbbf24');
@@ -12086,12 +12853,8 @@
     }
     if(ch.longNose){ px(hx+8,hy+4,'K');px(hx+9,hy+4,'K');px(hx+9,hy+5,'k'); }
     if(!ch.pixSilhouette) drawPixFace(px,hx+1,hy,expr,t,ch.glasses); // pure silhouette: no eyes/brows/mouth baked into the sprite — only the overlay glow-eyes read
-    // Jordan's transformation glow — painted at the exact same buffer coords drawPixFace uses
-    // for the eyes (fx=hx+1, eL=2/eR=5, ey=3), so the glow is pixel-perfect aligned to his
-    // modeled eyes regardless of facing/scale/height, on both the real face and the silhouette.
+    // Jordan's transformation glow
     if(ang.eyeGlow > 0){
-      // full 2-row eye box (ey = eyeball row, ey+1 = pupil row — same box openEye()/lidEye()
-      // draw into), so the glow fully covers his modeled eyes instead of just their top row.
       var _gfx=hx+1, _gfy=hy, _geL=2, _geR=5, _gey=3;
       _pixCtx.save();
       _pixCtx.globalCompositeOperation='lighter';
@@ -12099,15 +12862,15 @@
       var _haloR=5;
       [[_gfx+_geL+1,_gfy+_gey+1],[_gfx+_geR+1,_gfy+_gey+1]].forEach(function(pt){
         var grad=_pixCtx.createRadialGradient(pt[0],pt[1],0.3,pt[0],pt[1],_haloR);
-        grad.addColorStop(0,'rgba(255,255,255,0.9)');
-        grad.addColorStop(1,'rgba(255,255,255,0)');
+        grad.addColorStop(0,'rgba(220,250,255,0.9)');
+        grad.addColorStop(1,'rgba(120,220,255,0)');
         _pixCtx.fillStyle=grad;
         _pixCtx.fillRect(pt[0]-_haloR,pt[1]-_haloR,_haloR*2,_haloR*2);
       });
       _pixCtx.restore();
       _pixCtx.save();
       _pixCtx.globalAlpha=ang.eyeGlow;
-      _pixCtx.fillStyle='#ffffff';
+      _pixCtx.fillStyle='#eafeff';
       _pixCtx.fillRect(_gfx+_geL,_gfy+_gey,2,2);
       _pixCtx.fillRect(_gfx+_geR,_gfy+_gey,2,2);
       _pixCtx.restore();
@@ -12121,11 +12884,38 @@
       px(hx-1,hy+4,'#f6f9ff'); px(hx-2,hy+5,'#f6f9ff');   // whiskers (back cheek)
       px(hx+4,hy+5,'#f2a6b8');                            // pink nose
     }
-    // front (racket) arm on top
-    var ax=shX+1, ay=shY+2+yo;
-    _pxlimb(px,ax,ay,ang.armFront,7,2,'K',null,slv,slvLen);
-    var rx=Math.round(ax+Math.sin(ang.armFront)*7), ry=Math.round(ay+Math.cos(ang.armFront)*7);
-    drawPixRacket(px,rx,ry,ang.armFront,ch,ang.furry);
+    // front (racket) arm on top — 2-segment jointed limb with elbow bending & wrist flex
+    var ax=shX+1, ay=shY+2;
+    var upperAng = ang.armFront;
+    var elbowBend = ang.elbowBendFront || 0;
+    var wristAng = ang.wristAngFront || 0;
+    var L1 = 4, L2 = 4;
+    var foreAng = upperAng + elbowBend;
+    var rackAng = foreAng + wristAng;
+
+    // Upper arm
+    _pxlimb(px, ax, ay, upperAng, L1, 2, 'K', null, slv, Math.min(slvLen, L1));
+
+    // Elbow joint position
+    var elX = ax + Math.sin(upperAng) * L1;
+    var elY = ay + Math.cos(upperAng) * L1;
+
+    // Forearm
+    var remSlv = Math.max(0, slvLen - L1);
+    _pxlimb(px, Math.round(elX), Math.round(elY), foreAng, L2, 2, 'K', null, slv, remSlv);
+
+    // Hand position & racket
+    var rx = Math.round(elX + Math.sin(foreAng) * L2);
+    var ry = Math.round(elY + Math.cos(foreAng) * L2);
+    drawPixRacket(px, rx, ry, rackAng, ch, ang.furry);
+
+    if (ang.impactGlow) {
+      // 1-frame pixel impact spark at contact point
+      px(rx, ry - 1, '#ffffff');
+      px(rx - 1, ry, '#ffffff');
+      px(rx + 1, ry, '#ffffff');
+      px(rx, ry + 1, '#ffeb3b');
+    }
     return _pixBuf;
   }
   // Head-and-shoulders portrait into the portrait buffer (bigger face, no limbs).
@@ -12151,6 +12941,10 @@
     if(ch.cap) drawPixCap(px,hx,hy,ch); else drawPixHair(px,hx,hy,ch);
     if(ch.longNose){ px(hx+8,hy+4,'K'); px(hx+9,hy+4,'K'); px(hx+9,hy+5,'k'); }
     drawPixFace(px,hx+1,hy,expr,t,ch.glasses);
+    if(ch.id === 'jordan'){
+      px(hx+3, hy+4, '#06b6d4'); px(hx+4, hy+4, '#eafeff');
+      px(hx+6, hy+4, '#06b6d4'); px(hx+7, hy+4, '#eafeff');
+    }
     return _portBuf;
   }
   function drawHumanoid(c, cx, groundY, scale, ch, ang, facing){
@@ -12928,10 +13722,11 @@
     playSound('subbass');
     triggerShake(20, 0.5);
     spawnFloatText(p.x + PLAYER_W/2, p.y - 40, 'DOMAIN EXPANSION: ' + name.toUpperCase() + ' 🔮', color);
-    triggerStinger(p.character ? p.character.name.toUpperCase() : 'HERO', 'DOMAIN EXPANSION: ' + name, color, 2.4);
+    triggerStinger(p.character ? p.character.name.toUpperCase() : 'HERO', 'DOMAIN EXPANSION: ' + name, color, 1.0);
   }
 
   function updateDomainExpansion(dt) {
+    if (paused || state !== 'rally') return;
     if (activeDomain) {
       activeDomain.timer -= dt;
       if (activeDomain.timer <= 0) {
@@ -13020,42 +13815,122 @@
       g.fillRect(cx + cw / 2 - q(12), cy - q(6), q(30), q(14));      // right nub
     }
 
-    // Ruined pillars — broken temple silhouettes (already blocky; keep, grid-snapped)
+    // ===== Deep-background temple wall silhouette =====
+    // Long low frieze across the middle-back, punched with rectangular window/door openings.
+    // Drawn first so pillars in front overlap it cleanly.
+    g.fillStyle = '#141414';
+    const wallY = GROUND_Y - 230;
+    const wallH = 130;
+    g.fillRect(0, q(wallY), W, q(wallH));
+    // Battlements along the top of the wall — regular crenellations
+    g.fillStyle = '#1a1a1a';
+    for (let cx = 0; cx < W; cx += 40) {
+      g.fillRect(q(cx), q(wallY - 12), q(24), q(12));
+    }
+    // Punched openings (arched doorways represented as flat-top rectangles for pixel purity)
+    g.fillStyle = '#08080a';
+    const openings = [ [90, 40, 60], [260, 34, 74], [430, 44, 60], [640, 32, 80], [860, 42, 60], [1040, 34, 72], [1200, 40, 60] ];
+    for (let o = 0; o < openings.length; o++) {
+      const [ox, ow, oh] = openings[o];
+      g.fillRect(q(ox), q(wallY + wallH - oh), q(ow), q(oh));
+    }
+    // Cracked/collapsed sections — vertical breaks in the wall silhouette
+    g.fillStyle = '#000000';
+    const breaks = [180, 540, 780, 1140];
+    for (let b = 0; b < breaks.length; b++) {
+      const bx = breaks[b];
+      // jagged step cut through the crenellations
+      g.fillRect(q(bx), q(wallY - 12), q(28), q(20));
+      g.fillRect(q(bx + 6), q(wallY + 8), q(16), q(14));
+    }
+
+    // ===== Foreground columns =====
+    // Each column: stepped capital (top), fluted shaft (thin vertical stripes on the sides),
+    // then a two-tier stepped pedestal at the base. Broken columns lose the capital and
+    // are truncated with a jagged crown.
     const pillars = [
-      { x: 70, h: 160, w: 16, broken: true },
-      { x: 190, h: 210, w: 18, broken: false },
-      { x: 360, h: 130, w: 14, broken: true },
-      { x: 520, h: 90, w: 12, broken: true },
-      { x: 780, h: 100, w: 12, broken: true },
-      { x: 940, h: 200, w: 18, broken: false },
-      { x: 1100, h: 150, w: 16, broken: true },
-      { x: 1220, h: 180, w: 14, broken: true },
+      { x: 70,   h: 200, w: 22, broken: true  },
+      { x: 190,  h: 280, w: 26, broken: false },
+      { x: 360,  h: 160, w: 22, broken: true  },
+      { x: 520,  h: 110, w: 18, broken: true  },
+      { x: 660,  h: 250, w: 24, broken: false },
+      { x: 780,  h: 130, w: 18, broken: true  },
+      { x: 940,  h: 260, w: 26, broken: false },
+      { x: 1100, h: 190, w: 22, broken: true  },
+      { x: 1220, h: 220, w: 22, broken: true  },
     ];
     for (let i = 0; i < pillars.length; i++) {
       const pl = pillars[i];
       const topY = GROUND_Y - pl.h;
-      g.fillStyle = '#1a1a1a';
-      g.fillRect(q(pl.x - pl.w / 2), q(topY), q(pl.w), pl.h);
-      g.fillRect(q(pl.x - pl.w / 2 - 4), q(topY - 5), q(pl.w + 8), U * 2);
-      g.fillRect(q(pl.x - pl.w / 2 - 3), q(GROUND_Y - 6), q(pl.w + 6), U * 2);
+      const xL = q(pl.x - pl.w / 2);
+      const w  = q(pl.w);
+      // Shaft
+      g.fillStyle = '#1e1e1e';
+      g.fillRect(xL, q(topY), w, pl.h);
+      // Fluting — 1-pixel vertical stripes on each side of the shaft to imply cylindrical form
+      g.fillStyle = '#0f0f0f';
+      g.fillRect(xL + U, q(topY + 6), U, pl.h - 18);
+      g.fillRect(xL + w - U * 2, q(topY + 6), U, pl.h - 18);
+      // Center vertical highlight
+      g.fillStyle = '#252525';
+      g.fillRect(xL + w / 2 - Math.floor(U / 2), q(topY + 4), U, pl.h - 16);
+      // Capital (only intact columns) — stepped Doric-ish block
+      if (!pl.broken) {
+        g.fillStyle = '#242424';
+        g.fillRect(xL - U * 3, q(topY - 8),  w + U * 6, q(6));
+        g.fillRect(xL - U * 2, q(topY - 14), w + U * 4, q(6));
+        g.fillStyle = '#111111';
+        g.fillRect(xL - U * 3, q(topY - 4),  w + U * 6, U);
+      }
+      // Pedestal — two stepped tiers rising off the ground
+      g.fillStyle = '#242424';
+      g.fillRect(xL - U * 3, q(GROUND_Y - 12), w + U * 6, q(12));
+      g.fillRect(xL - U * 5, q(GROUND_Y - 6),  w + U * 10, q(6));
+      g.fillStyle = '#0e0e0e';
+      g.fillRect(xL - U * 3, q(GROUND_Y - 12), w + U * 6, U); // top edge shadow line
+      // Broken crown for shattered pillars — a jagged stepped skyline
       if (pl.broken) {
-        // stepped broken crown instead of a smooth triangle
         g.fillStyle = '#0e0e0e';
-        g.fillRect(q(pl.x - pl.w / 2), q(topY), q(pl.w / 2), U * 2);
-        g.fillRect(q(pl.x), q(topY + 3), q(pl.w / 2), U * 3);
+        g.fillRect(xL, q(topY), q(pl.w / 2), U * 2);
+        g.fillRect(xL + w / 2, q(topY + 4), q(pl.w / 2), U * 3);
+        g.fillRect(xL + w - U * 2, q(topY + 8), U * 2, U * 2);
+        // A fallen chunk lying at the base
+        g.fillStyle = '#1a1a1a';
+        g.fillRect(xL + w + U * 4, q(GROUND_Y - 10), q(18), q(6));
+        g.fillRect(xL + w + U * 4, q(GROUND_Y - 6),  q(24), q(6));
       }
     }
 
-    // Fallen arch between two pillars — stepped blocky segments (was a quadratic curve)
-    g.fillStyle = '#1a1a1a';
+    // ===== Fallen arch between two intact pillars — stepped blocky voussoirs =====
+    g.fillStyle = '#1e1e1e';
     const archPts = [
-      [190, 210], [230, 245], [275, 258], [320, 235], [360, 130]
+      [190, 280], [225, 315], [265, 328], [305, 328], [345, 315], [380, 280], [415, 220], [450, 160]
     ];
     for (let a = 0; a < archPts.length; a++) {
-      g.fillRect(q(archPts[a][0]) - U * 2, q(GROUND_Y - archPts[a][1]), U * 4, U * 4);
+      g.fillRect(q(archPts[a][0]) - U * 3, q(GROUND_Y - archPts[a][1]), U * 6, U * 5);
+    }
+    // A broken bit dangling off the far end
+    g.fillStyle = '#141414';
+    g.fillRect(q(450) - U * 3, q(GROUND_Y - 160), U * 3, q(30));
+
+    // ===== A toppled statue — headless torso silhouette lying on its side =====
+    // Sits between the pillars around x=580, x=660 for visual variety
+    g.fillStyle = '#1a1a1a';
+    g.fillRect(q(580), q(GROUND_Y - 18), q(80), q(18));         // torso
+    g.fillRect(q(620), q(GROUND_Y - 32), q(28), q(14));         // shoulder mound
+    g.fillRect(q(560), q(GROUND_Y - 14), q(16), q(14));         // outstretched arm
+    g.fillStyle = '#0e0e0e';
+    g.fillRect(q(566), q(GROUND_Y - 6), q(90), q(2));           // shadow line under it
+
+    // ===== Small rubble scattered on the ground =====
+    g.fillStyle = '#141414';
+    const rubble = [ [40, 8, 6], [420, 10, 5], [500, 6, 4], [720, 12, 5], [860, 8, 5], [1030, 14, 6], [1160, 10, 5], [1275, 8, 5] ];
+    for (let r = 0; r < rubble.length; r++) {
+      const [rx, rw, rh] = rubble[r];
+      g.fillRect(q(rx), q(GROUND_Y - rh), q(rw), q(rh));
     }
 
-    // Floating debris — pixel chunks
+    // Floating debris — pixel chunks drifting through the air
     for (let i = 0; i < 10; i++) {
       const dx = q(((i * 157 + now * (6 + i * 0.4)) % (W + 40)) - 20);
       const dy = q(120 + Math.sin(now * 0.6 + i * 2.3) * 50 + (i * 53 % 220));
@@ -13128,13 +14003,15 @@
     const ccx = jp.x + PLAYER_W / 2 + (jp.side === 'left' ? 25 : -25);
     const ccy = jp.y + PLAYER_H * 0.4;
     const spikes = 22;
-    c.moveTo(ccx, ccy);
     for (let i = 0; i <= spikes; i++) {
       const ang = (i / spikes) * Math.PI * 2;
       // stable per-angle jitter so the fracture edge looks jagged but doesn't shimmer randomly
       const j = 0.72 + 0.34 * (0.5 + 0.5 * Math.sin(i * 12.9898) * Math.cos(i * 4.1414));
       const rr = r * j;
-      c.lineTo(q(ccx + Math.cos(ang) * rr), q(ccy + Math.sin(ang) * rr));
+      const px = q(ccx + Math.cos(ang) * rr);
+      const py = q(ccy + Math.sin(ang) * rr);
+      if (i === 0) c.moveTo(px, py);
+      else c.lineTo(px, py);
     }
     c.closePath();
   }
@@ -13299,6 +14176,32 @@
     skyGrad.addColorStop(1, '#fef08a');    // Glowing sand horizon
     ctx.fillStyle = skyGrad;
     ctx.fillRect(minX, 0, width, GROUND_Y + 40);
+
+    // 1.5 Cosmic depth — a soft nebula wash + twinkling star field across the upper sky,
+    // giving the domain the same otherworldly, layered atmosphere as Jordan's storm.
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    // drifting nebula clouds (purple/cyan) high in the sky
+    const nebColors = ['rgba(129,60,180,0.22)', 'rgba(34,211,238,0.14)', 'rgba(168,85,247,0.18)'];
+    for (let i = 0; i < 3; i++){
+      const nx = cx + Math.sin(now * 0.12 + i * 2.1) * (140 + i * 90);
+      const ny = 90 + i * 40 + Math.cos(now * 0.1 + i) * 12;
+      const nr = 220 + i * 70;
+      const ng = ctx.createRadialGradient(nx, ny, 10, nx, ny, nr);
+      ng.addColorStop(0, nebColors[i]);
+      ng.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = ng;
+      ctx.beginPath(); ctx.ellipse(nx, ny, nr, nr * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    // deterministic twinkling stars (seeded by index so they don't jitter around)
+    for (let i = 0; i < 70; i++){
+      const sx = (i * 137.5) % width;
+      const sy = ((i * 79.3) % (GROUND_Y * 0.55));
+      const tw = 0.35 + 0.65 * Math.abs(Math.sin(now * 1.6 + i * 1.3));
+      ctx.fillStyle = `rgba(255,255,255,${0.5 * tw})`;
+      ctx.beginPath(); ctx.arc(sx, sy, (i % 5 === 0 ? 1.6 : 0.9) * tw + 0.3, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
 
     // 2. Center Solar Disk & Divine Sun Rays (Ra's Sun)
     ctx.save();
@@ -13730,6 +14633,37 @@
       }
     }
 
+    // 8.5 Volumetric god-rays fanning down from Ra's sun, plus slow golden dust motes
+    // drifting across the whole court — the atmospheric depth pass that lifts the domain
+    // to the same cinematic quality as Jordan's storm.
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 6; i++){
+      const spread = (i - 2.5) * 0.14 + Math.sin(now * 0.2 + i) * 0.02;
+      const rayAlpha = 0.05 + 0.04 * Math.abs(Math.sin(now * 0.6 + i));
+      ctx.save();
+      ctx.translate(cx, 75);
+      ctx.rotate(spread);
+      const rg = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+      rg.addColorStop(0, `rgba(254,240,138,${rayAlpha})`);
+      rg.addColorStop(1, 'rgba(254,240,138,0)');
+      ctx.fillStyle = rg;
+      ctx.beginPath();
+      ctx.moveTo(-16, 0); ctx.lineTo(16, 0);
+      ctx.lineTo(120, GROUND_Y); ctx.lineTo(-120, GROUND_Y);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+    // floating dust motes (seeded, gently rising & drifting)
+    for (let i = 0; i < 34; i++){
+      const bx = ((i * 191.7) + now * (10 + (i % 5) * 6)) % width;
+      const by = (GROUND_Y - ((i * 141.3 + now * (14 + (i % 4) * 8)) % (GROUND_Y * 0.9)));
+      const mAlpha = 0.10 + 0.14 * Math.abs(Math.sin(now * 1.1 + i));
+      ctx.fillStyle = i % 3 === 0 ? `rgba(34,211,238,${mAlpha})` : `rgba(254,240,138,${mAlpha})`;
+      ctx.beginPath(); ctx.arc(bx, by, (i % 4 === 0 ? 2.2 : 1.3), 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+
     // 9. Domain framing vignette — a deep amber/royal-purple edge darkening so the
     // whole court reads as an enclosed sanctum rather than an open background.
     ctx.save();
@@ -14140,7 +15074,29 @@
       const dId = domainPlayer.character ? domainPlayer.character.id : 'sherman';
       switch (dId) {
         case 'sherman': drawShermanMandateDomainFull(domainPlayer); break;
-        case 'amara': drawEgyptianCourtFull(domainPlayer); break;
+        case 'amara': {
+          const rev = domainPlayer.amaraDomainReveal;
+          if (rev !== undefined && rev > 0.001 && rev < 0.999) {
+            // The domain is revealed THROUGH a widening quantum tear ripped along the dust trail.
+            ctx.save();
+            ctx.beginPath();
+            amaraTearPath(ctx, W/2, rev);
+            ctx.clip();
+            drawEgyptianCourtFull(domainPlayer);
+            ctx.restore();
+            // glowing torn edges of the rip
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.beginPath(); amaraTearPath(ctx, W/2, rev);
+            ctx.strokeStyle = 'rgba(34,211,238,0.85)'; ctx.lineWidth = 5;
+            ctx.shadowColor = '#22d3ee'; ctx.shadowBlur = 22; ctx.stroke();
+            ctx.strokeStyle = 'rgba(254,240,138,0.9)'; ctx.lineWidth = 1.8; ctx.shadowBlur = 6; ctx.stroke();
+            ctx.restore();
+          } else {
+            drawEgyptianCourtFull(domainPlayer);
+          }
+          break;
+        }
         case 'benjamin':
           drawAngelicCourtSide(domainPlayer.side);
           drawBenjaminSmokeAndRainOpponentSide(domainPlayer.side === 'left' ? 'right' : 'left', 0.016);
@@ -14149,6 +15105,10 @@
         case 'jordan': {
           const jp = domainPlayer;
           const circR = jp.jordanCircleRadius || 0;
+          // Skip the whole domain draw entirely while the buildup is still in the SPLASH /
+          // CONSUME / FACE phases — those beats are supposed to show the untouched court (or
+          // the face-closeup overlay). The storm only reveals when EXPAND begins (circR > 0).
+          if (circR <= 0) break;
           // Storm pixelates + reveals through its own low-res buffer (drawTempestDomainFull).
           drawTempestDomainFull(jp);
           // While the front is still sweeping open, trace a crackling lightning rim along its edge.
@@ -14157,7 +15117,7 @@
             ctx.strokeStyle = 'rgba(200,224,255,0.7)';
             ctx.lineWidth = 3;
             ctx.lineJoin = 'miter';
-            ctx.shadowColor = '#5b9bff';
+            ctx.shadowColor = '#d4d4d8';
             ctx.shadowBlur = 16;
             ctx.beginPath();
             tempestFrontPath(ctx, jp, circR);
@@ -14197,6 +15157,17 @@
         drawSolarJudgmentSun(cleopatraPlayer);
       }
     }
+
+    // Amara Puppeteer — the opponent's half strobes at full intensity for the whole
+    // ultimate (while her Cleopatra form is up) so the real drop is a pure guess, and a
+    // decoy the opponent touches blinds their half harder for a second on top of that.
+    const amaraFlashP = (left && left.transform && left.transform.type === 'CLEOPATRA' && left.character && left.character.id === 'amara') ? left
+                      : (right && right.transform && right.transform.type === 'CLEOPATRA' && right.character && right.character.id === 'amara') ? right : null;
+    if (amaraFlashP) {
+      drawOpponentBlindingFlash(amaraFlashP.side === 'left' ? 'right' : 'left');
+    }
+    if (left  && (left.amaraBlindTimer||0)  > 0) drawOpponentBlindingFlash('left');
+    if (right && (right.amaraBlindTimer||0) > 0) drawOpponentBlindingFlash('right');
 
     const amenPlayer = (left && left.transform && left.transform.type === 'AMEN') ? left : ((right && right.transform && right.transform.type === 'AMEN') ? right : null);
     const amenOppSide = amenPlayer ? (amenPlayer.side === 'left' ? 'right' : 'left') : null;
@@ -14394,7 +15365,7 @@
 
   // ---- Signature ultimate colors (unique per character) ----
   const ULT_TRAIL_COLORS = {
-    lindan:'#ffd54a', cristiano:'#ff5a2a', diego:'#ff4444', jordan:'#5b9bff',
+    lindan:'#ffd54a', cristiano:'#ff5a2a', diego:'#ff4444', jordan:'#d4d4d8',
     maya:'#c084fc', amara:'#22d3ee', priya:'#ff2d6b', kenji:'#34d399',
     sofia:'#f472b6', elijah:'#f59e0b', mateo:'#fb923c', benjamin:'#cbd5e1',
     rodrigo:'#facc15', sherman:'#a78bfa', ninjja:'#6ef3ff'
@@ -14406,7 +15377,7 @@
       const airColors = {
         cristiano: '#ff5a2a', // Air: Bicycle Kick Vortex
         maya: '#d8b4fe',      // Air: purple-magenta / Sight Line
-        jordan: '#3b82f6',     // Air: cobalt-blue / Hammer Drop
+        jordan: '#e5e7eb',     // Air: near-white / Thunder Break Descent (void aesthetic)
         kenji: '#059669',      // Air: deep emerald / Hang Time
         amara: '#06b6d4',      // Air: neon cyan / Crosshairs
         sofia: '#ec4899',      // Air: hot pink / Ghost Step
@@ -14421,7 +15392,7 @@
       const groundColors = {
         cristiano: '#f97316', // Ground: Knuckleball Orange
         maya: '#a855f7',      // Ground: violet Blueprint
-        jordan: '#60a5fa',     // Ground: light sky blue Full Stop
+        jordan: '#d4d4d8',     // Ground: silver-white / Judgment of the Storm King (void aesthetic)
         kenji: '#10b981',      // Ground: bright mint green Sprint Return
         amara: '#22d3ee',      // Ground: cyan Puppeteer
         sofia: '#db2777',      // Ground: rose magenta Feint Royale
@@ -14449,20 +15420,22 @@
     if(!isFullPower) return;
 
     // 1. Spawn vibrant charging particles in the character's signature color
-    const spawnRate = p.ultCharging ? 4 : 2;
+    const spawnRate = p.ultCharging ? 3 : 1;
     for(let k = 0; k < spawnRate; k++){
       const ang = Math.random() * Math.PI * 2;
       const spd = Math.random() * 160 + 60;
       particles.push({
+        // Spawn from the torso/legs (below the head) and rise gently, so the additive charge
+        // sparks no longer pile up over the face and wash the hair/head to near-transparent.
         x: cx + (Math.random() - 0.5) * 44,
-        y: p.y + PLAYER_H * (0.15 + Math.random() * 0.75),
+        y: p.y + PLAYER_H * (0.45 + Math.random() * 0.5),
         vx: Math.cos(ang) * spd * 0.45,
-        vy: -Math.abs(Math.sin(ang) * spd) - 75,
+        vy: -Math.abs(Math.sin(ang) * spd) - 40,
         color: Math.random() > 0.25 ? ultCol : '#ffffff',
-        size: Math.random() * 5.5 + 2.5,
-        alpha: 1.0,
-        decay: Math.random() * 2.5 + 2.0,
-        gravity: -160
+        size: Math.random() * 4 + 1.6,
+        alpha: 0.85,
+        decay: Math.random() * 2.5 + 2.4,
+        gravity: -70
       });
     }
 
@@ -14588,60 +15561,179 @@
     let legFront = legPhase*0.6, legBack = -legPhase*0.6;
     let armBack = -0.5 - legPhase*0.4;
     let armFront = -0.3;
+    let elbowBendFront = 0;
+    let wristAngFront = 0;
+    let torsoXOffset = 0;
+    let torsoYOffset = 0;
+    let hairSway = 0;
+    let impactGlow = false;
 
     const isServer = (state === 'serve') && servingSide === p.side;
+    const isSwinging = p.swingTimer > 0;
+    const isCharging = p.charging;
+    const isAirborne = !p.onGround;
 
-    if (p.visualSwingDelay > 0) {
-      armFront = 1.2;
-    } else if(p.swingTimer > 0){
-      const t = 1 - p.swingTimer/SWING_DURATION;
-      const arc = Math.sin(Math.min(1, Math.max(0,t)) * Math.PI);
-      armFront = -0.3 + (-2.1 - (-0.3)) * arc * (p.swingPowerFrac || 1);
-    } else if(p.charging){
-      const frac = Math.min(1, (nowSec - p.chargeStart) / chargeTimeFor(p.character));
-      armFront = -0.3 + (1.2 - (-0.3)) * frac;
-    } else if(isServer){
-      armFront = -1.0;
-    }
-
-    if(ch.id === 'cristiano'){
-      if(p.swingTimer > 0){
+    // --- BADMINTON SWING & SERVE REDESIGN (PREPARATION -> CONTACT -> FOLLOW-THROUGH) ---
+    if (ch.id === 'cristiano' && (isSwinging || isCharging)) {
+      // Cristiano's custom football-style moves (headers & bicycle/foot kicks)
+      if (isSwinging) {
         const t = 1 - p.swingTimer/SWING_DURATION;
         const arc = Math.sin(Math.min(1, Math.max(0,t)) * Math.PI);
         const isSmash = (p.swingPowerFrac || 0) >= 0.5 || (!p.onGround && (p.swingPowerFrac || 0) >= 0.35);
-        if(isSmash){
-          // HEADBUTT / HEADER animation!
-          legFront = 0.3 - 0.6 * arc;
-          legBack = -0.3 + 0.5 * arc;
-          armFront = -1.2 + 1.6 * arc;
-          armBack = -1.0 + 1.4 * arc;
+        if (isSmash) {
+          legFront = 0.3 - 0.6 * arc; legBack = -0.3 + 0.5 * arc;
+          armFront = -1.2 + 1.6 * arc; armBack = -1.0 + 1.4 * arc;
         } else {
-          // FOOT KICK animation!
-          legFront = -0.4 + 2.2 * arc;
-          legBack = -0.5 - 0.3 * arc;
-          armFront = 0.5 - 0.8 * arc;
-          armBack = -0.5 + 0.8 * arc;
+          legFront = -0.4 + 2.2 * arc; legBack = -0.5 - 0.3 * arc;
+          armFront = 0.5 - 0.8 * arc; armBack = -0.5 + 0.8 * arc;
         }
-      } else if(p.charging){
+      } else if (isCharging) {
         const frac = Math.min(1, (nowSec - p.chargeStart) / chargeTimeFor(p.character));
-        if(frac >= 0.5){
-          // Charging smash: Headbutt prep (head & torso arched back)
-          legFront = -0.5 * frac;
-          legBack = 0.4 * frac;
-          armFront = -1.0 * frac;
-          armBack = -0.8 * frac;
+        if (frac >= 0.5) {
+          legFront = -0.5 * frac; legBack = 0.4 * frac;
+          armFront = -1.0 * frac; armBack = -0.8 * frac;
         } else {
-          // Charging hit: Foot kick prep (front leg cocked back)
-          legFront = -1.2 * frac;
-          legBack = 0.5 * frac;
-          armFront = 0.4 * frac;
-          armBack = -0.4 * frac;
+          legFront = -1.2 * frac; legBack = 0.5 * frac;
+          armFront = 0.4 * frac; armBack = -0.4 * frac;
         }
       }
-    }
-
-    if(!p.onGround){
-      legFront = -0.6; legBack = 0.35;
+    } else if (p.swingKind === 'serve' || (isServer && isSwinging)) {
+      // 1. SERVING SWING (PREPARATION -> ACCEL -> IMPACT -> FOLLOW-THROUGH)
+      const t = Math.min(1, Math.max(0, 1 - p.swingTimer / SWING_DURATION));
+      if (t < 0.40) {
+        const p1 = t / 0.40;
+        const p1Acc = p1 * p1;
+        armFront = 1.5 - (1.5 - (-1.2)) * p1Acc;
+        elbowBendFront = -0.6 * (1 - p1);
+        wristAngFront = -0.7 * (1 - p1Acc) + 0.3 * p1Acc;
+        torsoXOffset = 1 + 2 * p1Acc;
+        torsoYOffset = Math.round(1 - 1 * p1);
+        hairSway = -1.5 * p1;
+        armBack = -0.5 - 0.6 * p1;
+        legFront = 0.2 - 0.4 * p1;
+        legBack = -0.2 + 0.4 * p1;
+      } else {
+        const p2 = (t - 0.40) / 0.60;
+        const p2Ease = 1 - Math.pow(1 - p2, 3);
+        armFront = -1.2 - (-2.1 - (-1.2)) * p2Ease;
+        wristAngFront = 0.5 * (1 - p2Ease);
+        elbowBendFront = 0.5 * p2Ease;
+        torsoXOffset = 3 * (1 - p2Ease);
+        torsoYOffset = 0;
+        hairSway = -1.5 * (1 - p2Ease);
+        armBack = -1.1 + 0.6 * p2Ease;
+        if (t >= 0.38 && t <= 0.46) impactGlow = true;
+      }
+    } else if (isServer && !isSwinging) {
+      // SERVING PREPARATION (ON THE SERVE LINE BEFORE / DURING SERVE CHARGE)
+      if (isCharging) {
+        const frac = Math.min(1, (nowSec - p.chargeStart) / chargeTimeFor(p.character));
+        armFront = 1.3 + 0.4 * frac;
+        elbowBendFront = -0.5 - 0.4 * frac;
+        wristAngFront = -0.6 - 0.3 * frac;
+        torsoXOffset = -1 * frac;
+        torsoYOffset = Math.round(1 + 1 * frac);
+        legFront = 0.3; legBack = -0.3;
+        armBack = -0.6;
+      } else {
+        const pulse = Math.sin(nowSec * 4);
+        armFront = 1.2 + 0.05 * pulse;
+        elbowBendFront = -0.4;
+        wristAngFront = -0.5;
+        torsoYOffset = Math.round(0.3 * pulse);
+        legFront = 0.2; legBack = -0.2;
+        armBack = -0.5;
+      }
+    } else if (isAirborne) {
+      // 3. AIR HIT / OVERHEAD SMASH ANIMATION
+      if (isSwinging) {
+        const t = Math.min(1, Math.max(0, 1 - p.swingTimer / SWING_DURATION));
+        if (t < 0.36) {
+          const p1 = t / 0.36;
+          const p1Acc = p1 * p1 * p1;
+          armFront = -2.2 - (-2.2 - 0.2) * p1Acc;
+          elbowBendFront = -1.2 * (1 - p1);
+          wristAngFront = -0.8 * (1 - p1) + 0.8 * p1Acc;
+          torsoXOffset = -2 + 4 * p1Acc;
+          hairSway = -3;
+          armBack = 0.8 - 1.2 * p1Acc;
+          legFront = -0.8 + 0.6 * p1;
+          legBack = 0.6 - 0.6 * p1;
+        } else {
+          const p2 = (t - 0.36) / 0.64;
+          const p2Ease = 1 - Math.pow(1 - p2, 3);
+          armFront = 0.2 + (1.8 - 0.2) * p2Ease;
+          elbowBendFront = 0.3 * p2Ease;
+          wristAngFront = 0.8 * (1 - p2Ease);
+          torsoXOffset = 2 * (1 - p2Ease);
+          hairSway = -3 * (1 - p2Ease);
+          armBack = -0.4;
+          legFront = -0.2; legBack = 0.1;
+          if (t >= 0.32 && t <= 0.42) impactGlow = true;
+        }
+      } else if (isCharging) {
+        const frac = Math.min(1, (nowSec - p.chargeStart) / chargeTimeFor(p.character));
+        armFront = -1.8 - 0.6 * frac;
+        elbowBendFront = -0.7 - 0.5 * frac;
+        wristAngFront = -0.5 - 0.4 * frac;
+        torsoXOffset = -1 - 1.5 * frac;
+        torsoYOffset = -1;
+        hairSway = 1.5 * frac;
+        armBack = 0.8 * frac;
+        legFront = -0.8; legBack = 0.6;
+      } else {
+        legFront = -0.6; legBack = 0.35;
+        armFront = -0.5; armBack = -0.4;
+      }
+    } else {
+      // 2. GROUND HIT ANIMATION (REGULAR / DINK / CLEAR)
+      if (isSwinging) {
+        const t = Math.min(1, Math.max(0, 1 - p.swingTimer / SWING_DURATION));
+        const powerFrac = p.swingPowerFrac || 0.8;
+        if (t < 0.38) {
+          const p1 = t / 0.38;
+          const p1Acc = p1 * p1;
+          const startArm = 1.8;
+          const endArm = -1.4 * powerFrac;
+          armFront = startArm - (startArm - endArm) * p1Acc;
+          wristAngFront = -0.9 * (1 - p1Acc) + 0.4 * p1Acc;
+          elbowBendFront = -0.8 * (1 - p1);
+          torsoXOffset = -2 + 4 * p1Acc;
+          torsoYOffset = Math.round(1 - 1 * p1Acc);
+          hairSway = -2 * p1;
+          armBack = -0.4 - 0.6 * p1Acc;
+          legFront = -0.4 + 0.8 * p1Acc;
+          legBack = 0.5 - 0.8 * p1Acc;
+        } else {
+          const p2 = (t - 0.38) / 0.62;
+          const p2Ease = 1 - Math.pow(1 - p2, 3);
+          const targetArm = (p.swingKind === 'dink') ? -1.6 : -2.3;
+          armFront = -1.4 * powerFrac + (targetArm - (-1.4 * powerFrac)) * p2Ease;
+          wristAngFront = 0.6 * (1 - p2Ease);
+          elbowBendFront = 0.4 * p2Ease;
+          torsoXOffset = 2 * (1 - p2Ease);
+          torsoYOffset = 0;
+          hairSway = -2 * (1 - p2Ease);
+          armBack = -1.0 + 0.5 * p2Ease;
+          legFront = 0.4 * (1 - p2Ease);
+          legBack = -0.3 * (1 - p2Ease);
+          if (t >= 0.35 && t <= 0.43) impactGlow = true;
+        }
+      } else if (isCharging) {
+        const frac = Math.min(1, (nowSec - p.chargeStart) / chargeTimeFor(p.character));
+        armFront = -0.3 + (1.8 - (-0.3)) * frac;
+        elbowBendFront = -0.8 * frac;
+        wristAngFront = -0.7 * frac;
+        torsoXOffset = -1 - 1.5 * frac;
+        torsoYOffset = Math.round(1 + 1.5 * frac);
+        if (frac > 0.8) {
+          torsoXOffset += (Math.random() - 0.5) * 0.4;
+        }
+        hairSway = 1.0 * frac;
+        armBack = -0.4 + 0.6 * frac;
+        legFront = -0.4 * frac;
+        legBack = 0.5 * frac;
+      }
     }
 
     // AMEN: a held reverent prayer stance for the whole transform — unconditional, so it is
@@ -14680,28 +15772,23 @@
       armBack = -0.3;
     }
 
-    // Jordan Tempest cinematic: calm stance, then one hand slowly rises
+    // Jordan Tempest cinematic — arm choreography for each phase:
+    //   SPLASH/CONSUME/FACE: still. Palm cupped at chest height, holding the orb that's
+    //                        consuming him (arm forward, not raised).
+    //   EXPAND:              the hand rises all the way up to point at the sky as the
+    //                        domain scatters outward — driven by p.jordanArmRaise (0..1).
     if (p.jordanTempestActive) {
-      const mElapsed = 2.5 - Math.max(0, Math.min(2.5, p.jordanTempestTimer));
       legFront = 0;
       legBack = 0;
       if (p.jordanTempestIsAir) {
         legFront = -0.4;
         legBack = 0.2;
       }
-      if (mElapsed < 0.5) {
-        armFront = -0.3;
-      } else if (mElapsed < 1.5) {
-        const t = Math.max(0, Math.min(1, (mElapsed - 0.5) / 1.0));
-        const ease = t * t * (3 - 2 * t);
-        armFront = -0.3 + (1.6 - (-0.3)) * ease;
-      } else if (mElapsed < 2.0) {
-        armFront = 1.6;
-      } else {
-        const t = Math.max(0, Math.min(1, (mElapsed - 2.0) / 0.5));
-        const ease = t * t * (3 - 2 * t);
-        armFront = 1.6 + (0.3 - 1.6) * ease;
-      }
+      const raise = p.jordanArmRaise || 0;
+      // -0.2 = forearm cupped in front (holding orb); -2.4 = pointing straight up.
+      const armHold = -0.2;
+      const armSky  = -2.4;
+      armFront = armHold + (armSky - armHold) * raise;
       armBack = -0.3;
     }
 
@@ -14990,24 +16077,68 @@
       ctx.shadowBlur = 25;
       drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), ch, {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, expr:'smash'}, facing);
       ctx.restore();
-    } else if (ch.id === 'jordan' && ((p.jordanSilhouette || 0) > 0 || (p.jordanEyeGlow || 0) > 0) && activeDomain && activeDomain.charId === 'jordan') {
+    } else if (ch.id === 'jordan' && ((p.jordanSilhouette || 0) > 0 || (p.jordanEyeGlow || 0) > 0) && (p.jordanDomainLiveActive || (activeDomain && activeDomain.charId === 'jordan'))) {
       // Jordan transformation — eyes glow first (pixel-aligned, see buildPixFigure), then the
       // body progressively fades from normal color to a pure black silhouette.
       const sil = Math.min(1, p.jordanSilhouette || 0);
       const eyeGlow = Math.min(1, p.jordanEyeGlow || 0);
       const angData = {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, expr:pixExpr, onGround:p.onGround, eyeGlow:eyeGlow};
-      if (sil < 1) {
+      if (p.jordanTempestActive && sil > 0 && sil < 1) {
+        // CONSUME beat: Jordan is consumed by darkness rising from bottom (feet) to top (head)
         ctx.save();
-        ctx.globalAlpha = 1 - sil;
         drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), ch, angData, facing);
         ctx.restore();
-      }
-      if (sil > 0) {
+
         const dk = '#080808';
         const silCh = {id:ch.id, skin:dk, hair:dk, hairStyle:ch.hairStyle, shirt:dk, shirt2:dk, shorts:dk, shoe:dk, demeanor:ch.demeanor, pixSilhouette:true};
+        const feetY = groundY + 10;
+        const totalH = PLAYER_H * heightVisualScale(ch) + 25;
+        const consumeH = totalH * sil;
+        const clipY = feetY - consumeH;
+
         ctx.save();
-        ctx.globalAlpha = sil;
+        ctx.beginPath();
+        ctx.rect(cx - 60, clipY, 120, consumeH + 15);
+        ctx.clip();
         drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), silCh, angData, facing);
+        ctx.restore();
+      } else {
+        if (sil < 1) {
+          ctx.save();
+          ctx.globalAlpha = 1 - sil;
+          drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), ch, angData, facing);
+          ctx.restore();
+        }
+        if (sil > 0) {
+          const dk = '#080808';
+          const silCh = {id:ch.id, skin:dk, hair:dk, hairStyle:ch.hairStyle, shirt:dk, shirt2:dk, shorts:dk, shoe:dk, demeanor:ch.demeanor, pixSilhouette:true};
+          ctx.save();
+          ctx.globalAlpha = sil;
+          drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), silCh, angData, facing);
+          ctx.restore();
+        }
+      }
+
+      // Orb-of-void in Jordan's raised palm — CONSUME beat only.
+      const orb = p.jordanConsumeOrb || 0;
+      if (orb > 0 && orb < 1.001) {
+        const orbR = 4 + orb * 10;
+        // Hand offset: -0.2 rad from vertical → slightly in front of chest, at ~head height.
+        const orbX = cx + facing * 6 + Math.sin(-0.2) * facing * 8;
+        const orbY = p.y + PLAYER_H * 0.30;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        // Outer halo — white/cyan void energy
+        const oh = ctx.createRadialGradient(orbX, orbY, 1, orbX, orbY, orbR * 2.6);
+        oh.addColorStop(0,   'rgba(255,255,255,' + (0.85 * orb) + ')');
+        oh.addColorStop(0.4, 'rgba(6,182,212,' + (0.4 * orb) + ')');
+        oh.addColorStop(1,   'rgba(180,190,205,0)');
+        ctx.fillStyle = oh;
+        ctx.fillRect(orbX - orbR * 2.6, orbY - orbR * 2.6, orbR * 5.2, orbR * 5.2);
+        // Bright core
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(orbX, orbY, orbR * 0.5, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
       }
 
@@ -15040,14 +16171,14 @@
         ctx.restore();
       }
     } else {
-      drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), ch, {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, expr:pixExpr, onGround:p.onGround, furry:pixFurry}, facing); // Part 4: taller/shorter silhouette
+      drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), ch, {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, elbowBendFront:elbowBendFront, wristAngFront:wristAngFront, torsoXOffset:torsoXOffset, torsoYOffset:torsoYOffset, hairSway:hairSway, impactGlow:impactGlow, expr:pixExpr, onGround:p.onGround, furry:pixFurry}, facing);
     }
     drawMomentumCrackle(p, cx); // electric crackle hugging the silhouette, over the body
     drawTransformIndicator(p, cx); // active transformation ultimate ring + timer (Part 6)
 
     drawAttackAngleIndicator(p);
 
-    if(p.charging){
+    if(showHitMeter && p.charging){
       const rawElapsed = nowSec - p.chargeStart;
       const chargeTime = chargeTimeFor(p.character);
       const frac = Math.min(1, rawElapsed / chargeTime);
@@ -15057,57 +16188,68 @@
 
       const gaugeW = PLAYER_W + 16;
       const gaugeX = p.x - 8;
-      const gaugeY = p.y - 18;
+      const pulseY = Math.sin(nowSec * 16) * (ultPrimed ? 2.5 : 1.2);
+      const gaugeY = p.y - 18 + pulseY;
       
       ctx.save();
       
-      // Shadow / background pill
-      ctx.fillStyle = ultPrimed ? 'rgba(20, 10, 30, 0.9)' : 'rgba(10, 15, 30, 0.75)';
-      ctx.strokeStyle = ultPrimed ? pCol : 'rgba(255, 255, 255, 0.15)';
-      ctx.lineWidth = ultPrimed ? 1.5 : 1;
+      // Shadow / background pill with animated border glow
+      ctx.fillStyle = ultPrimed ? 'rgba(20, 10, 30, 0.92)' : 'rgba(10, 15, 30, 0.8)';
+      ctx.strokeStyle = ultPrimed ? pCol : 'rgba(255, 255, 255, 0.25)';
+      ctx.lineWidth = ultPrimed ? 2 : 1.2;
+      ctx.shadowColor = ultPrimed ? pCol : 'rgba(59, 130, 246, 0.3)';
+      ctx.shadowBlur = ultPrimed ? 12 : 4;
       ctx.beginPath();
       ctx.roundRect(gaugeX, gaugeY, gaugeW, 7, 3.5);
       ctx.fill();
       ctx.stroke();
       
-      // Active progress gradient bar
+      // Active progress gradient bar with shimmering light sweep
       const fillW = gaugeW * frac;
       if (fillW > 0) {
         const fillGrad = ctx.createLinearGradient(gaugeX, 0, gaugeX + fillW, 0);
         const baseColor = ultPrimed ? pCol : (p.side === 'left' ? '#3b82f6' : '#ec4899');
         fillGrad.addColorStop(0, baseColor);
-        fillGrad.addColorStop(1, ultPrimed ? '#ffffff' : '#ffce54');
+        fillGrad.addColorStop(0.5, ultPrimed ? '#ffffff' : '#93c5fd');
+        fillGrad.addColorStop(1, ultPrimed ? '#67e8f9' : '#ffce54');
         
         ctx.fillStyle = fillGrad;
         if (ultPrimed) {
           ctx.shadowColor = pCol;
-          ctx.shadowBlur = 14;
+          ctx.shadowBlur = 18;
         } else if (frac >= 0.85) {
           ctx.shadowColor = '#ffce54';
-          ctx.shadowBlur = 6;
+          ctx.shadowBlur = 8;
         }
         
         ctx.beginPath();
         ctx.roundRect(gaugeX, gaugeY, fillW, 7, 3.5);
         ctx.fill();
+
+        // Shimmering animated light sweep streak
+        const shimmerX = gaugeX + ((nowSec * 75) % (gaugeW + 30)) - 15;
+        if (shimmerX >= gaugeX && shimmerX <= gaugeX + fillW) {
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
+          ctx.fillRect(shimmerX, gaugeY + 1, 3, 5);
+        }
       }
       
       ctx.restore();
       
-      // Text indicator
+      // Text indicator with animated bounce
       ctx.save();
       if (ultPrimed) {
         ctx.fillStyle = pCol;
         ctx.font = '800 9px "Space Grotesk", sans-serif';
         ctx.textAlign = 'center';
         ctx.shadowColor = pCol;
-        ctx.shadowBlur = 8;
-        ctx.fillText('⚡ ULTIMATE PRIMED ⚡', gaugeX + gaugeW/2, gaugeY - 5);
+        ctx.shadowBlur = 10;
+        ctx.fillText('⚡ ULTIMATE PRIMED ⚡', gaugeX + gaugeW/2, gaugeY - 6 + pulseY * 0.5);
       } else {
         ctx.fillStyle = '#f8fafc';
         ctx.font = '700 9px "Space Grotesk", sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(Math.round(frac*100) + '%', gaugeX + gaugeW/2, gaugeY - 4);
+        ctx.fillText(Math.round(frac*100) + '%', gaugeX + gaugeW/2, gaugeY - 5);
       }
       ctx.restore();
     }
@@ -15294,6 +16436,7 @@
   }
   function drawShuttle(){
     if (shuttle.isShermanRain) return;
+    if (shuttle.amaraFrozen) return; // hidden while Amara holds it up top (Puppeteer)
     // Hidden in the clouds — drawShermanSkyDragon draws the dragon carrying it instead, and
     // it reappears (with the glow below) once it's back down at COURT_TOP.
     if (shuttle.isShermanDragonSmash && shuttle.y < COURT_TOP) return;
@@ -15598,7 +16741,7 @@
       ctx.shadowColor = 'rgba(0,0,0,0.9)';
       ctx.shadowBlur = 4;
       const labelText = (p.transform && p.transform.label) ? p.transform.label.toUpperCase() : 'ULTIMATE BUFF';
-      ctx.fillText(`⚡ ${labelText} (${remainSec.toFixed(1)}s)`, dir < 0 ? anchorX : anchorX, promptY);
+      ctx.fillText(`⚡ ${labelText}`, dir < 0 ? anchorX : anchorX, promptY);
     } else if (isFull) {
       const pulse = 0.5 + 0.5*Math.sin(nowSec*6);
       ctx.font = '800 11px "Space Grotesk", sans-serif';
@@ -15749,6 +16892,608 @@
   //   0.15–1.00  radial speed-lines + a diagonal color band sweep behind the pose
   //   0.42–1.00  art-name text slams down with expanding shockwave rings
   //   0.85–1.00  veil + pose wipe away, handing back to gameplay
+  // Jordan — Tempest King splash art. Pure black void silhouette with two glowing amber eyes
+  // and a raised palm-out hand (reference: villain "storm king" cover art). Rendered entirely
+  // as a full-screen shape rather than a scaled sprite so the pose can be dramatic and the
+  // silhouette can bleed into the surrounding storm fog without a bounding box.
+  // Jordan splash art — bold iconic void silhouette against a hazy backlit sky (mirrors the
+  // reference cover art). Built from a small set of ellipses+rounded shapes filled pure black
+  // so they union cleanly without seams, rather than a single fragile bezier outline.
+  function drawJordanUltBurst(b, t, env, clamp01, easeOut){
+    // Timeline (short — the splash is only JORDAN_TEMPEST_SPLASH long):
+    //  0.00–0.10  impact flash
+    //  0.05–0.35  silhouette slams up from below into place
+    //  0.15–1.00  amber eyes ignite
+    //  0.30–1.00  name slam
+    ctx.save();
+
+    const nowS = performance.now() * 0.001;
+
+    // 0. Opening white impact flash
+    if (t < 0.10) {
+      ctx.globalAlpha = (1 - t / 0.10) * 0.95;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // 1. Bright hazy sky backdrop — mirrors the reference cover art (light behind, silhouette
+    //    in front). Grey-blue radial with a warm yellow bleed at the top for the storm sun.
+    ctx.globalAlpha = env;
+    const sky = ctx.createRadialGradient(W * 0.5, H * 0.35, 40, W * 0.5, H * 0.6, Math.max(W, H) * 0.9);
+    sky.addColorStop(0, '#e6e9ee');
+    sky.addColorStop(0.35, '#c9ced6');
+    sky.addColorStop(0.7, '#8f96a2');
+    sky.addColorStop(1, '#4b5260');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    // Film-grain haze — subtle noise so the sky doesn't look like a flat gradient
+    ctx.save();
+    ctx.globalAlpha = env * 0.10;
+    ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < 80; i++) {
+      const gx = (i * 173 + nowS * 30) % W;
+      const gy = ((i * 89) % H) + Math.sin(nowS + i) * 8;
+      ctx.fillRect(gx, gy, 2, 2);
+    }
+    ctx.restore();
+
+    // Drifting cloud bands (very soft, blend-lighten so they wash the sky)
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = env * 0.25;
+    for (let i = 0; i < 4; i++) {
+      const my = H * (0.15 + 0.18 * i);
+      const mx = ((i * 340 + nowS * 40) % (W + 400)) - 200;
+      const mGrad = ctx.createLinearGradient(mx, my, mx + 720, my);
+      mGrad.addColorStop(0, 'rgba(255,255,255,0)');
+      mGrad.addColorStop(0.5, 'rgba(255,255,255,0.5)');
+      mGrad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = mGrad;
+      ctx.fillRect(mx, my - 24, 720, 48);
+    }
+    ctx.restore();
+
+    // 2. THE VOID PORTRAIT — hand-authored art asset (assets/characters/jordan-ultimate-splash.png)
+    // if it's finished loading; falls back to a small procedural silhouette otherwise so
+    // nothing ever breaks on a slow/failed load. Slam-in: rises up from the bottom quickly.
+    const slamProg = easeOut(clamp01((t - 0.05) / 0.30));
+    const posOffY = (1 - slamProg) * H * 0.24;
+    const asset = ART_ASSETS.jordanSplash;
+
+    let eyeLX, eyeLY, eyeRX, eyeRY, haloCX, haloCY, haloR;
+
+    if (asset && asset.ready) {
+      // Fit the source image to the canvas height (their aspect ratios are nearly identical),
+      // centered horizontally, bottom-anchored, with a touch of overscan for drama.
+      const drawH = H * 1.10;
+      const drawW = asset.w * (drawH / asset.h);
+      const dx = (W - drawW) / 2;
+      const dy = (H - drawH) + posOffY;
+
+      // Soft outer halo behind the portrait, centered on the eye line
+      haloCX = dx + (JORDAN_SPLASH_EYE_L.fx + JORDAN_SPLASH_EYE_R.fx) / 2 * drawW;
+      haloCY = dy + (JORDAN_SPLASH_EYE_L.fy + JORDAN_SPLASH_EYE_R.fy) / 2 * drawH;
+      haloR = drawH * 0.42;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = env * 0.32;
+      const haloG = ctx.createRadialGradient(haloCX, haloCY, 20, haloCX, haloCY, haloR);
+      haloG.addColorStop(0, 'rgba(210,245,255,0.5)');
+      haloG.addColorStop(0.6, 'rgba(160,210,230,0.14)');
+      haloG.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = haloG;
+      ctx.fillRect(haloCX - haloR, haloCY - haloR, haloR * 2, haloR * 2);
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalAlpha = env;
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(asset.blackImg || asset.img, dx, dy, drawW, drawH);
+      ctx.restore();
+
+      eyeLX = dx + JORDAN_SPLASH_EYE_L.fx * drawW; eyeLY = dy + JORDAN_SPLASH_EYE_L.fy * drawH;
+      eyeRX = dx + JORDAN_SPLASH_EYE_R.fx * drawW; eyeRY = dy + JORDAN_SPLASH_EYE_R.fy * drawH;
+    } else {
+      // ---- Fallback: minimal procedural silhouette (asset not loaded yet) ----
+      const U = Math.min(W, H) / 22;
+      const sx = W * 0.5;
+      const sy = H * 1.02 + posOffY;
+      ctx.save();
+      ctx.globalAlpha = env;
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.moveTo(sx - 4.2 * U, sy);
+      ctx.lineTo(sx - 5.6 * U, sy - 4.5 * U);
+      ctx.quadraticCurveTo(sx - 6.6 * U, sy - 6.2 * U, sx - 4.8 * U, sy - 6.5 * U);
+      ctx.lineTo(sx + 5.0 * U, sy - 6.5 * U);
+      ctx.quadraticCurveTo(sx + 6.6 * U, sy - 6.2 * U, sx + 5.4 * U, sy - 4.5 * U);
+      ctx.lineTo(sx + 4.2 * U, sy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(sx, sy - 8.9 * U, 2.4 * U, 2.5 * U, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      eyeLX = sx - 0.9 * U; eyeLY = sy - 9.1 * U;
+      eyeRX = sx + 0.9 * U; eyeRY = sy - 9.1 * U;
+    }
+
+    // 3. Name slam — kicks in early (~10% through the splash) since splash is fast
+    if (t > 0.10) {
+      const nameT = (t - 0.10) / 0.90;
+      const slam = easeOut(nameT / 0.3);
+      const nameScale = 1 + (1 - clamp01(nameT / 0.22)) * 0.6;
+      const nameX = W * 0.5;
+      const nameY = H * 0.22;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (let r = 0; r < 2; r++) {
+        const rp = clamp01((nameT - r * 0.12) / 0.5);
+        if (rp <= 0 || rp >= 1) continue;
+        ctx.globalAlpha = (1 - rp) * 0.5 * env;
+        ctx.strokeStyle = '#37d6ff';
+        ctx.lineWidth = 5 * (1 - rp);
+        ctx.beginPath();
+        ctx.arc(nameX, nameY + 20, 30 + rp * 420, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalAlpha = env * slam;
+      ctx.translate(nameX, nameY);
+      ctx.scale(nameScale, nameScale);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      // "JORDAN" (small, above)
+      ctx.font = '900 30px "Space Grotesk", sans-serif';
+      ctx.lineWidth = 6; ctx.strokeStyle = '#04050a';
+      ctx.strokeText(b.name, 0, -30);
+      ctx.fillStyle = '#eafeff';
+      ctx.shadowColor = '#37d6ff'; ctx.shadowBlur = 14;
+      ctx.fillText(b.name, 0, -30);
+      // Art title (big ice-cyan slam)
+      ctx.font = '900 46px "Space Grotesk", sans-serif';
+      ctx.lineWidth = 8; ctx.strokeStyle = '#04050a';
+      ctx.strokeText(b.artName, 0, 14);
+      const iceGrad = ctx.createLinearGradient(0, -10, 0, 40);
+      iceGrad.addColorStop(0, '#eafeff');
+      iceGrad.addColorStop(0.5, '#37d6ff');
+      iceGrad.addColorStop(1, '#0e6f96');
+      ctx.fillStyle = iceGrad;
+      ctx.shadowColor = '#37d6ff'; ctx.shadowBlur = 18;
+      ctx.fillText(b.artName, 0, 14);
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  // Full-screen close-up of Jordan's void face — 100% handcrafted 16-bit pixel art sequence.
+  // Drawn onto the low-res pixel canvas buffer (domPixelCtx) and upscaled with imageSmoothingEnabled=false
+  // so every primitive lands on the game's retro pixel grid.
+  function drawJordanFaceCloseup(){
+    const jp = (left && left.jordanTempestActive && (left.jordanFaceCloseup||0) > 0.02) ? left
+             : (right && right.jordanTempestActive && (right.jordanFaceCloseup||0) > 0.02) ? right : null;
+    if(!jp) return;
+
+    const a = jp.jordanFaceCloseup;
+    const uFace = jp.jordanFaceProgress || 0; // 0.0 to 1.0 across the 1s FACE beat
+    const facingLeft = (jp.side === 'left');
+    const nowS = performance.now() * 0.001;
+
+    // Grab low-res pixel buffer context (same grid used for 16-bit court & tempest domain)
+    const g = domPixelCtx();
+    const bw = _domCanvas.width;
+    const bh = _domCanvas.height;
+
+    g.save();
+    g.setTransform(1, 0, 0, 1, 0, 0); // 1:1 mapping on pixel buffer (0..bw, 0..bh) so animation fills full screen
+    g.globalAlpha = a;
+
+    // ---------------------------------------------------------------------------
+    // 1. DYNAMIC BACKGROUND: Rendered from Active Court Map Palette & Decor
+    // ---------------------------------------------------------------------------
+    const curBg = (typeof BACKGROUNDS !== 'undefined' && typeof selectedBackgroundId !== 'undefined')
+      ? (BACKGROUNDS.find(function(b){ return b.id === selectedBackgroundId; }) || BACKGROUNDS[0])
+      : BACKGROUNDS[0];
+    const groundCol = curBg.ground || '#127a52';
+    const skyCol = (curBg.sky && curBg.sky[0]) || '#1c4d3a';
+
+    // Posterized background gradient bands shaded from active court map colors
+    const bg1 = shade(skyCol, -0.85);
+    const bg2 = shade(groundCol, -0.78);
+    const bg3 = shade(groundCol, -0.86);
+    const skyBands = [bg1, bg2, bg3];
+    const bandH = Math.ceil(bh / skyBands.length);
+    for (let i = 0; i < skyBands.length; i++) {
+      g.fillStyle = skyBands[i];
+      g.fillRect(0, i * bandH, bw, bandH + 1);
+    }
+
+    // Court-specific dynamic backdrop architecture
+    if (curBg.id === 'classic') {
+      // Classic Gym wooden wall panels & trim
+      g.fillStyle = 'rgba(255, 255, 255, 0.04)';
+      for (let x = 0; x < bw; x += 45) {
+        g.fillRect(x, 0, 1, bh);
+      }
+      g.fillStyle = '#1e382b';
+      g.fillRect(0, bh - 38, bw, 38);
+      g.fillStyle = curBg.line || '#ffe3a3';
+      g.fillRect(0, bh - 42, bw, 4);
+    } else if (curBg.id === 'sunset') {
+      // Sunset Park glowing sun disc & park skyline silhouettes
+      g.fillStyle = '#ffaa44';
+      g.fillRect(Math.floor(bw * 0.72), Math.floor(bh * 0.18), 34, 34);
+      g.fillStyle = '#2b113a';
+      g.fillRect(0, bh - 55, bw, 55);
+      for (let i = 0; i < bw; i += 28) {
+        g.fillRect(i, bh - 75 - (i % 35), 18, 35);
+      }
+    } else if (curBg.id === 'arena') {
+      // Indoor Arena tiered stadium lights & bleachers
+      g.fillStyle = 'rgba(120, 160, 255, 0.14)';
+      g.fillRect(0, 0, bw, bh * 0.45);
+      g.fillStyle = '#101528';
+      g.fillRect(0, bh - 48, bw, 48);
+      g.fillStyle = '#facc15';
+      for (let x = 35; x < bw; x += 75) {
+        g.fillRect(x, 12, 10, 4);
+      }
+    } else {
+      // Rooftop / Default skyline silhouette
+      g.fillStyle = '#0f172a';
+      g.fillRect(0, bh - 45, bw, 45);
+      for (let x = 12; x < bw; x += 32) {
+        g.fillRect(x, bh - 75 - ((x * 19) % 45), 20, 55);
+      }
+    }
+
+    // Drifting pixel smoke/fog bands matching active court color palette
+    const fogColor1 = shade(groundCol, -0.55);
+    const fogColor2 = shade(skyCol, -0.50);
+    const fogColors = [fogColor1, fogColor2, fogColor1];
+    for (let k = 0; k < 3; k++) {
+      const fy = Math.floor(bh * (0.18 + k * 0.28));
+      const fx = Math.floor((nowS * (15 + k * 8) + k * 90) % (bw + 100)) - 50;
+      g.fillStyle = fogColors[k];
+      g.fillRect(fx, fy, 120, 8);
+      g.fillRect(fx + 10, fy - 2, 90, 4);
+      g.fillRect(fx + 25, fy + 8, 70, 3);
+    }
+
+    // ---------------------------------------------------------------------------
+    // 2. PIXEL PARTICLES: Floating Ash, Static Sparks, Dust Fragments & Rain
+    // ---------------------------------------------------------------------------
+    // A) White Ash Particles (1x1 and 2x1 pixel blocks floating slowly upward)
+    g.fillStyle = 'rgba(203, 213, 225, 0.75)';
+    for (let i = 0; i < 28; i++) {
+      const seed = i * 17.31 + 5.1;
+      const px = Math.floor((Math.sin(seed) * 0.5 + 0.5) * bw + Math.sin(nowS * 1.5 + i) * 6);
+      const py = Math.floor((((Math.cos(seed) * 0.5 + 0.5) * bh - nowS * 12 - i * 4) % bh + bh) % bh);
+      const pSize = (i % 3 === 0) ? 2 : 1;
+      g.fillRect(px, py, pSize, 1);
+    }
+
+    // B) Fine Rain Dashes (1x3 pixel vertical dashes falling downwards)
+    g.fillStyle = 'rgba(71, 85, 105, 0.45)';
+    for (let i = 0; i < 22; i++) {
+      const seed = i * 29.17 + 1.2;
+      const rx = Math.floor((Math.sin(seed * 2) * 0.5 + 0.5) * bw);
+      const ry = Math.floor((((Math.cos(seed * 2) * 0.5 + 0.5) * bh + nowS * 75) % bh + bh) % bh);
+      g.fillRect(rx, ry, 1, 3);
+    }
+
+    // C) Floating Dust / Dark Fragments (2x2 pixel blocks drifting diagonally)
+    g.fillStyle = 'rgba(30, 41, 59, 0.85)';
+    for (let i = 0; i < 18; i++) {
+      const seed = i * 43.11 + 9.8;
+      const dx = Math.floor((((Math.sin(seed) * 0.5 + 0.5) * bw - nowS * 8) % bw + bw) % bw);
+      const dy = Math.floor((((Math.cos(seed) * 0.5 + 0.5) * bh - nowS * 6) % bh + bh) % bh);
+      g.fillRect(dx, dy, 2, 2);
+    }
+
+    // D) Static Electricity Sparks (1x1 pixel cyan/white points that flicker randomly)
+    for (let i = 0; i < 14; i++) {
+      const sparkPhase = Math.sin(nowS * 35 + i * 11.2);
+      if (sparkPhase > 0.65) {
+        const seed = i * 13.73 + 3.9;
+        const sx = Math.floor((Math.sin(seed * 3) * 0.4 + 0.5) * bw);
+        const sy = Math.floor((Math.cos(seed * 3) * 0.4 + 0.5) * bh);
+        g.fillStyle = (i % 2 === 0) ? '#ffffff' : '#06b6d4';
+        g.fillRect(sx, sy, 1, 1);
+      }
+    }
+
+    // ---------------------------------------------------------------------------
+    // 3. CAMERA MOTION, IMPACT FRAME & SHAKE
+    // ---------------------------------------------------------------------------
+    // Lightning impact frame flash at uFace ~ 0.36..0.40
+    const isImpactFrame = (uFace >= 0.36 && uFace <= 0.40);
+
+    // Subtle handheld pressure vibration / jitter
+    let shakeX = 0, shakeY = 0;
+    if (isImpactFrame || (uFace > 0.40 && uFace < 0.65)) {
+      shakeX = Math.floor((Math.random() - 0.5) * 3);
+      shakeY = Math.floor((Math.random() - 0.5) * 3);
+    }
+
+    // Head elevation: lowered at uFace < 0.36, raised at uFace >= 0.36
+    const headOffsetY = (uFace < 0.36) ? 3 : 0;
+
+    // CENTERED FULL-SCREEN PORTRAIT ANCHOR
+    const cx = Math.floor(bw * 0.5) + shakeX;
+    const cy = Math.floor(bh * 0.48) + shakeY + headOffsetY;
+
+    // ---------------------------------------------------------------------------
+    // 4. HANDCRAFTED PIXEL-ART SILHOUETTE OF JORDAN (FULL-SCREEN)
+    // ---------------------------------------------------------------------------
+    const colBase = '#020306';        // pure dark silhouette fill
+    const colInnerShadow = '#080d18'; // deep shadow detail / hair layering
+    const colRimNormal = '#1e293b';   // standard dark slate rim outline
+    const colRimHighlight = isImpactFrame ? '#ffffff' : (uFace >= 0.40 ? '#06b6d4' : colRimNormal);
+
+    // Draw Broad Shoulders & Chest spanning full screen bottom
+    g.fillStyle = colBase;
+    g.fillRect(0, cy + 28, bw, bh - (cy + 28));
+    g.fillRect(cx - 95, cy + 38, 190, bh - (cy + 38));
+
+    // Jacket / Collar stepping
+    g.fillRect(cx - 36, cy + 22, 72, 14);
+    g.fillRect(cx - 22, cy + 16, 44, 10); // neck base
+
+    // Neck
+    g.fillRect(cx - 14, cy + 8, 28, 12);
+
+    // Head / Face Contour (angular jawline & chin in pixel steps)
+    g.fillRect(cx - 28, cy - 26, 56, 38); // head core block
+    g.fillRect(cx - 24, cy + 12, 48, 5);  // jaw step 1
+    g.fillRect(cx - 20, cy + 17, 40, 5);  // jaw step 2
+    g.fillRect(cx - 14, cy + 22, 28, 5);  // jaw step 3
+    g.fillRect(cx - 7,  cy + 27, 14, 4);  // chin
+
+    // Hair Spikes (Handcrafted pixel clusters for Jordan's spiked anime hair)
+    g.fillRect(cx - 32, cy - 40, 64, 20);
+    // Spike 1 (Top Left)
+    g.fillRect(cx - 30, cy - 48, 12, 10);
+    g.fillRect(cx - 28, cy - 56, 10, 10);
+    g.fillRect(cx - 26, cy - 64, 8, 10);
+    g.fillRect(cx - 24, cy - 70, 6, 8);
+    // Spike 2 (Top Center-Left)
+    g.fillRect(cx - 16, cy - 52, 14, 14);
+    g.fillRect(cx - 14, cy - 62, 12, 12);
+    g.fillRect(cx - 12, cy - 72, 10, 12);
+    g.fillRect(cx - 10, cy - 80, 6, 10);
+    // Spike 3 (Top Center-Right)
+    g.fillRect(cx + 2,  cy - 54, 14, 14);
+    g.fillRect(cx + 4,  cy - 64, 12, 12);
+    g.fillRect(cx + 6,  cy - 74, 10, 12);
+    g.fillRect(cx + 8,  cy - 82, 6, 10);
+    // Spike 4 (Top Right)
+    g.fillRect(cx + 18, cy - 50, 12, 12);
+    g.fillRect(cx + 20, cy - 58, 10, 10);
+    g.fillRect(cx + 22, cy - 66, 8, 10);
+    // Side Bangs
+    g.fillRect(cx - 34, cy - 30, 8, 22);
+    g.fillRect(cx + 26, cy - 30, 8, 22);
+
+    // Inner Hair Shadow Depth
+    g.fillStyle = colInnerShadow;
+    g.fillRect(cx - 20, cy - 36, 40, 14);
+    g.fillRect(cx - 12, cy - 54, 10, 18);
+    g.fillRect(cx + 4,  cy - 58, 10, 20);
+
+    // ---------------------------------------------------------------------------
+    // 5. OUTSTRETCHED FOREGROUND HAND (Palm facing forward / toward camera, matching reference art)
+    // ---------------------------------------------------------------------------
+    // Arm extending from lower left towards center foreground
+    g.fillStyle = colBase;
+    g.fillRect(0, cy + 15, cx - 12, 35); // forearm base
+    g.fillRect(cx - 38, cy - 2, 32, 28); // palm / heel of hand facing viewer
+
+    // Splayed fingers pointing outwards/upwards (Thumb, Index, Middle, Ring, Pinky)
+    // Thumb (left)
+    g.fillRect(cx - 48, cy + 6, 12, 6);
+    g.fillRect(cx - 52, cy + 2, 6, 6);
+    // Index finger (pointing up-left)
+    g.fillRect(cx - 44, cy - 14, 8, 16);
+    g.fillRect(cx - 46, cy - 22, 6, 10);
+    // Middle finger (pointing straight up)
+    g.fillRect(cx - 34, cy - 22, 8, 22);
+    g.fillRect(cx - 35, cy - 30, 6, 10);
+    // Ring finger (pointing up-right)
+    g.fillRect(cx - 24, cy - 20, 8, 20);
+    g.fillRect(cx - 25, cy - 28, 6, 10);
+    // Pinky finger (pointing right)
+    g.fillRect(cx - 14, cy - 12, 8, 16);
+    g.fillRect(cx - 14, cy - 18, 5, 8);
+
+    // Palm energy glow & inner shadows
+    g.fillStyle = colInnerShadow;
+    g.fillRect(cx - 34, cy + 4, 24, 16);
+
+    // Glowing Void Energy Orb forming right on the outstretched palm center (uFace >= 0.35)
+    if (uFace >= 0.35) {
+      const orbScale = Math.min(1, (uFace - 0.35) / 0.3);
+      const orbR = Math.round(12 * orbScale);
+      const orbX = cx - 28, orbY = cy - 2;
+      g.fillStyle = 'rgba(6, 182, 212, 0.65)';
+      g.fillRect(orbX - orbR, orbY - orbR, orbR * 2, orbR * 2);
+      g.fillStyle = '#ffffff';
+      g.fillRect(orbX - 2, orbY - 2, 4, 4);
+    }
+
+    // Rim Highlight Outlines on Silhouette & Outstretched Hand
+    g.fillStyle = colRimHighlight;
+    // Hair top edges
+    g.fillRect(cx - 25, cy - 71, 8, 1);
+    g.fillRect(cx - 11, cy - 81, 8, 1);
+    g.fillRect(cx + 7,  cy - 83, 8, 1);
+    g.fillRect(cx + 21, cy - 67, 8, 1);
+    // Jawline & Ears
+    g.fillRect(cx - 29, cy - 12, 1, 20);
+    g.fillRect(cx + 29, cy - 12, 1, 20);
+    g.fillRect(cx - 25, cy + 12, 1, 5);
+    g.fillRect(cx + 25, cy + 12, 1, 5);
+    // Shoulder tops
+    g.fillRect(0, cy + 28, cx - 36, 1);
+    g.fillRect(cx + 36, cy + 28, bw - (cx + 36), 1);
+
+    // Outstretched Hand Rim Outlines
+    g.fillRect(cx - 46, cy - 22, 6, 1); // index tip
+    g.fillRect(cx - 35, cy - 30, 6, 1); // middle tip
+    g.fillRect(cx - 25, cy - 28, 6, 1); // ring tip
+    g.fillRect(cx - 48, cy + 2, 6, 1);  // thumb tip
+    g.fillRect(cx - 38, cy - 2, 1, 28); // palm outer edge
+
+    // Hand Energy Sparks when eyes ignite
+    if (uFace >= 0.38) {
+      for (let s = 0; s < 6; s++) {
+        const sparkAng = (s / 6) * Math.PI * 2 + nowS * 20;
+        const sparkDist = 6 + (s % 3) * 3;
+        const spx = Math.round(cx - 28 + Math.cos(sparkAng) * sparkDist);
+        const spy = Math.round(cy - 2 + Math.sin(sparkAng) * sparkDist);
+        g.fillStyle = (s % 2 === 0) ? '#ffffff' : '#06b6d4';
+        g.fillRect(spx, spy, 1, 1);
+      }
+    }
+
+    // ---------------------------------------------------------------------------
+    // 6. IMPACT FLASH FRAME & LIGHTNING ARCS (1-Frame Lightning Flash at uFace ~ 0.36..0.40)
+    // ---------------------------------------------------------------------------
+    if (isImpactFrame) {
+      g.fillStyle = 'rgba(255, 255, 255, 0.45)';
+      g.fillRect(0, 0, bw, bh);
+
+      // Lightning crack arcs across the screen
+      g.fillStyle = '#67e8f9';
+      g.fillRect(Math.floor(bw * 0.2), 0, 2, Math.floor(bh * 0.7));
+      g.fillRect(Math.floor(bw * 0.6), Math.floor(bh * 0.2), 3, Math.floor(bh * 0.8));
+      g.fillRect(Math.floor(bw * 0.1), Math.floor(bh * 0.5), Math.floor(bw * 0.8), 2);
+    }
+
+    // ---------------------------------------------------------------------------
+    // 6.5. TEMPEST AURA BLOOM BEHIND EYES (uFace >= 0.38)
+    // ---------------------------------------------------------------------------
+    if (uFace >= 0.38 && uFace <= 0.85) {
+      const auraAlpha = Math.min(0.6, (uFace - 0.38) / 0.2) * (uFace > 0.7 ? 1 - (uFace - 0.7) / 0.15 : 1);
+      g.fillStyle = 'rgba(6, 182, 212, ' + (auraAlpha * 0.25).toFixed(2) + ')';
+      g.fillRect(cx - 50, cy - 35, 100, 70);
+      g.fillStyle = 'rgba(147, 51, 234, ' + (auraAlpha * 0.18).toFixed(2) + ')';
+      g.fillRect(cx - 35, cy - 25, 70, 50);
+    }
+
+    // ---------------------------------------------------------------------------
+    // 7. PIXEL EYE REVEAL, IGNITION & SHOCKWAVE
+    // ---------------------------------------------------------------------------
+    const elX = cx - 12;
+    const erX = cx + 12;
+    const eyeY = cy - 6;
+
+    // Eyelid opening and blinking calculation (uFace: 0.38..0.65 open, blink at 0.70..0.82)
+    let eyeOpenFrac = 0;
+    if (uFace >= 0.38 && uFace < 0.70) {
+      eyeOpenFrac = Math.min(1, (uFace - 0.38) / 0.18);
+    } else if (uFace >= 0.70 && uFace <= 0.82) {
+      const blinkU = (uFace - 0.70) / 0.12; // 0 to 1 across blink
+      if (blinkU < 0.5) {
+        eyeOpenFrac = Math.max(0, 1 - blinkU * 2); // closing
+      } else {
+        eyeOpenFrac = Math.min(1, (blinkU - 0.5) * 2); // opening back up
+      }
+    } else if (uFace > 0.82) {
+      eyeOpenFrac = 1.0;
+    }
+
+    if (eyeOpenFrac <= 0) {
+      // Eyes closed / in deep shadow: dark pixel eyelid slits
+      g.fillStyle = '#0f172a';
+      g.fillRect(elX - 5, eyeY, 11, 1);
+      g.fillRect(erX - 5, eyeY, 11, 1);
+    } else {
+      // Eyes opening / fully open!
+      const openH = Math.max(1, Math.round(eyeOpenFrac * 5)); // 1 to 5 pixel height
+      const eyeHalfH = Math.floor(openH / 2);
+
+      // Socket Cutout in Silhouette
+      g.fillStyle = '#000000';
+      g.fillRect(elX - 6, eyeY - eyeHalfH, 12, openH);
+      g.fillRect(erX - 6, eyeY - eyeHalfH, 12, openH);
+
+      // Cold Cyan Mid-Glow Block
+      g.fillStyle = '#06b6d4';
+      g.fillRect(elX - 5, eyeY - eyeHalfH, 10, openH);
+      g.fillRect(erX - 5, eyeY - eyeHalfH, 10, openH);
+
+      // Pure White Inner Core Block
+      const coreH = Math.max(1, openH - 1);
+      g.fillStyle = '#ffffff';
+      g.fillRect(elX - 3, eyeY - Math.floor(coreH / 2), 6, coreH);
+      g.fillRect(erX - 3, eyeY - Math.floor(coreH / 2), 6, coreH);
+
+      // A) White Pressure Ring Shockwave (expanding diamond/octagon ring)
+      if (uFace >= 0.42 && uFace <= 0.68) {
+        const ringR = Math.round((uFace - 0.42) / 0.26 * 32);
+        const ringAlpha = Math.max(0, 1 - (uFace - 0.42) / 0.26);
+        g.fillStyle = 'rgba(224, 242, 254, ' + ringAlpha.toFixed(2) + ')';
+        for (let angle = 0; angle < 8; angle++) {
+          const rad = angle * (Math.PI / 4);
+          const rx = Math.round(cx + Math.cos(rad) * ringR);
+          const ry = Math.round(eyeY + Math.sin(rad) * ringR);
+          g.fillRect(rx - 1, ry - 1, 2, 2);
+        }
+      }
+
+      // B) Static Eye Burst Sparks (at uFace ~ 0.40..0.58)
+      if (uFace >= 0.40 && uFace <= 0.58) {
+        for (let k = 0; k < 12; k++) {
+          const ang = (k / 12) * Math.PI * 2 + nowS * 8;
+          const dist = 8 + Math.round((uFace - 0.40) * 44);
+          const spX = Math.round(cx + Math.cos(ang) * dist);
+          const spY = Math.round(eyeY + Math.sin(ang) * dist);
+          g.fillStyle = (k % 2 === 0) ? '#ffffff' : '#67e8f9';
+          g.fillRect(spX, spY, 1, 1);
+        }
+      }
+
+      // C) Horizontal Pixel Laser Eye Trails (at uFace >= 0.52)
+      if (uFace >= 0.52) {
+        const trailLen = Math.round((uFace - 0.52) / 0.48 * 45);
+
+        // Dual outwards laser eye trails
+        g.fillStyle = 'rgba(6, 182, 212, 0.85)';
+        g.fillRect(elX - trailLen, eyeY, trailLen, 1);
+        g.fillRect(erX, eyeY, trailLen, 1);
+
+        // White inner core trail
+        g.fillStyle = '#ffffff';
+        g.fillRect(elX - Math.round(trailLen * 0.6), eyeY, Math.round(trailLen * 0.6), 1);
+        g.fillRect(erX, eyeY, Math.round(trailLen * 0.6), 1);
+      }
+    }
+
+    // ---------------------------------------------------------------------------
+    // 8. CINEMATIC LETTERBOX BARS & RETRO PIXEL SCANLINES
+    // ---------------------------------------------------------------------------
+    g.fillStyle = '#020306';
+    g.fillRect(0, 0, bw, 18);
+    g.fillRect(0, bh - 18, bw, 18);
+
+    g.fillStyle = 'rgba(0, 0, 0, 0.22)';
+    for (let sy = 0; sy < bh; sy += 2) {
+      g.fillRect(0, sy, bw, 1);
+    }
+
+    g.restore();
+
+    // ---------------------------------------------------------------------------
+    // 8. BLIT PIXEL BUFFER TO MAIN CANVAS (SMOOTHING OFF)
+    // ---------------------------------------------------------------------------
+    blitDomBuffer();
+  }
+
   function drawUltBurst(){
     if(!ultBurst) return;
     const b = ultBurst;
@@ -15762,6 +17507,13 @@
     const rise = clamp01(t / 0.12);
     const fall = t > 0.85 ? (1 - (t - 0.85) / 0.15) : 1;
     const env = clamp01(rise) * clamp01(fall);
+
+    // Jordan uses his own bespoke splash art — void silhouette, glowing yellow eyes, raised
+    // palm-out hand — matching the character reference. Bypasses the generic burst below.
+    if (b.character && b.character.id === 'jordan') {
+      drawJordanUltBurst(b, t, env, clamp01, easeOut, fromLeft);
+      return;
+    }
 
     ctx.save();
 
@@ -16203,19 +17955,71 @@
   let shermanCourtDarkness = 0;
 
   function draw(){
-    // Jordan Tempest cinematic camera override — slow zoom toward Jordan
+    // Jordan Tempest cinematic camera override — four-phase choreography synced to the
+    // buildup beats in tickJordanTempest:
+    //   SPLASH   : keep normal framing (splash-art overlay covers the screen)
+    //   CONSUME  : slam in on Jordan; zoom holds while the orb consumes him
+    //   FACE     : held tight — the front-view face overlay covers the screen anyway
+    //   EXPAND   : pull back out to a normal wide framing so the domain reveal reads
     const jordanCinP = (left && left.jordanTempestActive) ? left : ((right && right.jordanTempestActive) ? right : null);
+    const amaraCinP = (left && left.amaraBuildupActive) ? left : ((right && right.amaraBuildupActive) ? right : null);
+    const amaraCenterP = (left && (left.amaraLiveActive || (left.transform && left.transform.type === 'CLEOPATRA' && left.character && left.character.id === 'amara'))) ? left
+                       : (right && (right.amaraLiveActive || (right.transform && right.transform.type === 'CLEOPATRA' && right.character && right.character.id === 'amara'))) ? right : null;
     if (jordanCinP && dynamicCameraEnabled) {
-      const elapsed = 2.5 - Math.max(0, jordanCinP.jordanTempestTimer);
-      targetCamX = (jordanCinP.x + PLAYER_W / 2 - W / 2) * 0.55;
-      targetCamY = (jordanCinP.y + PLAYER_H / 2 - H / 2) * 0.35;
-      if (elapsed < 1.0) {
-        targetCamZoom = 1.0 + elapsed * 0.18;
-      } else if (elapsed < 2.0) {
-        targetCamZoom = 1.18 + (elapsed - 1.0) * 0.08;
+      const elapsed = JORDAN_TEMPEST_BUILDUP - Math.max(0, jordanCinP.jordanTempestTimer);
+      const T = jordanTempestPhaseTimes();
+      const jcx = jordanCinP.x + PLAYER_W / 2;
+      const jcy = jordanCinP.y + PLAYER_H * 0.4;
+      if (elapsed < T.splashEnd) {
+        // Splash overlay covers screen — keep camera parked at a mild zoom-in
+        targetCamX = (jcx - W / 2) * 0.4;
+        targetCamY = (jcy - H / 2) * 0.3;
+        targetCamZoom = 1.10;
+      } else if (elapsed < T.consumeEnd) {
+        // Slam in on Jordan for the orb-consume beat — quick easeIn from splash framing
+        const u = (elapsed - T.splashEnd) / JORDAN_TEMPEST_CONSUME;
+        const easeIn = u * u;
+        targetCamX = (jcx - W / 2) * (0.4 + easeIn * 0.55);
+        targetCamY = (jcy - H / 2) * (0.3  + easeIn * 0.55);
+        targetCamZoom = 1.10 + easeIn * 1.4; // 1.10 → 2.50
+      } else if (elapsed < T.faceEnd) {
+        // Full-screen face overlay covers everything — hold the zoom, no more push
+        targetCamX = (jcx - W / 2) * 0.95;
+        targetCamY = (jcy - H / 2) * 0.85;
+        targetCamZoom = 2.50;
       } else {
-        targetCamZoom = 1.26;
+        // Pull the camera back out for the domain-expand reveal
+        const u = Math.min(1, (elapsed - T.faceEnd) / JORDAN_TEMPEST_EXPAND);
+        const easeOut = 1 - Math.pow(1 - u, 3);
+        targetCamX = (jcx - W / 2) * (0.95 - easeOut * 0.95);
+        targetCamY = (jcy - H / 2) * (0.85 - easeOut * 0.85);
+        targetCamZoom = 2.50 - easeOut * 1.50; // 2.50 → 1.00
       }
+    } else
+    // Amara Puppeteer buildup — powder/rift hold, slam-in for the transform, pull back for expand.
+    if (amaraCinP && dynamicCameraEnabled) {
+      const T = amaraPhaseTimes();
+      const elapsed = AMARA_BUILDUP - Math.max(0, amaraCinP.amaraBuildupTimer);
+      const ax = amaraCinP.x + PLAYER_W/2;
+      const ay = amaraCinP.y + PLAYER_H*0.4;
+      if (elapsed < T.riftEnd) {
+        targetCamX = (ax - W/2) * 0.25; targetCamY = -40; targetCamZoom = 1.10;
+      } else if (elapsed < T.transformEnd) {
+        const u = (elapsed - T.riftEnd)/AMARA_TRANSFORM; const easeIn = u*u;
+        targetCamX = (ax - W/2) * (0.25 + easeIn*0.6);
+        targetCamY = (ay - H/2) * (0.2 + easeIn*0.55) - 40*(1-easeIn);
+        targetCamZoom = 1.10 + easeIn*1.25;
+      } else {
+        const u = Math.min(1,(elapsed - T.transformEnd)/AMARA_EXPAND);
+        const easeOut = 1 - Math.pow(1-u,3);
+        targetCamX = (ax - W/2) * (0.85*(1-easeOut));
+        targetCamY = ((ay - H/2)*0.75)*(1-easeOut);
+        targetCamZoom = 2.35 - easeOut*1.35;
+      }
+    } else if (amaraCenterP && dynamicCameraEnabled) {
+      // Puppeteer live / Cleopatra window — the camera stays dead-center (no shuttle follow)
+      // so the decoy drops never leak a directional read.
+      targetCamX = 0; targetCamY = 0; targetCamZoom = 1.0;
     } else
     // Camera target selection
     if (dynamicCameraEnabled && state === 'pointPause' && pointCelebrateSide) {
@@ -16342,6 +18146,7 @@
     drawGroundCrackEffect(right);
     drawPlayer(left);
     drawPlayer(right);
+    drawAmaraCinematic(); // Puppeteer buildup overlays (powder, rift, transform glow, reveal)
     if (left && left.shermanDragonAirTimer > 0) drawShermanCoiledDragon(left);
     if (right && right.shermanDragonAirTimer > 0) drawShermanCoiledDragon(right);
     if (left && left.shermanMandateActive) drawShermanMandateDragonStrike(left);
@@ -16356,6 +18161,7 @@
       drawShuttle();
       drawShermanRainShuttles();
     }
+    drawAmaraDecoys(); // Puppeteer decoy shuttlecocks (independent of the main shuttle)
     drawSolarJudgmentGlareChase(); // must run AFTER the shuttle so the glare actually sits on top of it
 
     // Draw particles inside world space
@@ -16374,6 +18180,7 @@
     ctx.restore(); // Restore screenshake
 
     drawUltBurst();     // full-screen ult-activation cutscene (freeze → flood → pose → name slam)
+    drawJordanFaceCloseup();     // full-screen face overlay during his tempest FACE beat
     drawUltCinematic(); // full-screen, untranslated (Part 7)
     drawRetroOverlay(); // PIXEL_REVAMP Phase 2 — subtle CRT scanlines + vignette over the whole frame
     updateServeTag();
@@ -16413,4 +18220,4 @@
 })();
 </script>
 </body>
-</html>
+</html>
