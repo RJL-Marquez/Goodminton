@@ -14157,6 +14157,197 @@
     ctx.restore();
   }
 
+  // ===========================================================================
+  // AMARA — SUN GODDESS OF GIZA domain, rendered PIXEL-NATIVE
+  // ===========================================================================
+  // Drawn into the shared low-res buffer (domPixelCtx) at the SAME COURT_PIXEL_UNIT as
+  // Jordan's storm, then upscaled with smoothing OFF — so it reads as chunky 16-bit pixel
+  // art instead of the old smooth "vector" gradients. Blitted through the widening
+  // quantum-tear mask during the reveal. Tuned to flex: giant pulsing Ra sun, rotating
+  // god-rays, a colossal Eye of Ra, an ankh halo, layered dunes, chunky Giza pyramids, the
+  // Sphinx, glyph obelisks, oases and drifting golden glyph-dust.
+  function drawEgyptianDomainPixel(p){
+    const now = performance.now() * 0.001;
+    const U = COURT_PIXEL_UNIT;
+    const q = function(v){ return Math.round(v / U) * U; };
+    const g = domPixelCtx();
+    g.save();
+
+    // ---- pixel primitives (hard edges, grid-snapped) ----
+    const rect = function(x, y, w, h, c){ g.fillStyle = c; g.fillRect(q(x), q(y), q(w) + U, q(h) + U); };
+    const disc = function(cx, cy, r, c){
+      g.fillStyle = c;
+      for (let yy = -r; yy <= r; yy += U){
+        const half = Math.sqrt(Math.max(0, r*r - yy*yy));
+        g.fillRect(q(cx - half), q(cy + yy), q(half*2) + U, U);
+      }
+    };
+    const ring = function(cx, cy, r, t, c){
+      g.fillStyle = c;
+      for (let yy = -r; yy <= r; yy += U){
+        const ho = Math.sqrt(Math.max(0, r*r - yy*yy));
+        const ri = Math.max(0, r - t);
+        const hi = Math.sqrt(Math.max(0, ri*ri - yy*yy));
+        g.fillRect(q(cx - ho), q(cy + yy), q(ho - hi) + U, U);
+        g.fillRect(q(cx + hi), q(cy + yy), q(ho - hi) + U, U);
+      }
+    };
+    const pyramid = function(cx, baseY, w, h, lit, shade, capstone){
+      const rows = Math.max(1, Math.round(h / U));
+      for (let i = 0; i < rows; i++){
+        const f = i / rows;
+        const ww = w * f;
+        const yy = baseY - h + i * U;
+        rect(cx - ww/2, yy, ww/2, U, lit);
+        rect(cx, yy, ww/2, U, shade);
+      }
+      if (capstone){ rect(cx - w*0.06, baseY - h, w*0.12, h*0.10, '#fffbe0'); }
+    };
+
+    // 1) Posterized dusk sky — hard bands (cosmic midnight → glowing sand)
+    const bands = [
+      ['#0b0f19', 0.16], ['#181551', 0.32], ['#3d1275', 0.47],
+      ['#7a1f6e', 0.60], ['#b6355a', 0.72], ['#e0652b', 0.83],
+      ['#f5a623', 0.93], ['#f7cf67', 1.00]
+    ];
+    let prevY = 0;
+    for (let b = 0; b < bands.length; b++){
+      const y1 = q(GROUND_Y * bands[b][1]);
+      rect(0, prevY, W, y1 - prevY, bands[b][0]);
+      prevY = y1;
+    }
+
+    // 2) Aurora nebula ribbons drifting high in the sky (translucent aura sheets)
+    const aur = ['rgba(120,60,190,0.16)', 'rgba(34,211,238,0.12)', 'rgba(236,120,180,0.10)'];
+    for (let a = 0; a < 3; a++){
+      g.fillStyle = aur[a];
+      const yBase = 70 + a * 34;
+      for (let x = 0; x <= W; x += U*3){
+        const yy = yBase + Math.sin(x * 0.012 + now * (0.5 + a*0.2) + a) * 20;
+        g.fillRect(q(x), q(yy), U*3, q(16 + a*6));
+      }
+    }
+
+    // 3) Twinkling star field (upper half)
+    for (let i = 0; i < 64; i++){
+      const sx = q((i * 137.5) % W);
+      const sy = q((i * 79.3) % (GROUND_Y * 0.5));
+      const tw = Math.abs(Math.sin(now * 1.6 + i * 1.1));
+      if (tw > 0.4){
+        rect(sx, sy, U, U, (i % 6 === 0) ? '#8fe9ff' : '#fef3c0');
+        if (i % 8 === 0 && tw > 0.82){ rect(sx-U, sy, U, U, '#fef3c0'); rect(sx+U, sy, U, U, '#fef3c0'); rect(sx, sy-U, U, U, '#fef3c0'); rect(sx, sy+U, U, U, '#fef3c0'); }
+      }
+    }
+
+    // 4) Ra's sun — giant pulsing disc + rotating god-rays
+    const sunX = q(W/2), sunY = q(78);
+    const pulse = 0.5 + 0.5 * Math.sin(now * 1.5);
+    const rays = 14;
+    for (let r = 0; r < rays; r++){
+      const ang = (r / rays) * Math.PI * 2 + now * 0.10;
+      g.fillStyle = (r % 2 === 0) ? 'rgba(254,240,138,0.16)' : 'rgba(255,170,70,0.10)';
+      for (let d = q(40); d < q(560); d += U*4){
+        const rx = q(sunX + Math.cos(ang) * d);
+        const ry = q(sunY + Math.sin(ang) * d);
+        if (ry > GROUND_Y) break;
+        const wd = U + Math.floor(d / 80) * U;
+        g.fillRect(rx, ry, wd, wd);
+      }
+    }
+    disc(sunX, sunY, q(78 + pulse*10), 'rgba(251,191,36,0.10)');
+    disc(sunX, sunY, q(52), 'rgba(254,222,120,0.20)');
+    disc(sunX, sunY, q(34), '#ffe89a');
+    disc(sunX, sunY, q(24), '#fff6d0');
+    disc(sunX, sunY, q(12), '#ffffff');
+
+    // 5) Colossal Eye of Ra watermark hanging over the court (pulsing gold)
+    const eyeY = q(150), eyeW = 300, eyeCol = 'rgba(254,240,138,' + (0.14 + pulse*0.06) + ')';
+    // almond outline (two arcs approximated by row bands)
+    g.fillStyle = eyeCol;
+    for (let x = -eyeW/2; x <= eyeW/2; x += U){
+      const f = x / (eyeW/2);
+      const openTop = -Math.cos(f * Math.PI/2) * 52;
+      const openBot =  Math.cos(f * Math.PI/2) * 34;
+      g.fillRect(q(sunX + x), q(eyeY + openTop), U, U);        // upper lid
+      g.fillRect(q(sunX + x), q(eyeY + openBot), U, U);        // lower lid
+    }
+    disc(sunX, eyeY, q(22), 'rgba(254,240,138,' + (0.18 + pulse*0.05) + ')'); // iris
+    disc(sunX, eyeY, q(10), 'rgba(24,20,60,0.5)');                            // pupil
+    // teardrop + spiral curl beneath (Eye of Horus flavor)
+    g.fillStyle = eyeCol;
+    for (let k = 0; k < 10; k++){ g.fillRect(q(sunX - eyeW*0.06), q(eyeY + 34 + k*U*2), U, U); }
+    for (let k = 0; k < 8; k++){ const a = k/8*Math.PI; g.fillRect(q(sunX + eyeW*0.30 + Math.cos(a)*18), q(eyeY + 10 + Math.sin(a)*18), U, U); }
+
+    // 6) Ankh halo behind the grand pyramid (giant translucent gold aura)
+    const ankX = sunX, ankTop = q(GROUND_Y - 300);
+    g.fillStyle = 'rgba(251,191,36,0.10)';
+    ring(ankX, ankTop + q(40), q(46), q(14), 'rgba(251,191,36,0.12)');       // loop
+    rect(ankX - U*2, ankTop + 70, U*4, 150, 'rgba(251,191,36,0.10)');         // stem
+    rect(ankX - 60, ankTop + 96, 120, U*4, 'rgba(251,191,36,0.10)');          // arms
+
+    // 7) Far dune band
+    rect(0, GROUND_Y - 46, W, 46, '#7c2d12');
+    for (let x = 0; x <= W; x += U*4){ const yy = GROUND_Y - 46 - (Math.sin(x*0.01 + 1) * 10 + 10); rect(x, yy, U*4, GROUND_Y - yy, '#7c2d12'); }
+
+    // 8) Three Giza pyramids (chunky, lit/shaded, glowing capstones)
+    pyramid(sunX - 250, GROUND_Y - 6, 170, 108, '#f0a52a', '#9a3412', true);
+    pyramid(sunX + 250, GROUND_Y - 6, 170, 108, '#f0a52a', '#9a3412', true);
+    pyramid(sunX,       GROUND_Y - 6, 300, 190, '#f8c04a', '#8a3210', true);
+    // stone tier lines on the grand pyramid
+    g.fillStyle = 'rgba(60,20,4,0.4)';
+    for (let t = 1; t < 12; t++){ const yy = GROUND_Y - 6 - (190 * t/12); const ww = 300 * (1 - t/12); g.fillRect(q(sunX - ww/2), q(yy), q(ww), U); }
+
+    // 9) The Great Sphinx (chunky silhouette) at the left
+    const spX = q(COURT_LEFT + 70), spY = GROUND_Y;
+    rect(spX - 96, spY - 34, 150, 34, '#5a2410');        // body
+    rect(spX + 40, spY - 30, 46, 30, '#5a2410');         // haunch
+    rect(spX - 96, spY - 58, 40, 58, '#5a2410');         // head/neck
+    rect(spX - 100, spY - 70, 48, 16, '#6a2e14');        // nemes headdress
+    rect(spX - 88, spY - 46, 6, 6, 'rgba(254,240,138,0.7)'); // glowing eye
+    rect(spX - 108, spY - 12, 150, 12, '#3f1908');       // paws shadow
+
+    // 10) Obelisks flanking the court edges (glyph-lit)
+    [q(COURT_LEFT - 26), q(COURT_RIGHT + 26)].forEach(function(ox, idx){
+      rect(ox - 12, GROUND_Y - 210, 24, 210, '#a35a15');
+      rect(ox - 6, GROUND_Y - 210, 6, 210, '#d98a25');           // lit face
+      // pyramidion
+      pyramid(ox, GROUND_Y - 210, 24, 22, '#fde68a', '#d97706', false);
+      g.fillStyle = 'rgba(254,240,138,' + (0.5 + 0.4*Math.sin(now*3 + idx)) + ')';
+      for (let k = 0; k < 6; k++){ g.fillRect(ox - U, q(GROUND_Y - 180 + k*26), U*2, U*2); } // glowing glyph column
+    });
+
+    // 11) Near dune + sand ground floor
+    rect(0, GROUND_Y - 20, W, 20, '#e0842b');
+    rect(0, GROUND_Y, W, H - GROUND_Y, '#c96f22');
+
+    // 12) Twin oases (turquoise pools + pixel palms)
+    [q(COURT_LEFT + 120), q(COURT_RIGHT - 120)].forEach(function(oxp, i){
+      disc(oxp, GROUND_Y - 2, q(30), '#0e7490');
+      disc(oxp, GROUND_Y - 4, q(20), '#22d3ee');
+      rect(oxp + (i? -34 : 24), GROUND_Y - 44, U*2, 44, '#4d2a12');     // palm trunk
+      for (let fr = 0; fr < 5; fr++){ const a = (fr/5)*Math.PI - Math.PI*0.1; rect(oxp + (i? -34 : 24) + Math.cos(a)*18, GROUND_Y - 46 + Math.sin(a)*10 - 8, U*3, U*2, '#15803d'); }
+    });
+
+    // 13) Drifting golden glyph-dust motes (aura)
+    for (let i = 0; i < 30; i++){
+      const bx = q(((i * 191.7) + now * (12 + (i % 5) * 7)) % W);
+      const by = q(GROUND_Y - (((i * 141.3) + now * (16 + (i % 4) * 9)) % (GROUND_Y * 0.9)));
+      const ba = 0.25 + 0.3 * Math.abs(Math.sin(now * 1.2 + i));
+      rect(bx, by, (i % 4 === 0) ? U*2 : U, (i % 4 === 0) ? U*2 : U, (i % 3 === 0 ? 'rgba(34,211,238,' : 'rgba(254,240,138,') + ba + ')');
+    }
+
+    g.restore();
+
+    // Blit — through the widening quantum-tear mask while the reveal is mid-animation,
+    // otherwise the whole screen (fully-formed domain).
+    const rev = p ? p.amaraDomainReveal : undefined;
+    if (rev !== undefined && rev > 0.001 && rev < 0.999){
+      blitDomBuffer(function(c){ amaraTearPath(c, W/2, rev); });
+    } else {
+      blitDomBuffer(null);
+    }
+  }
+
   function drawEgyptianCourtFull(p) {
     const minX = 0;
     const maxX = W;
@@ -15075,16 +15266,11 @@
       switch (dId) {
         case 'sherman': drawShermanMandateDomainFull(domainPlayer); break;
         case 'amara': {
+          // Pixel-native domain; the tear reveal is handled by the blit mask inside.
+          drawEgyptianDomainPixel(domainPlayer);
           const rev = domainPlayer.amaraDomainReveal;
           if (rev !== undefined && rev > 0.001 && rev < 0.999) {
-            // The domain is revealed THROUGH a widening quantum tear ripped along the dust trail.
-            ctx.save();
-            ctx.beginPath();
-            amaraTearPath(ctx, W/2, rev);
-            ctx.clip();
-            drawEgyptianCourtFull(domainPlayer);
-            ctx.restore();
-            // glowing torn edges of the rip
+            // glowing torn edges of the widening quantum rip (full-res accent on top)
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
             ctx.beginPath(); amaraTearPath(ctx, W/2, rev);
@@ -15092,8 +15278,6 @@
             ctx.shadowColor = '#22d3ee'; ctx.shadowBlur = 22; ctx.stroke();
             ctx.strokeStyle = 'rgba(254,240,138,0.9)'; ctx.lineWidth = 1.8; ctx.shadowBlur = 6; ctx.stroke();
             ctx.restore();
-          } else {
-            drawEgyptianCourtFull(domainPlayer);
           }
           break;
         }
@@ -15148,7 +15332,7 @@
 
     const cleopatraPlayer = (left && left.transform && left.transform.type === 'CLEOPATRA') ? left : ((right && right.transform && right.transform.type === 'CLEOPATRA') ? right : null);
     if (!domainPlayer && cleopatraPlayer) {
-      drawEgyptianCourtFull(cleopatraPlayer);
+      drawEgyptianDomainPixel(cleopatraPlayer);
       if (cleopatraPlayer.cleopatraIsFlashing) {
         const oppSide = cleopatraPlayer.side === 'left' ? 'right' : 'left';
         drawOpponentBlindingFlash(oppSide);
