@@ -2856,6 +2856,45 @@
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
 
+  // ---------- external art assets ----------
+  // Everything else in this game is drawn procedurally — this is the first (and so far only)
+  // hand-authored image asset, used for Jordan's ultimate splash-art cut-in. Loaded once at
+  // startup; drawJordanUltBurst() / drawJordanFaceCloseup() fall back to the procedural
+  // silhouette if it hasn't finished loading yet (e.g. a very fast first-frame race).
+  const ART_ASSETS = {};
+  function loadArtAsset(key, src){
+    const img = new Image();
+    const entry = { img: img, blackImg: null, ready: false, w: 0, h: 0 };
+    ART_ASSETS[key] = entry;
+    img.onload = function(){
+      entry.w = img.naturalWidth; entry.h = img.naturalHeight;
+      // Precompute a flat-black silhouette cutout once at load time (not per-frame): draw the
+      // art into an offscreen buffer, then 'source-in' a solid black fill so every opaque
+      // pixel crushes to pure black while the original alpha/edges (hair wisps, soft fades)
+      // are preserved exactly. Jordan reads as totally black except the eyes we glow on top.
+      const off = document.createElement('canvas');
+      off.width = entry.w; off.height = entry.h;
+      const octx = off.getContext('2d');
+      octx.drawImage(img, 0, 0);
+      octx.globalCompositeOperation = 'source-in';
+      octx.fillStyle = '#000000';
+      octx.fillRect(0, 0, entry.w, entry.h);
+      entry.blackImg = off;
+      entry.ready = true;
+    };
+    img.src = src;
+  }
+  loadArtAsset('jordanSplash', 'assets/characters/jordan-ultimate-splash.png');
+  // Eye-glow anchor points, measured directly from the source PNG (pixel-scanned for the
+  // brightest cyan cluster) as fractions of the image's own width/height — stays correct
+  // no matter how the image gets scaled/positioned on canvas.
+  const JORDAN_SPLASH_EYE_L = { fx: 0.4999, fy: 0.2890 };
+  const JORDAN_SPLASH_EYE_R = { fx: 0.5473, fy: 0.2969 };
+  // Tight head/face crop of the same source image (measured against the silhouette's own
+  // width-per-row, from hair-top to just-above-shoulders) — reused for the FACE closeup beat
+  // so it doesn't need a second asset; just a punched-in region of this one.
+  const JORDAN_SPLASH_FACE_CROP = { fx: 0.4027, fy: 0.1042, fw: 0.2343, fh: 0.3776 };
+
   // ---------- centralized version ----------
   // Single source of truth for the game version — see VERSIONING.md.
   // The Main Menu version label reads this value; nowhere else should hardcode it.
@@ -4284,8 +4323,13 @@
 
   let ultBurst = null; // {timer, dur, side, character, name, artName, color, accent}
   function triggerUltBurst(p, artId){
+    // Jordan's splash art beat is timed to exactly cover his own JORDAN_TEMPEST_BURST phase so
+    // it hands off cleanly to the face-closeup camera move (see tickJordanTempest for the
+    // phase timeline). Other characters use the generic 0.85s beat.
+    const isJordan = p.character && p.character.id === 'jordan';
+    const dur = isJordan ? JORDAN_TEMPEST_BURST : 0.85;
     ultBurst = {
-      timer: 0.85, dur: 0.85,
+      timer: dur, dur: dur,
       side: p.side,
       character: p.character,
       name: ((p.character && p.character.name) || '').toUpperCase(),
@@ -4306,8 +4350,11 @@
   // Ballistic aim: set the shuttle onto an arc that lands near targetX. Ignores
   // horizontal drag, so it lands a touch short — fine for a prototype, and the
   // deception marker (not pinpoint placement) is the point for Amara/Maya.
-  function ultLaunchToward(targetX, arcH, downwardGravityMult){
-    const gUp = SHUTTLE_GRAVITY;
+  function ultLaunchToward(targetX, arcH, downwardGravityMult, upwardGravityMult){
+    // upwardGravityMult (optional): scales the ASCENT gravity only. Peak height stays at arcH,
+    // but tUp = sqrt(2*arcH/gUp) shrinks — used by Jordan to keep his signature high arc and
+    // fast fall while cutting the sluggish "hangs at the peak" dead-time.
+    const gUp = (upwardGravityMult && upwardGravityMult > 1) ? SHUTTLE_GRAVITY * upwardGravityMult : SHUTTLE_GRAVITY;
     const gDown = (downwardGravityMult && downwardGravityMult > 1) ? SHUTTLE_GRAVITY * downwardGravityMult : SHUTTLE_GRAVITY;
     const x0 = shuttle.x, y0 = shuttle.y;
     const vyUp = -Math.sqrt(2 * gUp * Math.max(20, arcH));
@@ -4319,6 +4366,7 @@
     const drag = HORIZONTAL_DRAG;
     shuttle.vx = (targetX - x0) * drag / (1 - Math.exp(-drag * T));
     shuttle.kind = 'float';
+    shuttle.ultFastAscent = (upwardGravityMult && upwardGravityMult > 1) ? upwardGravityMult : null;
     shuttle.ultFastDrop = (downwardGravityMult && downwardGravityMult > 1) ? downwardGravityMult : null;
     shuttle.ultSmashArc = false;
     shuttle.hitByMaxPower = false; shuttle.maxPowerDiveApplied = false;
@@ -4828,10 +4876,28 @@
   // ===========================================================================
   // JORDAN — TEMPEST KING'S DOMINION  (cinematic ultimate)
   // ===========================================================================
-  const JORDAN_TEMPEST_BUILDUP = 2.5;       // hand-raise / circle-expand cinematic, seconds
+  // Buildup is a 4-beat cinematic — timeline breakdown:
+  //   SPLASH  — Storm-4 style cover-art cut-in (improved iconic silhouette, no bg storm yet)
+  //   CONSUME — camera zooms in to Jordan in the court; a bright orb forms in his raised hand
+  //             and slowly consumes him body-first into a pure void silhouette
+  //   FACE    — full-screen close-up of Jordan's face (half of the frame). His background
+  //             fades from court to void as this beat plays.
+  //   EXPAND  — back to 2D view; the void SCATTERS outward as the storm-domain circle
+  //             expands from Jordan across the arena. Jordan slowly raises his hand toward
+  //             the sky throughout. Once the circle fills the screen the shuttle launches.
+  // Both players are movement-locked (see the sim-loop tempest gate) for the whole buildup
+  // — control returns only when the shuttle is airborne.
+  const JORDAN_TEMPEST_SPLASH   = 0.5;
+  const JORDAN_TEMPEST_CONSUME  = 0.9;
+  const JORDAN_TEMPEST_FACE     = 0.9;
+  const JORDAN_TEMPEST_EXPAND   = 2.0;
+  const JORDAN_TEMPEST_BUILDUP  = JORDAN_TEMPEST_SPLASH + JORDAN_TEMPEST_CONSUME + JORDAN_TEMPEST_FACE + JORDAN_TEMPEST_EXPAND;
+  // Legacy alias so anywhere still referencing the old "burst" length keeps working. The
+  // triggerUltBurst() call for Jordan now uses JORDAN_TEMPEST_SPLASH directly.
+  const JORDAN_TEMPEST_BURST = JORDAN_TEMPEST_SPLASH;
   const JORDAN_DOMAIN_LIVE_DURATION = 30.0; // live rally window once the domain is fully formed
   function startJordanTempestCinematic(p, isAir) {
-    triggerDomainExpansion(p, 'TEMPEST KING\'S DOMINION', '#5b9bff', JORDAN_TEMPEST_BUILDUP + JORDAN_DOMAIN_LIVE_DURATION);
+    triggerDomainExpansion(p, 'TEMPEST KING\'S DOMINION', '#d4d4d8', JORDAN_TEMPEST_BUILDUP + JORDAN_DOMAIN_LIVE_DURATION);
     shuttle.vx = 0;
     shuttle.vy = 0;
     shuttle.jordanTempestRelease = JORDAN_TEMPEST_BUILDUP;
@@ -4843,7 +4909,13 @@
     p.jordanSilhouette = 0;
     p.jordanEyeGlow = 0;
     p.jordanCircleRadius = 0;
-    p._tempestCircleImpact = false;
+    p.jordanFaceCloseup = 0;       // face-overlay opacity, 0..1
+    p.jordanConsumeOrb = 0;        // orb-in-hand growth, 0..1
+    p.jordanBgVoid = 0;            // court→void background fade, 0..1
+    p.jordanArmRaise = 0;          // hand-to-sky raise progress across the expand beat, 0..1
+    p._tempestConsumeImpact = false;
+    p._tempestFaceImpact = false;
+    p._tempestExpandImpact = false;
     p._tempestFullImpact = false;
     p._tempestLaunched = false;
     p.jordanDomainLiveActive = false;
@@ -4851,44 +4923,108 @@
     p.jordanPauseCharges = 3;
     p.jordanPauseActive = false;
     p.jordanPauseTimer = 0;
-    timeScale = 0.12;
-    hitFreezeFrames = 7;
+    timeScale = 0.15;
+    hitFreezeFrames = 5;
     playSound('bell');
     const ultName = isAir ? 'THUNDER BREAK DESCENT' : 'JUDGMENT OF THE STORM KING';
-    triggerStinger('JORDAN', ultName, '#5b9bff', 2.8);
+    triggerStinger('JORDAN', ultName, '#d4d4d8', 2.8);
+  }
+
+  // Phase timeline shorthand — cumulative elapsed cutoffs for readability everywhere.
+  function jordanTempestPhaseTimes(){
+    const a = JORDAN_TEMPEST_SPLASH;                            // splash ends
+    const b = a + JORDAN_TEMPEST_CONSUME;                       // consume ends
+    const c = b + JORDAN_TEMPEST_FACE;                          // face ends
+    const d = c + JORDAN_TEMPEST_EXPAND;                        // expand ends → launch
+    return { splashEnd:a, consumeEnd:b, faceEnd:c, expandEnd:d };
   }
 
   function tickJordanTempest(p, dt) {
     if (!p.jordanTempestActive) return;
     p.jordanTempestTimer -= dt;
-    const elapsed = 2.5 - Math.max(0, p.jordanTempestTimer);
+    const elapsed = JORDAN_TEMPEST_BUILDUP - Math.max(0, p.jordanTempestTimer);
+    const T = jordanTempestPhaseTimes();
 
-    if (elapsed < 1.2) timeScale = Math.min(timeScale, 0.18);
-    else if (elapsed < 1.8) timeScale = Math.min(timeScale, 0.35);
+    // Phase-gated timeScale — punchier than before, no long slow-mo tails.
+    if (elapsed < T.splashEnd)       timeScale = Math.min(timeScale, 0.18);
+    else if (elapsed < T.consumeEnd) timeScale = Math.min(timeScale, 0.25);
+    else if (elapsed < T.faceEnd)    timeScale = Math.min(timeScale, 0.30);
+    else                             timeScale = Math.min(timeScale, 0.45);
 
-    // Eyes light up first, well before the world turns monochrome or his body goes silhouette.
-    p.jordanEyeGlow = Math.min(1, elapsed / 0.3);
-    if (elapsed > 0.3) {
-      p.jordanCircleRadius = Math.min(1, (elapsed - 0.3) / 1.5);
+    // Eyes light up almost immediately.
+    p.jordanEyeGlow = Math.min(1, elapsed / 0.15);
+
+    // CONSUME beat: the orb in his hand grows AND consumes his body into silhouette.
+    if (elapsed < T.splashEnd) {
+      p.jordanConsumeOrb = 0; p.jordanSilhouette = 0;
+    } else if (elapsed < T.consumeEnd) {
+      const u = (elapsed - T.splashEnd) / JORDAN_TEMPEST_CONSUME;
+      p.jordanConsumeOrb = Math.min(1, u * 1.15);
+      // silhouette leads the orb slightly — body starts turning void from ~0.15 in
+      p.jordanSilhouette = Math.max(0, Math.min(1, (u - 0.15) / 0.75));
+    } else {
+      p.jordanConsumeOrb = 1;
+      p.jordanSilhouette = 1;
     }
-    if (elapsed > 0.5) {
-      p.jordanSilhouette = Math.min(1, (elapsed - 0.5) / 1.0);
+
+    // FACE beat: front-view close-up overlay fades in fast, then back out at the end.
+    if (elapsed < T.consumeEnd || elapsed >= T.faceEnd) {
+      p.jordanFaceCloseup = 0;
+      p.jordanFaceProgress = 0;
+    } else {
+      const u = (elapsed - T.consumeEnd) / JORDAN_TEMPEST_FACE;
+      // in for 0..0.7, hold 0.7..0.85, out 0.85..1
+      p.jordanFaceCloseup = u < 0.20 ? (u / 0.20)
+                           : u > 0.85 ? Math.max(0, 1 - (u - 0.85) / 0.15)
+                           : 1;
+      // Raw linear progress across the WHOLE face beat (decoupled from the opacity ease
+      // above) — drives the slow upward camera pan across the portrait, see drawJordanFaceCloseup.
+      p.jordanFaceProgress = u;
     }
 
-    if (elapsed > 0.3 && !p._tempestCircleImpact) {
-      p._tempestCircleImpact = true;
-      hitFreezeFrames = Math.max(hitFreezeFrames, 4);
+    // Background void fade — starts during FACE, holds through EXPAND.
+    if (elapsed < T.consumeEnd)      p.jordanBgVoid = 0;
+    else if (elapsed < T.faceEnd)    p.jordanBgVoid = Math.min(1, (elapsed - T.consumeEnd) / (JORDAN_TEMPEST_FACE * 0.7));
+    else                             p.jordanBgVoid = 1;
+
+    // EXPAND beat: storm circle grows AND Jordan slowly raises his hand to the sky.
+    if (elapsed < T.faceEnd) {
+      p.jordanCircleRadius = 0;
+      p.jordanArmRaise = 0;
+    } else {
+      const u = Math.min(1, (elapsed - T.faceEnd) / JORDAN_TEMPEST_EXPAND);
+      p.jordanCircleRadius = u;
+      // Smoothstep ease so the raise looks deliberate rather than robotic.
+      p.jordanArmRaise = u * u * (3 - 2 * u);
+    }
+
+    // Phase-transition sound / hit-freeze accents.
+    if (elapsed >= T.splashEnd && !p._tempestConsumeImpact) {
+      p._tempestConsumeImpact = true;
+      hitFreezeFrames = Math.max(hitFreezeFrames, 2);
       playSound('subbass');
     }
-    if (elapsed > 1.8 && !p._tempestFullImpact) {
+    if (elapsed >= T.consumeEnd && !p._tempestFaceImpact) {
+      p._tempestFaceImpact = true;
+      hitFreezeFrames = Math.max(hitFreezeFrames, 2);
+      playSound('subbass');
+    }
+    if (elapsed >= T.faceEnd && !p._tempestExpandImpact) {
+      p._tempestExpandImpact = true;
+      hitFreezeFrames = Math.max(hitFreezeFrames, 3);
+      playSound('subbass');
+    }
+    if (elapsed >= JORDAN_TEMPEST_BUILDUP - 0.02 && !p._tempestFullImpact) {
       p._tempestFullImpact = true;
       hitFreezeFrames = Math.max(hitFreezeFrames, 5);
       playSound('bell');
       triggerShake(18, 0.35);
     }
 
+    // Jordan himself is force-frozen throughout the buildup (the opponent is frozen in the
+    // sim loop's tempest gate) — no drift, no fall-through in the air variant.
     if (p.jordanTempestIsAir) {
-      p.vy = Math.min(p.vy, -20);
+      p.vx = 0; p.vy = 0;
     } else {
       p.vx = 0;
     }
@@ -4896,6 +5032,10 @@
     if (p.jordanTempestTimer <= 0) {
       p.jordanTempestActive = false;
       p.jordanCircleRadius = 1;
+      p.jordanFaceCloseup = 0;
+      p.jordanConsumeOrb = 0;
+      p.jordanArmRaise = 0;
+      timeScale = 1.0; // snap the sim back to full speed so the shuttle rockets up immediately
       executeJordanTempestLaunch(p);
     }
   }
@@ -4904,7 +5044,10 @@
     if (p._tempestLaunched) return; // guard: the buildup timer and the shuttle-hold timer both
     p._tempestLaunched = true;      // cross zero the same frame — only fire the launch once
     const targetX = ultRandomX(p); // randomized landing spot anywhere in the opponent's court — not a fixed deep-corner read
-    ultLaunchToward(targetX, 1500, 5.2); // Amara-style high arc, fast drop — same fall logic, not an unreturnable shot
+    // High arc + fast ascent + fast drop: preserves the signature peak height and the
+    // hammer-down fall speed but slashes the dead-air "hovers at the peak" middle beat, so the
+    // whole shot feels punchy instead of a sky-lob.
+    ultLaunchToward(targetX, 1500, 5.2, 3.6);
     shuttle.kind = 'smash';
     shuttle.hitByMaxPower = true;
     if (p.jordanTempestIsAir) {
@@ -7323,7 +7466,7 @@
     shuttle.vy = 0;
     playSound('bell');
     triggerShake(6, 0.2);
-    spawnFloatText(p.x + PLAYER_W/2, p.y - 30, 'TIME STANDS STILL (' + p.jordanPauseCharges + ' LEFT)', '#5b9bff');
+    spawnFloatText(p.x + PLAYER_W/2, p.y - 30, 'TIME STANDS STILL (' + p.jordanPauseCharges + ' LEFT)', '#d4d4d8');
   }
 
   function startCharge(p, now){
@@ -7525,6 +7668,7 @@
     const incomingWasSmash = shuttle.kind === 'smash';
     shuttle.ultFx = null; // a struck shuttle drops any previous ult trail (re-set below if THIS is an ult)
     shuttle.ultFastDrop = null;
+    shuttle.ultFastAscent = null;
     shuttle.ultSmashArc = false;
 
     // on the ground it's always an underhand-style return; in the air, a charge of
@@ -8153,6 +8297,7 @@
     if (right) { right.shermanMandateActive = false; right.shermanDragonAirTimer = 0; right.jordanTempestActive = false; if (!right.jordanDomainLiveActive) { right.jordanSilhouette = 0; right.jordanEyeGlow = 0; right.jordanCircleRadius = 0; right.momentumChargeBlocked = false; } }
     shuttle.ultFx = null; // clear ult signature trail flavour
     shuttle.ultFastDrop = null;
+    shuttle.ultFastAscent = null;
     shuttle.ultSmashArc = false;
     shuttle.hitByMaxPower = false;
     shuttle.maxPowerDiveApplied = false;
@@ -8324,7 +8469,97 @@
     playSound('matchWin');
   }
 
+  // Shared teardown: called at the very top of both startGame() and restartGame() so a new/
+  // reset match ALWAYS begins with every ult/domain/cinematic/overlay flag cleared. Fixes:
+  //   • new-match starts with a stale ult meter already loaded
+  //   • re-picking Jordan (or any character) after changing opponent leaves you inside the
+  //     previous match's domain/silhouette
+  //   • the pause-menu Restart button zeros scores but leaves players stuck in ult form
+  function clearAllUltAndOverlayState(){
+    // Globals: overlays, camera cinematic, sim-speed hitches, screen shake, domain, banners
+    if (typeof activeDomain !== 'undefined')   activeDomain   = null;
+    if (typeof ultBurst !== 'undefined')       ultBurst       = null;
+    if (typeof ultCinematic !== 'undefined')   ultCinematic   = null;
+    if (typeof activeStinger !== 'undefined')  activeStinger  = null;
+    if (typeof hitFreezeFrames !== 'undefined') hitFreezeFrames = 0;
+    if (typeof timeScale !== 'undefined')      timeScale      = 1.0;
+    if (typeof shakeTime !== 'undefined')      shakeTime      = 0;
+    if (typeof pointPauseTimer !== 'undefined') pointPauseTimer = 0;
+    if (typeof pointCelebrateSide !== 'undefined') pointCelebrateSide = null;
+    if (typeof floatTexts !== 'undefined' && floatTexts) floatTexts.length = 0;
+    if (typeof particles !== 'undefined' && particles) particles.length = 0;
+    if (typeof camX !== 'undefined')     camX = camY = 0;
+    if (typeof camZoom !== 'undefined')  { camZoom = 1; targetCamX = 0; targetCamY = 0; targetCamZoom = 1; }
+    // Shuttle: nuke every optional ult/hold flag so nothing lingers into the fresh serve
+    if (typeof shuttle !== 'undefined' && shuttle) {
+      shuttle.vx = 0; shuttle.vy = 0; shuttle.active = false;
+      shuttle.ultFx = null; shuttle.ultFastDrop = null; shuttle.ultFastAscent = null; shuttle.ultSmashArc = false;
+      shuttle.jordanTempestRelease = 0; shuttle.jordanTempestIsAir = false; shuttle.jordanTempestOwner = null;
+      shuttle.jordanPauseHeld = false;
+      shuttle.jordanSkip = false; shuttle.noDrag = false;
+      shuttle.puppeteerRealX = undefined; shuttle.puppeteerPauseTimer = 0; shuttle.puppeteerHesitated = false;
+      shuttle.isShermanRain = false; shuttle.rainShuttles = [];
+      shuttle.isShermanDragonSmash = false; shuttle.shermanDragonReleaseTimer = 0; shuttle.shermanDragonTargetX = undefined;
+      shuttle.sightLineReticle = null; shuttle.ultMarker = null;
+      shuttle.hitByMaxPower = false; shuttle.maxPowerDiveApplied = false;
+      shuttle.dinkDiveApplied = false; shuttle.netCollisionResolved = false;
+      shuttle.priyaIgnitionTrail = false; shuttle.diegoScatter = false;
+      shuttle.isKnuckleball = false;
+      shuttle.cristianoUltScoredBy = null; shuttle.cristianoUltKind = null;
+      shuttle.hideMarkerBeforeCrossNet = false;
+      shuttle.isUltimateShot = false; shuttle.held = false; shuttle.holdTimer = 0;
+    }
+    // Per-player: every named ult/transform/cinematic/passive-timer flag we've added.
+    // Kept as a single function so a future character's flag can just be appended once.
+    [left, right].forEach(function(p){
+      if (!p) return;
+      // Momentum + charging pipeline
+      Simulation.resetMomentum(p);
+      p.charging = false; p.chargeStart = 0;
+      p.ultCharging = false; p.ultPrimed = false; p.ultChargeProgress = 0;
+      p.momentumChargeBlocked = false;
+      p.aiUltIntent = null;
+      // Movement/hit bookkeeping
+      p.dashTimer = 0; p.dashDir = 0; p.lastDashTime = -999;
+      p.swingTimer = 0; p.swingPowerFrac = 1; p.visualSwingDelay = 0;
+      p.lastHitTime = -999; p.lastSwingTime = 0; p.nextCooldownMult = 1;
+      p.dashGhosts = [];
+      // Transform (Ninjja Absolute Zone / Elijah / Benjamin / Amara / etc.)
+      p.transform = null; p.baseCharacter = null;
+      p.absoluteZoneTimer = 0; p.absoluteZoneFlash = 0;
+      // Sherman
+      p.shermanMandateActive = false; p.shermanMandateTimer = 0; p.shermanDragonAirTimer = 0;
+      // Jordan — Tempest King's Dominion (splash → closeup → expand → live-domain)
+      p.jordanTempestActive = false; p.jordanTempestTimer = 0; p.jordanTempestIsAir = false;
+      p.jordanDomainLiveActive = false; p.jordanDomainLiveTimer = 0;
+      p.jordanSilhouette = 0; p.jordanEyeGlow = 0; p.jordanCircleRadius = 0; p.jordanFaceCloseup = 0;
+      p._tempestCloseupImpact = false; p._tempestExpandImpact = false;
+      p._tempestFullImpact = false; p._tempestLaunched = false;
+      p.jordanPauseCharges = 0; p.jordanPauseActive = false; p.jordanPauseTimer = 0;
+      // Other character-specific timed states
+      p.craterTimer = 0;
+      p.deadWeightSwings = 0; p.deadWeightStack = 0; p.deadWeightTimer = 0;
+      p.todoGasTimer = 0; p.todoGasStacks = 0;
+      p.solarJudgmentSunTimer = 0;
+      p.legendTimer = 0; p.secondGearTimer = 0;
+      p.lightFeetTimer = 0;
+      p.mayaDinkCount = 0; p.mayaFlowState = false;
+      p.staminaDebuffTimer = 0; p.burnoutTimer = 0;
+      p.bicycleKickTimer = 0;
+      p.moPeakLogged = false;
+      // Passive bookkeeping
+      p.flairStacks = 0; p.followThroughUntil = 0; p.lastShotKind = null;
+      // Stamina full for a fresh match
+      refillStamina(p);
+    });
+    // Recompute the state machine to a clean serve on the next tick — setupServe() will
+    // reset positions, pick the server, and put state back to 'serve'.
+    if (typeof state !== 'undefined') state = 'serve';
+    if (typeof isServeFlight !== 'undefined') isServeFlight = false;
+  }
+
   function startGame(){
+    clearAllUltAndOverlayState();
     resetMatchStats();
     // Clear any mid-pause sub-flow state — relevant when this run through
     // startGame() was reached via "Change Characters" from the pause menu,
@@ -8364,6 +8599,7 @@
   }
 
   function restartGame(){
+    clearAllUltAndOverlayState();
     resetMatchStats();
     document.getElementById('gameOverOverlay').classList.add('hidden');
     left.x = COURT_LEFT+180; left.y = GROUND_Y-PLAYER_H; left.vx=0; left.vy=0; left.onGround=true;
@@ -10849,6 +11085,7 @@
          : shuttle.dinkDiveApplied ? shuttle.dinkPostNetGravity
          : shuttle.kind === 'dink' ? DINK_PRE_NET_GRAVITY
          : (shuttle.ultFastDrop && shuttle.vy > 0) ? SHUTTLE_GRAVITY * shuttle.ultFastDrop
+         : (shuttle.ultFastAscent && shuttle.vy < 0) ? SHUTTLE_GRAVITY * shuttle.ultFastAscent
          : (shuttle.ultFx && shuttle.ultFx.art && shuttle.kind !== 'smash' && shuttle.vy > 0) ? SHUTTLE_GRAVITY * 2.5
          : SHUTTLE_GRAVITY;
   }
@@ -11264,7 +11501,7 @@
             y: GROUND_Y - 5,
             vx: (Math.random() - 0.5) * 250,
             vy: -Math.random() * 350 - 50,
-            color: '#5b9bff',
+            color: '#d4d4d8',
             size: Math.random() * 5 + 2,
             alpha: 1.0,
             decay: 2.5,
@@ -11376,9 +11613,14 @@
           const jordanPaused = left.jordanPauseActive ? left : (right.jordanPauseActive ? right : null);
           const jordanFrozenSide = jordanPaused ? (jordanPaused.side === 'left' ? 'right' : 'left') : null;
 
-          if(!jordanPaused) updateAI(simDt, nowSec);
+          // Jordan's Tempest buildup: EVERYONE is locked (both players and their AIs) for the
+          // whole splash → consume → face → expand cinematic. Control returns only once the
+          // buildup ends and the shuttle launches.
+          const tempestActive = !!(left.jordanTempestActive || right.jordanTempestActive);
 
-          if(state === 'rally' || state === 'serve'){
+          if(!jordanPaused && !tempestActive) updateAI(simDt, nowSec);
+
+          if((state === 'rally' || state === 'serve') && !tempestActive){
             if(jordanFrozenSide !== 'left'){
               updatePlayer(left, simDt,
                 isHumanControlled(left)  ? keyBindings.p1Left  : AI_KEYMAP.left.moveLeft,
@@ -12099,15 +12341,15 @@
       var _haloR=5;
       [[_gfx+_geL+1,_gfy+_gey+1],[_gfx+_geR+1,_gfy+_gey+1]].forEach(function(pt){
         var grad=_pixCtx.createRadialGradient(pt[0],pt[1],0.3,pt[0],pt[1],_haloR);
-        grad.addColorStop(0,'rgba(255,255,255,0.9)');
-        grad.addColorStop(1,'rgba(255,255,255,0)');
+        grad.addColorStop(0,'rgba(220,250,255,0.9)');
+        grad.addColorStop(1,'rgba(120,220,255,0)');
         _pixCtx.fillStyle=grad;
         _pixCtx.fillRect(pt[0]-_haloR,pt[1]-_haloR,_haloR*2,_haloR*2);
       });
       _pixCtx.restore();
       _pixCtx.save();
       _pixCtx.globalAlpha=ang.eyeGlow;
-      _pixCtx.fillStyle='#ffffff';
+      _pixCtx.fillStyle='#eafeff';
       _pixCtx.fillRect(_gfx+_geL,_gfy+_gey,2,2);
       _pixCtx.fillRect(_gfx+_geR,_gfy+_gey,2,2);
       _pixCtx.restore();
@@ -13020,42 +13262,122 @@
       g.fillRect(cx + cw / 2 - q(12), cy - q(6), q(30), q(14));      // right nub
     }
 
-    // Ruined pillars — broken temple silhouettes (already blocky; keep, grid-snapped)
+    // ===== Deep-background temple wall silhouette =====
+    // Long low frieze across the middle-back, punched with rectangular window/door openings.
+    // Drawn first so pillars in front overlap it cleanly.
+    g.fillStyle = '#141414';
+    const wallY = GROUND_Y - 230;
+    const wallH = 130;
+    g.fillRect(0, q(wallY), W, q(wallH));
+    // Battlements along the top of the wall — regular crenellations
+    g.fillStyle = '#1a1a1a';
+    for (let cx = 0; cx < W; cx += 40) {
+      g.fillRect(q(cx), q(wallY - 12), q(24), q(12));
+    }
+    // Punched openings (arched doorways represented as flat-top rectangles for pixel purity)
+    g.fillStyle = '#08080a';
+    const openings = [ [90, 40, 60], [260, 34, 74], [430, 44, 60], [640, 32, 80], [860, 42, 60], [1040, 34, 72], [1200, 40, 60] ];
+    for (let o = 0; o < openings.length; o++) {
+      const [ox, ow, oh] = openings[o];
+      g.fillRect(q(ox), q(wallY + wallH - oh), q(ow), q(oh));
+    }
+    // Cracked/collapsed sections — vertical breaks in the wall silhouette
+    g.fillStyle = '#000000';
+    const breaks = [180, 540, 780, 1140];
+    for (let b = 0; b < breaks.length; b++) {
+      const bx = breaks[b];
+      // jagged step cut through the crenellations
+      g.fillRect(q(bx), q(wallY - 12), q(28), q(20));
+      g.fillRect(q(bx + 6), q(wallY + 8), q(16), q(14));
+    }
+
+    // ===== Foreground columns =====
+    // Each column: stepped capital (top), fluted shaft (thin vertical stripes on the sides),
+    // then a two-tier stepped pedestal at the base. Broken columns lose the capital and
+    // are truncated with a jagged crown.
     const pillars = [
-      { x: 70, h: 160, w: 16, broken: true },
-      { x: 190, h: 210, w: 18, broken: false },
-      { x: 360, h: 130, w: 14, broken: true },
-      { x: 520, h: 90, w: 12, broken: true },
-      { x: 780, h: 100, w: 12, broken: true },
-      { x: 940, h: 200, w: 18, broken: false },
-      { x: 1100, h: 150, w: 16, broken: true },
-      { x: 1220, h: 180, w: 14, broken: true },
+      { x: 70,   h: 200, w: 22, broken: true  },
+      { x: 190,  h: 280, w: 26, broken: false },
+      { x: 360,  h: 160, w: 22, broken: true  },
+      { x: 520,  h: 110, w: 18, broken: true  },
+      { x: 660,  h: 250, w: 24, broken: false },
+      { x: 780,  h: 130, w: 18, broken: true  },
+      { x: 940,  h: 260, w: 26, broken: false },
+      { x: 1100, h: 190, w: 22, broken: true  },
+      { x: 1220, h: 220, w: 22, broken: true  },
     ];
     for (let i = 0; i < pillars.length; i++) {
       const pl = pillars[i];
       const topY = GROUND_Y - pl.h;
-      g.fillStyle = '#1a1a1a';
-      g.fillRect(q(pl.x - pl.w / 2), q(topY), q(pl.w), pl.h);
-      g.fillRect(q(pl.x - pl.w / 2 - 4), q(topY - 5), q(pl.w + 8), U * 2);
-      g.fillRect(q(pl.x - pl.w / 2 - 3), q(GROUND_Y - 6), q(pl.w + 6), U * 2);
+      const xL = q(pl.x - pl.w / 2);
+      const w  = q(pl.w);
+      // Shaft
+      g.fillStyle = '#1e1e1e';
+      g.fillRect(xL, q(topY), w, pl.h);
+      // Fluting — 1-pixel vertical stripes on each side of the shaft to imply cylindrical form
+      g.fillStyle = '#0f0f0f';
+      g.fillRect(xL + U, q(topY + 6), U, pl.h - 18);
+      g.fillRect(xL + w - U * 2, q(topY + 6), U, pl.h - 18);
+      // Center vertical highlight
+      g.fillStyle = '#252525';
+      g.fillRect(xL + w / 2 - Math.floor(U / 2), q(topY + 4), U, pl.h - 16);
+      // Capital (only intact columns) — stepped Doric-ish block
+      if (!pl.broken) {
+        g.fillStyle = '#242424';
+        g.fillRect(xL - U * 3, q(topY - 8),  w + U * 6, q(6));
+        g.fillRect(xL - U * 2, q(topY - 14), w + U * 4, q(6));
+        g.fillStyle = '#111111';
+        g.fillRect(xL - U * 3, q(topY - 4),  w + U * 6, U);
+      }
+      // Pedestal — two stepped tiers rising off the ground
+      g.fillStyle = '#242424';
+      g.fillRect(xL - U * 3, q(GROUND_Y - 12), w + U * 6, q(12));
+      g.fillRect(xL - U * 5, q(GROUND_Y - 6),  w + U * 10, q(6));
+      g.fillStyle = '#0e0e0e';
+      g.fillRect(xL - U * 3, q(GROUND_Y - 12), w + U * 6, U); // top edge shadow line
+      // Broken crown for shattered pillars — a jagged stepped skyline
       if (pl.broken) {
-        // stepped broken crown instead of a smooth triangle
         g.fillStyle = '#0e0e0e';
-        g.fillRect(q(pl.x - pl.w / 2), q(topY), q(pl.w / 2), U * 2);
-        g.fillRect(q(pl.x), q(topY + 3), q(pl.w / 2), U * 3);
+        g.fillRect(xL, q(topY), q(pl.w / 2), U * 2);
+        g.fillRect(xL + w / 2, q(topY + 4), q(pl.w / 2), U * 3);
+        g.fillRect(xL + w - U * 2, q(topY + 8), U * 2, U * 2);
+        // A fallen chunk lying at the base
+        g.fillStyle = '#1a1a1a';
+        g.fillRect(xL + w + U * 4, q(GROUND_Y - 10), q(18), q(6));
+        g.fillRect(xL + w + U * 4, q(GROUND_Y - 6),  q(24), q(6));
       }
     }
 
-    // Fallen arch between two pillars — stepped blocky segments (was a quadratic curve)
-    g.fillStyle = '#1a1a1a';
+    // ===== Fallen arch between two intact pillars — stepped blocky voussoirs =====
+    g.fillStyle = '#1e1e1e';
     const archPts = [
-      [190, 210], [230, 245], [275, 258], [320, 235], [360, 130]
+      [190, 280], [225, 315], [265, 328], [305, 328], [345, 315], [380, 280], [415, 220], [450, 160]
     ];
     for (let a = 0; a < archPts.length; a++) {
-      g.fillRect(q(archPts[a][0]) - U * 2, q(GROUND_Y - archPts[a][1]), U * 4, U * 4);
+      g.fillRect(q(archPts[a][0]) - U * 3, q(GROUND_Y - archPts[a][1]), U * 6, U * 5);
+    }
+    // A broken bit dangling off the far end
+    g.fillStyle = '#141414';
+    g.fillRect(q(450) - U * 3, q(GROUND_Y - 160), U * 3, q(30));
+
+    // ===== A toppled statue — headless torso silhouette lying on its side =====
+    // Sits between the pillars around x=580, x=660 for visual variety
+    g.fillStyle = '#1a1a1a';
+    g.fillRect(q(580), q(GROUND_Y - 18), q(80), q(18));         // torso
+    g.fillRect(q(620), q(GROUND_Y - 32), q(28), q(14));         // shoulder mound
+    g.fillRect(q(560), q(GROUND_Y - 14), q(16), q(14));         // outstretched arm
+    g.fillStyle = '#0e0e0e';
+    g.fillRect(q(566), q(GROUND_Y - 6), q(90), q(2));           // shadow line under it
+
+    // ===== Small rubble scattered on the ground =====
+    g.fillStyle = '#141414';
+    const rubble = [ [40, 8, 6], [420, 10, 5], [500, 6, 4], [720, 12, 5], [860, 8, 5], [1030, 14, 6], [1160, 10, 5], [1275, 8, 5] ];
+    for (let r = 0; r < rubble.length; r++) {
+      const [rx, rw, rh] = rubble[r];
+      g.fillRect(q(rx), q(GROUND_Y - rh), q(rw), q(rh));
     }
 
-    // Floating debris — pixel chunks
+    // Floating debris — pixel chunks drifting through the air
     for (let i = 0; i < 10; i++) {
       const dx = q(((i * 157 + now * (6 + i * 0.4)) % (W + 40)) - 20);
       const dy = q(120 + Math.sin(now * 0.6 + i * 2.3) * 50 + (i * 53 % 220));
@@ -14149,6 +14471,10 @@
         case 'jordan': {
           const jp = domainPlayer;
           const circR = jp.jordanCircleRadius || 0;
+          // Skip the whole domain draw entirely while the buildup is still in the SPLASH /
+          // CONSUME / FACE phases — those beats are supposed to show the untouched court (or
+          // the face-closeup overlay). The storm only reveals when EXPAND begins (circR > 0).
+          if (circR <= 0) break;
           // Storm pixelates + reveals through its own low-res buffer (drawTempestDomainFull).
           drawTempestDomainFull(jp);
           // While the front is still sweeping open, trace a crackling lightning rim along its edge.
@@ -14157,7 +14483,7 @@
             ctx.strokeStyle = 'rgba(200,224,255,0.7)';
             ctx.lineWidth = 3;
             ctx.lineJoin = 'miter';
-            ctx.shadowColor = '#5b9bff';
+            ctx.shadowColor = '#d4d4d8';
             ctx.shadowBlur = 16;
             ctx.beginPath();
             tempestFrontPath(ctx, jp, circR);
@@ -14394,7 +14720,7 @@
 
   // ---- Signature ultimate colors (unique per character) ----
   const ULT_TRAIL_COLORS = {
-    lindan:'#ffd54a', cristiano:'#ff5a2a', diego:'#ff4444', jordan:'#5b9bff',
+    lindan:'#ffd54a', cristiano:'#ff5a2a', diego:'#ff4444', jordan:'#d4d4d8',
     maya:'#c084fc', amara:'#22d3ee', priya:'#ff2d6b', kenji:'#34d399',
     sofia:'#f472b6', elijah:'#f59e0b', mateo:'#fb923c', benjamin:'#cbd5e1',
     rodrigo:'#facc15', sherman:'#a78bfa', ninjja:'#6ef3ff'
@@ -14406,7 +14732,7 @@
       const airColors = {
         cristiano: '#ff5a2a', // Air: Bicycle Kick Vortex
         maya: '#d8b4fe',      // Air: purple-magenta / Sight Line
-        jordan: '#3b82f6',     // Air: cobalt-blue / Hammer Drop
+        jordan: '#e5e7eb',     // Air: near-white / Thunder Break Descent (void aesthetic)
         kenji: '#059669',      // Air: deep emerald / Hang Time
         amara: '#06b6d4',      // Air: neon cyan / Crosshairs
         sofia: '#ec4899',      // Air: hot pink / Ghost Step
@@ -14421,7 +14747,7 @@
       const groundColors = {
         cristiano: '#f97316', // Ground: Knuckleball Orange
         maya: '#a855f7',      // Ground: violet Blueprint
-        jordan: '#60a5fa',     // Ground: light sky blue Full Stop
+        jordan: '#d4d4d8',     // Ground: silver-white / Judgment of the Storm King (void aesthetic)
         kenji: '#10b981',      // Ground: bright mint green Sprint Return
         amara: '#22d3ee',      // Ground: cyan Puppeteer
         sofia: '#db2777',      // Ground: rose magenta Feint Royale
@@ -14680,28 +15006,23 @@
       armBack = -0.3;
     }
 
-    // Jordan Tempest cinematic: calm stance, then one hand slowly rises
+    // Jordan Tempest cinematic — arm choreography for each phase:
+    //   SPLASH/CONSUME/FACE: still. Palm cupped at chest height, holding the orb that's
+    //                        consuming him (arm forward, not raised).
+    //   EXPAND:              the hand rises all the way up to point at the sky as the
+    //                        domain scatters outward — driven by p.jordanArmRaise (0..1).
     if (p.jordanTempestActive) {
-      const mElapsed = 2.5 - Math.max(0, Math.min(2.5, p.jordanTempestTimer));
       legFront = 0;
       legBack = 0;
       if (p.jordanTempestIsAir) {
         legFront = -0.4;
         legBack = 0.2;
       }
-      if (mElapsed < 0.5) {
-        armFront = -0.3;
-      } else if (mElapsed < 1.5) {
-        const t = Math.max(0, Math.min(1, (mElapsed - 0.5) / 1.0));
-        const ease = t * t * (3 - 2 * t);
-        armFront = -0.3 + (1.6 - (-0.3)) * ease;
-      } else if (mElapsed < 2.0) {
-        armFront = 1.6;
-      } else {
-        const t = Math.max(0, Math.min(1, (mElapsed - 2.0) / 0.5));
-        const ease = t * t * (3 - 2 * t);
-        armFront = 1.6 + (0.3 - 1.6) * ease;
-      }
+      const raise = p.jordanArmRaise || 0;
+      // -0.2 = forearm cupped in front (holding orb); -2.4 = pointing straight up.
+      const armHold = -0.2;
+      const armSky  = -2.4;
+      armFront = armHold + (armSky - armHold) * raise;
       armBack = -0.3;
     }
 
@@ -15008,6 +15329,48 @@
         ctx.save();
         ctx.globalAlpha = sil;
         drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), silCh, angData, facing);
+        ctx.restore();
+      }
+
+      // Orb-of-void in Jordan's raised palm — CONSUME beat only. Grows as jordanConsumeOrb
+      // fills; casts light bleeding tendrils that "eat" the body from the hand inward. Sits
+      // where his cupped hand is (armFront = -0.2 in the arm choreography), which is roughly
+      // in front of his chest at head height.
+      const orb = p.jordanConsumeOrb || 0;
+      if (orb > 0 && orb < 1.001) {
+        const orbR = 4 + orb * 10;
+        // Hand offset: -0.2 rad from vertical → slightly in front of chest, at ~head height.
+        const orbX = cx + facing * 6 + Math.sin(-0.2) * facing * 8;
+        const orbY = p.y + PLAYER_H * 0.30;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        // Outer halo — white/silver bleed
+        const oh = ctx.createRadialGradient(orbX, orbY, 1, orbX, orbY, orbR * 2.6);
+        oh.addColorStop(0,   'rgba(255,255,255,' + (0.85 * orb) + ')');
+        oh.addColorStop(0.4, 'rgba(220,225,235,' + (0.4 * orb) + ')');
+        oh.addColorStop(1,   'rgba(180,190,205,0)');
+        ctx.fillStyle = oh;
+        ctx.fillRect(orbX - orbR * 2.6, orbY - orbR * 2.6, orbR * 5.2, orbR * 5.2);
+        // Bright core
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(orbX, orbY, orbR * 0.5, 0, Math.PI * 2); ctx.fill();
+        // Void tendrils reaching outward from the orb across Jordan's body — dark rays that
+        // trace the consuming direction. Sits in normal composite so they read as SHADOW.
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = orb * 0.85;
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        const tendrilCount = 6;
+        const nowT = performance.now() * 0.001;
+        for (let k = 0; k < tendrilCount; k++) {
+          const ang = (k / tendrilCount) * Math.PI * 2 + nowT * 0.6;
+          const reach = orbR * (2.2 + Math.sin(nowT * 3 + k) * 0.4);
+          ctx.beginPath();
+          ctx.moveTo(orbX, orbY);
+          ctx.lineTo(orbX + Math.cos(ang) * reach, orbY + Math.sin(ang) * reach);
+          ctx.stroke();
+        }
         ctx.restore();
       }
 
@@ -15749,6 +16112,346 @@
   //   0.15–1.00  radial speed-lines + a diagonal color band sweep behind the pose
   //   0.42–1.00  art-name text slams down with expanding shockwave rings
   //   0.85–1.00  veil + pose wipe away, handing back to gameplay
+  // Jordan — Tempest King splash art. Pure black void silhouette with two glowing amber eyes
+  // and a raised palm-out hand (reference: villain "storm king" cover art). Rendered entirely
+  // as a full-screen shape rather than a scaled sprite so the pose can be dramatic and the
+  // silhouette can bleed into the surrounding storm fog without a bounding box.
+  // Jordan splash art — bold iconic void silhouette against a hazy backlit sky (mirrors the
+  // reference cover art). Built from a small set of ellipses+rounded shapes filled pure black
+  // so they union cleanly without seams, rather than a single fragile bezier outline.
+  function drawJordanUltBurst(b, t, env, clamp01, easeOut){
+    // Timeline (short — the splash is only JORDAN_TEMPEST_SPLASH long):
+    //  0.00–0.10  impact flash
+    //  0.05–0.35  silhouette slams up from below into place
+    //  0.15–1.00  amber eyes ignite
+    //  0.30–1.00  name slam
+    ctx.save();
+
+    const nowS = performance.now() * 0.001;
+
+    // 0. Opening white impact flash
+    if (t < 0.10) {
+      ctx.globalAlpha = (1 - t / 0.10) * 0.95;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // 1. Bright hazy sky backdrop — mirrors the reference cover art (light behind, silhouette
+    //    in front). Grey-blue radial with a warm yellow bleed at the top for the storm sun.
+    ctx.globalAlpha = env;
+    const sky = ctx.createRadialGradient(W * 0.5, H * 0.35, 40, W * 0.5, H * 0.6, Math.max(W, H) * 0.9);
+    sky.addColorStop(0, '#e6e9ee');
+    sky.addColorStop(0.35, '#c9ced6');
+    sky.addColorStop(0.7, '#8f96a2');
+    sky.addColorStop(1, '#4b5260');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    // Film-grain haze — subtle noise so the sky doesn't look like a flat gradient
+    ctx.save();
+    ctx.globalAlpha = env * 0.10;
+    ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < 80; i++) {
+      const gx = (i * 173 + nowS * 30) % W;
+      const gy = ((i * 89) % H) + Math.sin(nowS + i) * 8;
+      ctx.fillRect(gx, gy, 2, 2);
+    }
+    ctx.restore();
+
+    // Drifting cloud bands (very soft, blend-lighten so they wash the sky)
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = env * 0.25;
+    for (let i = 0; i < 4; i++) {
+      const my = H * (0.15 + 0.18 * i);
+      const mx = ((i * 340 + nowS * 40) % (W + 400)) - 200;
+      const mGrad = ctx.createLinearGradient(mx, my, mx + 720, my);
+      mGrad.addColorStop(0, 'rgba(255,255,255,0)');
+      mGrad.addColorStop(0.5, 'rgba(255,255,255,0.5)');
+      mGrad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = mGrad;
+      ctx.fillRect(mx, my - 24, 720, 48);
+    }
+    ctx.restore();
+
+    // 2. THE VOID PORTRAIT — hand-authored art asset (assets/characters/jordan-ultimate-splash.png)
+    // if it's finished loading; falls back to a small procedural silhouette otherwise so
+    // nothing ever breaks on a slow/failed load. Slam-in: rises up from the bottom quickly.
+    const slamProg = easeOut(clamp01((t - 0.05) / 0.30));
+    const posOffY = (1 - slamProg) * H * 0.24;
+    const asset = ART_ASSETS.jordanSplash;
+
+    let eyeLX, eyeLY, eyeRX, eyeRY, haloCX, haloCY, haloR;
+
+    if (asset && asset.ready) {
+      // Fit the source image to the canvas height (their aspect ratios are nearly identical),
+      // centered horizontally, bottom-anchored, with a touch of overscan for drama.
+      const drawH = H * 1.10;
+      const drawW = asset.w * (drawH / asset.h);
+      const dx = (W - drawW) / 2;
+      const dy = (H - drawH) + posOffY;
+
+      // Soft outer halo behind the portrait, centered on the eye line
+      haloCX = dx + (JORDAN_SPLASH_EYE_L.fx + JORDAN_SPLASH_EYE_R.fx) / 2 * drawW;
+      haloCY = dy + (JORDAN_SPLASH_EYE_L.fy + JORDAN_SPLASH_EYE_R.fy) / 2 * drawH;
+      haloR = drawH * 0.42;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = env * 0.32;
+      const haloG = ctx.createRadialGradient(haloCX, haloCY, 20, haloCX, haloCY, haloR);
+      haloG.addColorStop(0, 'rgba(210,245,255,0.5)');
+      haloG.addColorStop(0.6, 'rgba(160,210,230,0.14)');
+      haloG.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = haloG;
+      ctx.fillRect(haloCX - haloR, haloCY - haloR, haloR * 2, haloR * 2);
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalAlpha = env;
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(asset.blackImg || asset.img, dx, dy, drawW, drawH);
+      ctx.restore();
+
+      eyeLX = dx + JORDAN_SPLASH_EYE_L.fx * drawW; eyeLY = dy + JORDAN_SPLASH_EYE_L.fy * drawH;
+      eyeRX = dx + JORDAN_SPLASH_EYE_R.fx * drawW; eyeRY = dy + JORDAN_SPLASH_EYE_R.fy * drawH;
+    } else {
+      // ---- Fallback: minimal procedural silhouette (asset not loaded yet) ----
+      const U = Math.min(W, H) / 22;
+      const sx = W * 0.5;
+      const sy = H * 1.02 + posOffY;
+      ctx.save();
+      ctx.globalAlpha = env;
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.moveTo(sx - 4.2 * U, sy);
+      ctx.lineTo(sx - 5.6 * U, sy - 4.5 * U);
+      ctx.quadraticCurveTo(sx - 6.6 * U, sy - 6.2 * U, sx - 4.8 * U, sy - 6.5 * U);
+      ctx.lineTo(sx + 5.0 * U, sy - 6.5 * U);
+      ctx.quadraticCurveTo(sx + 6.6 * U, sy - 6.2 * U, sx + 5.4 * U, sy - 4.5 * U);
+      ctx.lineTo(sx + 4.2 * U, sy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(sx, sy - 8.9 * U, 2.4 * U, 2.5 * U, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      eyeLX = sx - 0.9 * U; eyeLY = sy - 9.1 * U;
+      eyeRX = sx + 0.9 * U; eyeRY = sy - 9.1 * U;
+    }
+
+    // 3. CYAN-ICE GLOWING EYES — the source art already has glow baked in; this is just an
+    // additive pulse layered on top at the exact same measured position for extra life.
+    const eyeT = clamp01((t - 0.15) / 0.15);
+    if (eyeT > 0) {
+      const eyeAlpha = env * eyeT;
+      const pulse = 0.85 + 0.15 * Math.sin(nowS * 8);
+      const eyeUnit = (haloR || Math.min(W, H) / 22) * 0.055;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      [[eyeLX, eyeLY], [eyeRX, eyeRY]].forEach(function(pt){
+        ctx.globalAlpha = eyeAlpha * 0.85 * pulse;
+        const glowR = eyeUnit * 7;
+        const g = ctx.createRadialGradient(pt[0], pt[1], 1, pt[0], pt[1], glowR);
+        g.addColorStop(0,    'rgba(220, 250, 255, 1)');
+        g.addColorStop(0.30, 'rgba(120, 220, 255, 0.85)');
+        g.addColorStop(1,    'rgba(30, 160, 220, 0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(pt[0] - glowR, pt[1] - glowR, glowR * 2, glowR * 2);
+      });
+      // Bright inner core (near-white)
+      ctx.globalAlpha = eyeAlpha;
+      ctx.fillStyle = '#eafeff';
+      ctx.beginPath(); ctx.arc(eyeLX, eyeLY, eyeUnit * 1.1 * pulse, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(eyeRX, eyeRY, eyeUnit * 1.1 * pulse, 0, Math.PI * 2); ctx.fill();
+      // Ice-cyan pupil
+      ctx.fillStyle = '#37d6ff';
+      ctx.beginPath(); ctx.arc(eyeLX, eyeLY, eyeUnit * 0.6 * pulse, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(eyeRX, eyeRY, eyeUnit * 0.6 * pulse, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
+    // 3. Name slam — kicks in early (~30% through the splash) since the splash beat is
+    //    short (JORDAN_TEMPEST_SPLASH = 0.5s), so the name needs its own room to land.
+    if (t > 0.30) {
+      const nameT = (t - 0.30) / 0.70;
+      const slam = easeOut(nameT / 0.3);
+      const nameScale = 1 + (1 - clamp01(nameT / 0.22)) * 0.6;
+      const nameX = W * 0.5;
+      const nameY = H * 0.22;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (let r = 0; r < 2; r++) {
+        const rp = clamp01((nameT - r * 0.12) / 0.5);
+        if (rp <= 0 || rp >= 1) continue;
+        ctx.globalAlpha = (1 - rp) * 0.5 * env;
+        ctx.strokeStyle = '#37d6ff';
+        ctx.lineWidth = 5 * (1 - rp);
+        ctx.beginPath();
+        ctx.arc(nameX, nameY + 20, 30 + rp * 420, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalAlpha = env * slam;
+      ctx.translate(nameX, nameY);
+      ctx.scale(nameScale, nameScale);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      // "JORDAN" (small, above)
+      ctx.font = '900 30px "Space Grotesk", sans-serif';
+      ctx.lineWidth = 6; ctx.strokeStyle = '#04050a';
+      ctx.strokeText(b.name, 0, -30);
+      ctx.fillStyle = '#eafeff';
+      ctx.shadowColor = '#37d6ff'; ctx.shadowBlur = 14;
+      ctx.fillText(b.name, 0, -30);
+      // Art title (big ice-cyan slam)
+      ctx.font = '900 46px "Space Grotesk", sans-serif';
+      ctx.lineWidth = 8; ctx.strokeStyle = '#04050a';
+      ctx.strokeText(b.artName, 0, 14);
+      const iceGrad = ctx.createLinearGradient(0, -10, 0, 40);
+      iceGrad.addColorStop(0, '#eafeff');
+      iceGrad.addColorStop(0.5, '#37d6ff');
+      iceGrad.addColorStop(1, '#0e6f96');
+      ctx.fillStyle = iceGrad;
+      ctx.shadowColor = '#37d6ff'; ctx.shadowBlur = 18;
+      ctx.fillText(b.artName, 0, 14);
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  // Full-screen close-up of Jordan's void face — fires during the FACE beat of his tempest
+  // buildup (see tickJordanTempest). Composition: giant black silhouette head pushed to one
+  // side of the frame (half in-frame), glowing amber eyes locked on the camera, background
+  // fades from court-lit sky to full void. Opacity is driven by p.jordanFaceCloseup (0..1)
+  // which the tick function ramps in/out for a snappy hold.
+  function drawJordanFaceCloseup(){
+    const jp = (left && left.jordanTempestActive && (left.jordanFaceCloseup||0) > 0.02) ? left
+             : (right && right.jordanTempestActive && (right.jordanFaceCloseup||0) > 0.02) ? right : null;
+    if(!jp) return;
+    const a = jp.jordanFaceCloseup;
+    const bg = jp.jordanBgVoid || 0;
+
+    ctx.save();
+    ctx.globalAlpha = a;
+
+    // Backdrop — court-color at bg=0 → deep void at bg=1
+    const bgGrad = ctx.createRadialGradient(W * 0.7, H * 0.5, 40, W * 0.7, H * 0.5, Math.max(W, H));
+    // interpolate between "grey sky" and "void"
+    const lerp = function(c1, c2, k){ return 'rgba(' + Math.round(c1[0]*(1-k)+c2[0]*k) + ',' + Math.round(c1[1]*(1-k)+c2[1]*k) + ',' + Math.round(c1[2]*(1-k)+c2[2]*k) + ',1)'; };
+    bgGrad.addColorStop(0,   lerp([200,205,215], [16,18,26],  bg));
+    bgGrad.addColorStop(0.5, lerp([120,130,145], [8,10,16],  bg));
+    bgGrad.addColorStop(1,   lerp([50,55,66],   [0,0,0],     bg));
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Drifting cloud/mist bands so it doesn't read as a flat gradient
+    const nowS = performance.now() * 0.001;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = a * (0.28 - bg * 0.18);
+    for (let i = 0; i < 4; i++) {
+      const my = H * (0.12 + 0.22 * i);
+      const mx = ((i * 380 + nowS * 30) % (W + 400)) - 200;
+      const mGrad = ctx.createLinearGradient(mx, my, mx + 720, my);
+      mGrad.addColorStop(0, 'rgba(255,255,255,0)');
+      mGrad.addColorStop(0.5, 'rgba(255,255,255,0.5)');
+      mGrad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = mGrad;
+      ctx.fillRect(mx, my - 24, 720, 48);
+    }
+    ctx.restore();
+
+    // === HALF-FACE PORTRAIT, pushed off the right/left edge so ONLY half is on-screen ===
+    // Punches in on the same source art's head region (see JORDAN_SPLASH_FACE_CROP), pushed
+    // toward whichever edge is opposite the caster's side for a dramatic off-frame composition.
+    const fromLeft = jp.side === 'left';
+    const asset = ART_ASSETS.jordanSplash;
+    let eyeLX, eyeLY, eyeRX, eyeRY, haloCX, haloCY, haloR;
+
+    if (asset && asset.ready) {
+      const crop = JORDAN_SPLASH_FACE_CROP;
+      const cropX = crop.fx * asset.w, cropY = crop.fy * asset.h;
+      const cropW = crop.fw * asset.w, cropH = crop.fh * asset.h;
+      // Destination: a big punch-in, tall enough to bleed off top/bottom, pushed toward the
+      // far edge (face "intrudes" from off-frame) based on caster side.
+      const drawH = H * 1.35;
+      const drawW = cropW * (drawH / cropH);
+      const dy = (H - drawH) / 2;
+      const dx = fromLeft ? W * 0.58 - drawW * 0.5 : W * 0.42 - drawW * 0.5;
+
+      haloCX = dx + ((JORDAN_SPLASH_EYE_L.fx * asset.w - cropX) + (JORDAN_SPLASH_EYE_R.fx * asset.w - cropX)) / 2 * (drawW / cropW);
+      haloCY = dy + ((JORDAN_SPLASH_EYE_L.fy * asset.h - cropY) + (JORDAN_SPLASH_EYE_R.fy * asset.h - cropY)) / 2 * (drawH / cropH);
+      haloR = drawH * 0.45;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = a * 0.35;
+      const halo = ctx.createRadialGradient(haloCX, haloCY, 30, haloCX, haloCY, haloR);
+      halo.addColorStop(0, 'rgba(210,245,255,0.35)');
+      halo.addColorStop(0.6, 'rgba(160,210,230,0.12)');
+      halo.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = halo;
+      ctx.fillRect(haloCX - haloR, haloCY - haloR, haloR * 2, haloR * 2);
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(asset.blackImg || asset.img, cropX, cropY, cropW, cropH, dx, dy, drawW, drawH);
+      ctx.restore();
+
+      eyeLX = dx + (JORDAN_SPLASH_EYE_L.fx * asset.w - cropX) * (drawW / cropW);
+      eyeLY = dy + (JORDAN_SPLASH_EYE_L.fy * asset.h - cropY) * (drawH / cropH);
+      eyeRX = dx + (JORDAN_SPLASH_EYE_R.fx * asset.w - cropX) * (drawW / cropW);
+      eyeRY = dy + (JORDAN_SPLASH_EYE_R.fy * asset.h - cropY) * (drawH / cropH);
+    } else {
+      // ---- Fallback: minimal procedural face (asset not loaded yet) ----
+      const U = Math.min(W, H) / 12;
+      const cx = fromLeft ? W * 0.28 : W * 0.72;
+      const cy = H * 0.55;
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, 3.0 * U, 3.6 * U, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      eyeLX = cx - 1.1 * U; eyeLY = cy - 0.4 * U;
+      eyeRX = cx + 1.1 * U; eyeRY = cy - 0.4 * U;
+      haloR = 7 * U;
+    }
+
+    // === GLOWING CYAN-ICE EYES — additive pulse on top of the art's own baked-in glow ===
+    const pulse = 0.85 + 0.15 * Math.sin(nowS * 8);
+    const eyeUnit = haloR * 0.09;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    [[eyeLX, eyeLY], [eyeRX, eyeRY]].forEach(function(pt){
+      ctx.globalAlpha = a * 0.9 * pulse;
+      const glowR = eyeUnit * 4.5;
+      const g = ctx.createRadialGradient(pt[0], pt[1], 2, pt[0], pt[1], glowR);
+      g.addColorStop(0,    'rgba(220, 250, 255, 1)');
+      g.addColorStop(0.30, 'rgba(120, 220, 255, 0.85)');
+      g.addColorStop(1,    'rgba(30, 160, 220, 0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(pt[0] - glowR, pt[1] - glowR, glowR * 2, glowR * 2);
+    });
+    // Bright inner core
+    ctx.globalAlpha = a;
+    ctx.fillStyle = '#eafeff';
+    ctx.beginPath(); ctx.arc(eyeLX, eyeLY, eyeUnit * 0.7 * pulse, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(eyeRX, eyeRY, eyeUnit * 0.7 * pulse, 0, Math.PI * 2); ctx.fill();
+    // Ice-cyan pupil
+    ctx.fillStyle = '#37d6ff';
+    ctx.beginPath(); ctx.arc(eyeLX, eyeLY, eyeUnit * 0.4 * pulse, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(eyeRX, eyeRY, eyeUnit * 0.4 * pulse, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+
+    ctx.restore();
+  }
+
   function drawUltBurst(){
     if(!ultBurst) return;
     const b = ultBurst;
@@ -15762,6 +16465,13 @@
     const rise = clamp01(t / 0.12);
     const fall = t > 0.85 ? (1 - (t - 0.85) / 0.15) : 1;
     const env = clamp01(rise) * clamp01(fall);
+
+    // Jordan uses his own bespoke splash art — void silhouette, glowing yellow eyes, raised
+    // palm-out hand — matching the character reference. Bypasses the generic burst below.
+    if (b.character && b.character.id === 'jordan') {
+      drawJordanUltBurst(b, t, env, clamp01, easeOut, fromLeft);
+      return;
+    }
 
     ctx.save();
 
@@ -16203,18 +16913,42 @@
   let shermanCourtDarkness = 0;
 
   function draw(){
-    // Jordan Tempest cinematic camera override — slow zoom toward Jordan
+    // Jordan Tempest cinematic camera override — four-phase choreography synced to the
+    // buildup beats in tickJordanTempest:
+    //   SPLASH   : keep normal framing (splash-art overlay covers the screen)
+    //   CONSUME  : slam in on Jordan; zoom holds while the orb consumes him
+    //   FACE     : held tight — the front-view face overlay covers the screen anyway
+    //   EXPAND   : pull back out to a normal wide framing so the domain reveal reads
     const jordanCinP = (left && left.jordanTempestActive) ? left : ((right && right.jordanTempestActive) ? right : null);
     if (jordanCinP && dynamicCameraEnabled) {
-      const elapsed = 2.5 - Math.max(0, jordanCinP.jordanTempestTimer);
-      targetCamX = (jordanCinP.x + PLAYER_W / 2 - W / 2) * 0.55;
-      targetCamY = (jordanCinP.y + PLAYER_H / 2 - H / 2) * 0.35;
-      if (elapsed < 1.0) {
-        targetCamZoom = 1.0 + elapsed * 0.18;
-      } else if (elapsed < 2.0) {
-        targetCamZoom = 1.18 + (elapsed - 1.0) * 0.08;
+      const elapsed = JORDAN_TEMPEST_BUILDUP - Math.max(0, jordanCinP.jordanTempestTimer);
+      const T = jordanTempestPhaseTimes();
+      const jcx = jordanCinP.x + PLAYER_W / 2;
+      const jcy = jordanCinP.y + PLAYER_H * 0.4;
+      if (elapsed < T.splashEnd) {
+        // Splash overlay covers screen — keep camera parked at a mild zoom-in
+        targetCamX = (jcx - W / 2) * 0.4;
+        targetCamY = (jcy - H / 2) * 0.3;
+        targetCamZoom = 1.10;
+      } else if (elapsed < T.consumeEnd) {
+        // Slam in on Jordan for the orb-consume beat — quick easeIn from splash framing
+        const u = (elapsed - T.splashEnd) / JORDAN_TEMPEST_CONSUME;
+        const easeIn = u * u;
+        targetCamX = (jcx - W / 2) * (0.4 + easeIn * 0.55);
+        targetCamY = (jcy - H / 2) * (0.3  + easeIn * 0.55);
+        targetCamZoom = 1.10 + easeIn * 1.4; // 1.10 → 2.50
+      } else if (elapsed < T.faceEnd) {
+        // Full-screen face overlay covers everything — hold the zoom, no more push
+        targetCamX = (jcx - W / 2) * 0.95;
+        targetCamY = (jcy - H / 2) * 0.85;
+        targetCamZoom = 2.50;
       } else {
-        targetCamZoom = 1.26;
+        // Pull the camera back out for the domain-expand reveal
+        const u = Math.min(1, (elapsed - T.faceEnd) / JORDAN_TEMPEST_EXPAND);
+        const easeOut = 1 - Math.pow(1 - u, 3);
+        targetCamX = (jcx - W / 2) * (0.95 - easeOut * 0.95);
+        targetCamY = (jcy - H / 2) * (0.85 - easeOut * 0.85);
+        targetCamZoom = 2.50 - easeOut * 1.50; // 2.50 → 1.00
       }
     } else
     // Camera target selection
@@ -16374,6 +17108,7 @@
     ctx.restore(); // Restore screenshake
 
     drawUltBurst();     // full-screen ult-activation cutscene (freeze → flood → pose → name slam)
+    drawJordanFaceCloseup();     // full-screen face overlay during his tempest FACE beat
     drawUltCinematic(); // full-screen, untranslated (Part 7)
     drawRetroOverlay(); // PIXEL_REVAMP Phase 2 — subtle CRT scanlines + vignette over the whole frame
     updateServeTag();
