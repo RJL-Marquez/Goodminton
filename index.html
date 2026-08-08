@@ -18313,130 +18313,274 @@
   // and a raised palm-out hand (reference: villain "storm king" cover art). Rendered entirely
   // as a full-screen shape rather than a scaled sprite so the pose can be dramatic and the
   // silhouette can bleed into the surrounding storm fog without a bounding box.
-  // Jordan splash art — bold iconic void silhouette against a hazy backlit sky (mirrors the
-  // reference cover art). Built from a small set of ellipses+rounded shapes filled pure black
-  // so they union cleanly without seams, rather than a single fragile bezier outline.
+  // ---- Jordan's Storm-King aureole ------------------------------------------------------
+  // The storm analogue of drawAmaraAureole, and used the same way (struck behind the portrait,
+  // then re-struck on top clipped outside his head so it blazes around the silhouette instead
+  // of washing out his face). Cold corona + jagged lightning rays + a turning storm ring.
+  function drawJordanAureole(alpha, atX, atY, scale){
+    if (alpha <= 0.001) return;
+    const cx = (atX === undefined) ? W/2 : atX;
+    const cy = (atY === undefined) ? H*0.42 : atY;
+    const k  = (scale === undefined) ? 1 : scale;
+    const t  = performance.now();
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+    ctx.translate(cx, cy); ctx.scale(k, k); ctx.translate(-cx, -cy);
+
+    // Corona — cold storm-blue, stepped through several tones so it doesn't read as one blob.
+    const cor = ctx.createRadialGradient(cx, cy, 4, cx, cy, 128);
+    cor.addColorStop(0,    'rgba(255,255,255,1.0)');
+    cor.addColorStop(0.15, 'rgba(226,245,255,' + (alpha*0.90).toFixed(3) + ')');
+    cor.addColorStop(0.44, 'rgba(125,211,252,' + (alpha*0.50).toFixed(3) + ')');
+    cor.addColorStop(0.76, 'rgba(30,90,140,'   + (alpha*0.24).toFixed(3) + ')');
+    cor.addColorStop(1,    'rgba(30,90,140,0)');
+    ctx.fillStyle = cor;
+    ctx.beginPath(); ctx.arc(cx, cy, 128, 0, Math.PI*2); ctx.fill();
+
+    // Lightning rays — jagged stepped polylines that crack outward (vs Amara's smooth spokes).
+    const rays = 14;
+    ctx.lineCap = 'butt'; ctx.lineJoin = 'miter';
+    for (let i = 0; i < rays; i++){
+      const a = (i * Math.PI*2 / rays) + t*0.00012;
+      const flick = 0.45 + 0.55 * Math.abs(Math.sin(t*0.006 + i*2.1));
+      const len = 152 + Math.sin(t*0.004 + i*1.7) * 18;
+      ctx.strokeStyle = 'rgba(190,232,255,' + (alpha*0.55*flick).toFixed(3) + ')';
+      ctx.lineWidth = (i % 3 === 0) ? 3 : 1.4;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a)*34, cy + Math.sin(a)*34);
+      for (let s = 1; s <= 4; s++){
+        const rr = 34 + (len - 34) * (s/4);
+        const wob = Math.sin(t*0.008 + i*3.3 + s) * 0.10;
+        ctx.lineTo(cx + Math.cos(a + wob)*rr, cy + Math.sin(a + wob)*rr);
+      }
+      ctx.stroke();
+    }
+
+    // Segmented storm ring + counter-rotating hairline.
+    const ringR = 92, segs = 10;
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = 'rgba(125,211,252,' + (alpha*0.80).toFixed(3) + ')';
+    for (let i = 0; i < segs; i++){
+      const a0 = (i * Math.PI*2 / segs) - t*0.00038;
+      ctx.beginPath(); ctx.arc(cx, cy, ringR, a0, a0 + (Math.PI*2/segs)*0.5); ctx.stroke();
+    }
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = 'rgba(255,255,255,' + (alpha*0.55).toFixed(3) + ')';
+    ctx.beginPath(); ctx.arc(cx, cy, ringR*0.84, 0, Math.PI*2); ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // ---- Jordan's ultimate splash portrait -------------------------------------------------
+  // A full-COLOUR 16-bit pixel bust of the Storm King, drawn into the shared low-res buffer in
+  // 1:1 buffer coords and upscaled with smoothing off — the same technique as Amara's close-up
+  // card, so the two cinematics finally read as the same game.
+  //
+  // Why procedural: the previous implementation drew assets/characters/jordan-ultimate-splash.png,
+  // whose binary is corrupted in the repo (every non-ASCII byte was replaced by U+FFFD, so the
+  // JPEG header is destroyed and no browser can decode it). onload therefore never fired, `ready`
+  // stayed false, and the cut-in ALWAYS fell through to a crude trapezoid-plus-ellipse fallback —
+  // the "simple black shadow person". Even the asset path itself blitted `blackImg`, a flat-black
+  // crush of the art. Drawing him properly here removes the dependency entirely.
+  function drawJordanSplashPortrait(g, bw, bh, t, nowS, slam){
+    const px = function(x, y, w, h, c){
+      g.fillStyle = c;
+      g.fillRect(Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)));
+    };
+    const ell = function(ex, ey, rx, ry, c){
+      g.fillStyle = c;
+      for (let yy = -ry; yy <= ry; yy++){
+        const half = rx * Math.sqrt(Math.max(0, 1 - (yy*yy)/(ry*ry)));
+        g.fillRect(Math.round(ex - half), Math.round(ey + yy), Math.max(1, Math.round(half*2)), 1);
+      }
+    };
+
+    // His own kit colours, pushed into a cold storm key light.
+    const SKIN = '#f0c9a0', SKIN_SH = '#9a6f4e', SKIN_DK = '#5d4331';
+    const HAIR = '#121316', HAIR_HI = '#2c3648';
+    const JERSEY = '#2b3a67', JERSEY_DK = '#141d38', ORANGE = '#ff9d3d';
+    const RIM = '#9fdcff', RIM_HOT = '#eaf9ff', CYAN = '#38bdf8';
+
+    const R  = Math.min(bw, bh) * 0.215;                       // head half-height unit
+    const cx = Math.round(bw * 0.50);
+    const cy = Math.round(bh * 0.42 + (1 - slam) * bh * 0.22); // slams up into frame
+
+    // --- Storm sky: posterized bands, darkest at the edges ------------------------------
+    const bands = ['#080b12', '#0e1420', '#16202f', '#0e1420', '#080b12'];
+    const bandH = Math.ceil(bh / bands.length);
+    for (let i = 0; i < bands.length; i++) px(0, i*bandH, bw, bandH + 1, bands[i]);
+
+    // Backlight bloom — he is lit FROM BEHIND, which is what sells the storm silhouette.
+    const bloom = g.createRadialGradient(cx, cy - R*0.25, R*0.30, cx, cy - R*0.25, R*3.6);
+    bloom.addColorStop(0,   'rgba(150,220,255,0.55)');
+    bloom.addColorStop(0.4, 'rgba(60,140,200,0.22)');
+    bloom.addColorStop(1,   'rgba(10,16,26,0)');
+    g.fillStyle = bloom; g.fillRect(0, 0, bw, bh);
+
+    // Blocky drifting storm clouds
+    for (let i = 0; i < 6; i++){
+      const cwd = Math.round(bw*0.16 + (i % 3)*bw*0.05);
+      const cxx = Math.round(((i*bw*0.23 + nowS*7) % (bw + cwd*2)) - cwd);
+      const cyy = Math.round(bh*0.06 + (i % 3)*bh*0.09);
+      px(cxx, cyy, cwd, bh*0.035, 'rgba(210,235,255,0.07)');
+      px(cxx + cwd*0.2, cyy - bh*0.018, cwd*0.6, bh*0.02, 'rgba(210,235,255,0.05)');
+    }
+
+    // Stepped lightning forks cracking down behind him
+    for (let b2 = 0; b2 < 2; b2++){
+      if (Math.sin(nowS*9 + b2*2.3) < 0.15) continue;
+      const boltCol = b2 === 0 ? 'rgba(190,232,255,0.75)' : 'rgba(150,210,250,0.60)';
+      let bx = Math.round(bw * (b2 === 0 ? 0.20 : 0.80)), by = 0;
+      for (let s = 0; s < 7 && by < bh*0.75; s++){
+        const nx = bx + Math.round(Math.sin(nowS*7 + s*2.1 + b2) * bw*0.035);
+        const ny = by + Math.round(bh*0.11);
+        const steps = Math.max(1, ny - by);
+        for (let k2 = 0; k2 <= steps; k2 += 2){
+          px(bx + (nx - bx)*(k2/steps), by + k2, 2, 2, boltCol);
+        }
+        bx = nx; by = ny;
+      }
+    }
+
+    // Rain
+    for (let i = 0; i < 90; i++){
+      px((i*37.7 + nowS*40) % bw, (i*53.3 + nowS*190) % bh, 1, 3, 'rgba(190,215,240,0.16)');
+    }
+
+    // --- Torso: stepped shoulder slope into a broad chest --------------------------------
+    const shY = cy + R*1.02;
+    for (let s = 0; s < 7; s++){
+      const wHalf = R*(1.05 + s*0.26);
+      px(cx - wHalf, shY + s*(R*0.13), wHalf*2, R*0.15 + 1, JERSEY_DK);
+    }
+    px(cx - R*2.60, shY + R*0.90, R*5.20, bh - (shY + R*0.90), JERSEY_DK);
+    px(cx - R*2.60, shY + R*0.34, R*1.15, bh - (shY + R*0.34), JERSEY);   // lit side of the kit
+    px(cx - R*2.60, shY + R*1.05, R*5.20, R*0.16, ORANGE);                // team stripe
+    px(cx - R*2.60, shY + R*1.30, R*5.20, R*0.07, 'rgba(0,0,0,0.25)');
+    // rim along each shoulder step — reads as a lit contour rather than a flat block
+    for (let s = 0; s < 7; s++){
+      const wHalf = R*(1.05 + s*0.26);
+      px(cx - wHalf, shY + s*(R*0.13), R*0.50, 2, RIM);
+      px(cx + wHalf - R*0.50, shY + s*(R*0.13), R*0.50, 2, 'rgba(159,220,255,0.45)');
+    }
+
+    // Neck + collar shadow
+    px(cx - R*0.32, cy + R*0.66, R*0.64, R*0.46, SKIN_SH);
+    px(cx - R*0.44, shY - R*0.06, R*0.88, R*0.12, 'rgba(0,0,0,0.35)');
+
+    // --- Head ----------------------------------------------------------------------------
+    ell(cx, cy, R*0.78, R*0.96, SKIN);
+    px(cx - R*0.60, cy + R*0.62, R*1.20, R*0.16, SKIN);   // jaw taper
+    px(cx - R*0.44, cy + R*0.76, R*0.88, R*0.14, SKIN);
+    px(cx - R*0.24, cy + R*0.88, R*0.48, R*0.12, SKIN);
+    // backlit: the front of the face falls into shade
+    px(cx + R*0.06, cy - R*0.95, R*0.74, R*1.90, 'rgba(10,16,30,0.34)');
+    px(cx - R*0.80, cy - R*0.95, R*0.26, R*1.90, 'rgba(10,16,30,0.18)');
+    // brow shadow — sits just ABOVE the eye line (classic "eyes in shadow" hero read)
+    px(cx - R*0.74, cy - R*0.30, R*1.48, R*0.16, 'rgba(6,10,20,0.55)');
+    px(cx - R*0.05, cy + R*0.12, R*0.10, R*0.22, SKIN_SH);   // nose
+    px(cx - R*0.22, cy + R*0.52, R*0.44, R*0.07, SKIN_DK);   // set mouth
+
+    // --- Hair: curtain cut — heavy crown, centre part, sweeping side bangs ---------------
+    // Everything stops above cy-0.22R so the hairline never swallows the eyes (it did before,
+    // which buried his whole face and left only a sliver of jaw visible).
+    ell(cx, cy - R*0.70, R*0.86, R*0.46, HAIR);              // crown: cy-1.16R .. cy-0.24R
+    px(cx - R*0.86, cy - R*0.74, R*1.72, R*0.40, HAIR);      // squared top
+    px(cx - R*0.90, cy - R*0.70, R*0.30, R*1.00, HAIR);      // left curtain past the ear
+    px(cx + R*0.60, cy - R*0.70, R*0.30, R*1.00, HAIR);      // right curtain
+    for (let i = 0; i < 4; i++){                              // bangs tapering to the temples
+      px(cx - R*0.56 + i*R*0.11, cy - R*0.74, R*0.12, R*(0.52 - i*0.10), HAIR);
+      px(cx + R*0.44 - i*R*0.11, cy - R*0.74, R*0.12, R*(0.52 - i*0.10), HAIR);
+    }
+    px(cx - R*0.70, cy - R*1.02, R*0.50, R*0.08, HAIR_HI);   // sheen
+
+    // --- Eyes igniting across the beat ---------------------------------------------------
+    const ignite = Math.max(0, Math.min(1, (t - 0.12) / 0.35));
+    if (ignite > 0){
+      const eyeY = cy - R*0.05, eDX = R*0.34, eW = R*0.19, eH = R*0.105*(0.55 + 0.45*ignite);
+      [-1, 1].forEach(function(s){
+        const ex = cx + s*eDX;
+        px(ex - eW,        eyeY - eH,       eW*2,    eH*2,   '#07222e');
+        px(ex - eW*0.86,   eyeY - eH*0.80,  eW*1.72, eH*1.6, CYAN);
+        px(ex - eW*0.44,   eyeY - eH*0.50,  eW*0.88, eH*1.0, RIM_HOT);
+      });
+      // Tight bloom around the eye line only. A wide one (it used to reach 1.5x the head at
+      // 0.5 alpha) washed his hair and face to a flat blue-grey haze.
+      g.save();
+      g.globalCompositeOperation = 'lighter';
+      const eg = g.createRadialGradient(cx, eyeY, 1, cx, eyeY, R*0.80);
+      eg.addColorStop(0, 'rgba(125,211,252,' + (0.22*ignite).toFixed(3) + ')');
+      eg.addColorStop(1, 'rgba(125,211,252,0)');
+      g.fillStyle = eg; g.fillRect(cx - R*0.9, eyeY - R*0.9, R*1.8, R*1.8);
+      g.restore();
+    }
+
+    // --- Hard rim light down the lit edge -------------------------------------------------
+    px(cx - R*0.94, cy - R*0.60, 2, R*1.15, RIM);
+    px(cx - R*0.82, cy - R*1.06, R*0.55, 2, RIM);
+    px(cx - R*0.84, cy + R*0.10, 2, R*0.55, RIM);
+    px(cx + R*0.90, cy - R*0.52, 2, R*1.05, 'rgba(159,220,255,0.50)');
+
+    // --- Cinematic framing ----------------------------------------------------------------
+    const barH = Math.round(bh * 0.10);
+    px(0, 0, bw, barH, '#04060c');
+    px(0, bh - barH, bw, barH, '#04060c');
+    px(0, barH, bw, 1, 'rgba(125,211,252,0.5)');
+    px(0, bh - barH - 1, bw, 1, 'rgba(125,211,252,0.5)');
+    g.fillStyle = 'rgba(0,0,0,0.13)';
+    for (let sy = 0; sy < bh; sy += 2) g.fillRect(0, sy, bw, 1);
+  }
+
+  // Jordan splash art — full-colour pixel bust of the Storm King, backlit by his own storm.
   function drawJordanUltBurst(b, t, env, clamp01, easeOut){
     // Timeline (short — the splash is only JORDAN_TEMPEST_SPLASH long):
     //  0.00–0.10  impact flash
-    //  0.05–0.35  silhouette slams up from below into place
-    //  0.15–1.00  amber eyes ignite
-    //  0.30–1.00  name slam
+    //  0.05–0.35  the bust slams up from below into place
+    //  0.12–0.47  his eyes ignite cyan
+    //  0.10–1.00  name slam
     ctx.save();
 
     const nowS = performance.now() * 0.001;
 
-    // 0. Opening white impact flash
+    // 1. The portrait itself — 16-bit pixel art into the shared low-res buffer, then blitted
+    //    upscaled with smoothing off so it lands on the game's pixel grid.
+    const slamProg = easeOut(clamp01((t - 0.05) / 0.30));
+    const g = domPixelCtx();
+    const pbw = _domCanvas.width, pbh = _domCanvas.height;
+    g.save();
+    g.setTransform(1, 0, 0, 1, 0, 0);   // 1:1 buffer coords
+    drawJordanSplashPortrait(g, pbw, pbh, t, nowS, slamProg);
+    g.restore();
+    ctx.save();
+    ctx.globalAlpha = env;
+    blitDomBuffer(null);
+    ctx.restore();
+
+    // 2. Storm aureole blazing around his head — re-struck on top but clipped OUTSIDE the head
+    //    (same two-pass trick as Amara's) so the corona rings him without washing out his face.
+    const haloCX = W * 0.5;
+    const haloCY = H * 0.42 + (1 - slamProg) * H * 0.22;
+    const headR  = Math.min(W, H) * 0.215 * 1.20;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, H);
+    ctx.arc(haloCX, haloCY, headR, 0, Math.PI * 2);
+    ctx.clip('evenodd');
+    drawJordanAureole(env * 0.75 * clamp01((t - 0.05) / 0.30), haloCX, haloCY, 1.55);
+    ctx.restore();
+
+    // 3. Opening white impact flash — drawn ON TOP so it actually reads as an impact. (It used
+    //    to be painted first and then buried under the backdrop fill.)
     if (t < 0.10) {
+      ctx.save();
       ctx.globalAlpha = (1 - t / 0.10) * 0.95;
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, W, H);
-    }
-
-    // 1. Bright hazy sky backdrop — mirrors the reference cover art (light behind, silhouette
-    //    in front). Grey-blue radial with a warm yellow bleed at the top for the storm sun.
-    ctx.globalAlpha = env;
-    const sky = ctx.createRadialGradient(W * 0.5, H * 0.35, 40, W * 0.5, H * 0.6, Math.max(W, H) * 0.9);
-    sky.addColorStop(0, '#e6e9ee');
-    sky.addColorStop(0.35, '#c9ced6');
-    sky.addColorStop(0.7, '#8f96a2');
-    sky.addColorStop(1, '#4b5260');
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, W, H);
-
-    // Film-grain haze — subtle noise so the sky doesn't look like a flat gradient
-    ctx.save();
-    ctx.globalAlpha = env * 0.10;
-    ctx.fillStyle = '#ffffff';
-    for (let i = 0; i < 80; i++) {
-      const gx = (i * 173 + nowS * 30) % W;
-      const gy = ((i * 89) % H) + Math.sin(nowS + i) * 8;
-      ctx.fillRect(gx, gy, 2, 2);
-    }
-    ctx.restore();
-
-    // Drifting cloud bands (very soft, blend-lighten so they wash the sky)
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = env * 0.25;
-    for (let i = 0; i < 4; i++) {
-      const my = H * (0.15 + 0.18 * i);
-      const mx = ((i * 340 + nowS * 40) % (W + 400)) - 200;
-      const mGrad = ctx.createLinearGradient(mx, my, mx + 720, my);
-      mGrad.addColorStop(0, 'rgba(255,255,255,0)');
-      mGrad.addColorStop(0.5, 'rgba(255,255,255,0.5)');
-      mGrad.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = mGrad;
-      ctx.fillRect(mx, my - 24, 720, 48);
-    }
-    ctx.restore();
-
-    // 2. THE VOID PORTRAIT — hand-authored art asset (assets/characters/jordan-ultimate-splash.png)
-    // if it's finished loading; falls back to a small procedural silhouette otherwise so
-    // nothing ever breaks on a slow/failed load. Slam-in: rises up from the bottom quickly.
-    const slamProg = easeOut(clamp01((t - 0.05) / 0.30));
-    const posOffY = (1 - slamProg) * H * 0.24;
-    const asset = ART_ASSETS.jordanSplash;
-
-    let eyeLX, eyeLY, eyeRX, eyeRY, haloCX, haloCY, haloR;
-
-    if (asset && asset.ready) {
-      // Fit the source image to the canvas height (their aspect ratios are nearly identical),
-      // centered horizontally, bottom-anchored, with a touch of overscan for drama.
-      const drawH = H * 1.10;
-      const drawW = asset.w * (drawH / asset.h);
-      const dx = (W - drawW) / 2;
-      const dy = (H - drawH) + posOffY;
-
-      // Soft outer halo behind the portrait, centered on the eye line
-      haloCX = dx + (JORDAN_SPLASH_EYE_L.fx + JORDAN_SPLASH_EYE_R.fx) / 2 * drawW;
-      haloCY = dy + (JORDAN_SPLASH_EYE_L.fy + JORDAN_SPLASH_EYE_R.fy) / 2 * drawH;
-      haloR = drawH * 0.42;
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = env * 0.32;
-      const haloG = ctx.createRadialGradient(haloCX, haloCY, 20, haloCX, haloCY, haloR);
-      haloG.addColorStop(0, 'rgba(210,245,255,0.5)');
-      haloG.addColorStop(0.6, 'rgba(160,210,230,0.14)');
-      haloG.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = haloG;
-      ctx.fillRect(haloCX - haloR, haloCY - haloR, haloR * 2, haloR * 2);
       ctx.restore();
-
-      ctx.save();
-      ctx.globalAlpha = env;
-      ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(asset.blackImg || asset.img, dx, dy, drawW, drawH);
-      ctx.restore();
-
-      eyeLX = dx + JORDAN_SPLASH_EYE_L.fx * drawW; eyeLY = dy + JORDAN_SPLASH_EYE_L.fy * drawH;
-      eyeRX = dx + JORDAN_SPLASH_EYE_R.fx * drawW; eyeRY = dy + JORDAN_SPLASH_EYE_R.fy * drawH;
-    } else {
-      // ---- Fallback: minimal procedural silhouette (asset not loaded yet) ----
-      const U = Math.min(W, H) / 22;
-      const sx = W * 0.5;
-      const sy = H * 1.02 + posOffY;
-      ctx.save();
-      ctx.globalAlpha = env;
-      ctx.fillStyle = '#000000';
-      ctx.beginPath();
-      ctx.moveTo(sx - 4.2 * U, sy);
-      ctx.lineTo(sx - 5.6 * U, sy - 4.5 * U);
-      ctx.quadraticCurveTo(sx - 6.6 * U, sy - 6.2 * U, sx - 4.8 * U, sy - 6.5 * U);
-      ctx.lineTo(sx + 5.0 * U, sy - 6.5 * U);
-      ctx.quadraticCurveTo(sx + 6.6 * U, sy - 6.2 * U, sx + 5.4 * U, sy - 4.5 * U);
-      ctx.lineTo(sx + 4.2 * U, sy);
-      ctx.closePath();
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(sx, sy - 8.9 * U, 2.4 * U, 2.5 * U, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-      eyeLX = sx - 0.9 * U; eyeLY = sy - 9.1 * U;
-      eyeRX = sx + 0.9 * U; eyeRY = sy - 9.1 * U;
     }
 
-    // 3. Name slam — kicks in early (~10% through the splash) since splash is fast
+    // 4. Name slam — kicks in early (~10% through the splash) since splash is fast
     if (t > 0.10) {
       const nameT = (t - 0.10) / 0.90;
       const slam = easeOut(nameT / 0.3);
@@ -18645,135 +18789,116 @@
     const cy = Math.floor(bh * 0.48) + shakeY + headOffsetY;
 
     // ---------------------------------------------------------------------------
-    // 4. HANDCRAFTED PIXEL-ART SILHOUETTE OF JORDAN (FULL-SCREEN)
+    // 4. JORDAN'S FACE — full-colour 16-bit pixel art, lit hard from behind
     // ---------------------------------------------------------------------------
-    const colBase = '#020306';        // pure dark silhouette fill
-    const colInnerShadow = '#080d18'; // deep shadow detail / hair layering
-    const colRimNormal = '#1e293b';   // standard dark slate rim outline
-    const colRimHighlight = isImpactFrame ? '#ffffff' : (uFace >= 0.40 ? '#06b6d4' : colRimNormal);
+    // This used to draw him as a pure-black silhouette (#020306) with a tiny 56px head, which
+    // is exactly why the close-up read as a featureless shadow rather than a character. He is
+    // rendered in his own palette now, at a real close-up crop, matching Amara's portrait card.
+    const SKIN = '#f0c9a0', SKIN_SH = '#9a6f4e', SKIN_DK = '#5d4331';
+    const HAIR = '#121316', HAIR_HI = '#2c3648';
+    const JERSEY = '#2b3a67', JERSEY_DK = '#141d38', ORANGE = '#ff9d3d';
+    const colRimHighlight = isImpactFrame ? '#ffffff' : (uFace >= 0.40 ? '#9fdcff' : 'rgba(159,220,255,0.55)');
 
-    // Draw Broad Shoulders & Chest spanning full screen bottom
-    g.fillStyle = colBase;
-    g.fillRect(0, cy + 28, bw, bh - (cy + 28));
-    g.fillRect(cx - 95, cy + 38, 190, bh - (cy + 38));
+    const HR = Math.min(bw, bh) * 0.34;   // head half-height unit — a true close-up crop
+    const pxl = function(x, y, w, h, c){
+      g.fillStyle = c;
+      g.fillRect(Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)));
+    };
+    const ellip = function(ex, ey, rx, ry, c){
+      g.fillStyle = c;
+      for (let yy = -ry; yy <= ry; yy++){
+        const half = rx * Math.sqrt(Math.max(0, 1 - (yy*yy)/(ry*ry)));
+        g.fillRect(Math.round(ex - half), Math.round(ey + yy), Math.max(1, Math.round(half*2)), 1);
+      }
+    };
 
-    // Jacket / Collar stepping
-    g.fillRect(cx - 36, cy + 22, 72, 14);
-    g.fillRect(cx - 22, cy + 16, 44, 10); // neck base
+    // Storm key-light blooming behind his head so the face separates from the backdrop.
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    const keyG = g.createRadialGradient(cx, cy - HR*0.2, HR*0.3, cx, cy - HR*0.2, HR*2.4);
+    keyG.addColorStop(0,   'rgba(120,200,255,0.40)');
+    keyG.addColorStop(0.5, 'rgba(50,120,180,0.16)');
+    keyG.addColorStop(1,   'rgba(0,0,0,0)');
+    g.fillStyle = keyG;
+    g.fillRect(cx - HR*2.6, cy - HR*2.6, HR*5.2, HR*5.2);
+    g.restore();
 
-    // Neck
-    g.fillRect(cx - 14, cy + 8, 28, 12);
+    // Shoulders / chest filling the bottom of the frame
+    const shY = cy + HR*1.00;
+    for (let s = 0; s < 6; s++){
+      const wHalf = HR*(0.95 + s*0.30);
+      pxl(cx - wHalf, shY + s*(HR*0.12), wHalf*2, HR*0.14 + 1, JERSEY_DK);
+    }
+    pxl(0, shY + HR*0.72, bw, bh - (shY + HR*0.72), JERSEY_DK);
+    pxl(0, shY + HR*0.30, cx - HR*0.75, bh - (shY + HR*0.30), JERSEY);   // lit side of the kit
+    pxl(0, shY + HR*0.92, bw, HR*0.13, ORANGE);                          // team stripe
 
-    // Head / Face Contour (angular jawline & chin in pixel steps)
-    g.fillRect(cx - 28, cy - 26, 56, 38); // head core block
-    g.fillRect(cx - 24, cy + 12, 48, 5);  // jaw step 1
-    g.fillRect(cx - 20, cy + 17, 40, 5);  // jaw step 2
-    g.fillRect(cx - 14, cy + 22, 28, 5);  // jaw step 3
-    g.fillRect(cx - 7,  cy + 27, 14, 4);  // chin
+    // Neck + collar shadow
+    pxl(cx - HR*0.30, cy + HR*0.66, HR*0.60, HR*0.44, SKIN_SH);
+    pxl(cx - HR*0.42, shY - HR*0.05, HR*0.84, HR*0.10, 'rgba(0,0,0,0.40)');
 
-    // Hair Spikes (Handcrafted pixel clusters for Jordan's spiked anime hair)
-    g.fillRect(cx - 32, cy - 40, 64, 20);
-    // Spike 1 (Top Left)
-    g.fillRect(cx - 30, cy - 48, 12, 10);
-    g.fillRect(cx - 28, cy - 56, 10, 10);
-    g.fillRect(cx - 26, cy - 64, 8, 10);
-    g.fillRect(cx - 24, cy - 70, 6, 8);
-    // Spike 2 (Top Center-Left)
-    g.fillRect(cx - 16, cy - 52, 14, 14);
-    g.fillRect(cx - 14, cy - 62, 12, 12);
-    g.fillRect(cx - 12, cy - 72, 10, 12);
-    g.fillRect(cx - 10, cy - 80, 6, 10);
-    // Spike 3 (Top Center-Right)
-    g.fillRect(cx + 2,  cy - 54, 14, 14);
-    g.fillRect(cx + 4,  cy - 64, 12, 12);
-    g.fillRect(cx + 6,  cy - 74, 10, 12);
-    g.fillRect(cx + 8,  cy - 82, 6, 10);
-    // Spike 4 (Top Right)
-    g.fillRect(cx + 18, cy - 50, 12, 12);
-    g.fillRect(cx + 20, cy - 58, 10, 10);
-    g.fillRect(cx + 22, cy - 66, 8, 10);
-    // Side Bangs
-    g.fillRect(cx - 34, cy - 30, 8, 22);
-    g.fillRect(cx + 26, cy - 30, 8, 22);
+    // Head + stepped jaw
+    ellip(cx, cy, HR*0.80, HR*0.96, SKIN);
+    pxl(cx - HR*0.60, cy + HR*0.62, HR*1.20, HR*0.16, SKIN);
+    pxl(cx - HR*0.44, cy + HR*0.76, HR*0.88, HR*0.14, SKIN);
+    pxl(cx - HR*0.24, cy + HR*0.88, HR*0.48, HR*0.12, SKIN);
 
-    // Inner Hair Shadow Depth
-    g.fillStyle = colInnerShadow;
-    g.fillRect(cx - 20, cy - 36, 40, 14);
-    g.fillRect(cx - 12, cy - 54, 10, 18);
-    g.fillRect(cx + 4,  cy - 58, 10, 20);
+    // Backlit shading — the front of the face falls away into shadow
+    pxl(cx + HR*0.08, cy - HR*0.95, HR*0.74, HR*1.92, 'rgba(10,16,30,0.36)');
+    pxl(cx - HR*0.80, cy - HR*0.95, HR*0.24, HR*1.92, 'rgba(10,16,30,0.20)');
+    pxl(cx - HR*0.74, cy - HR*0.30, HR*1.48, HR*0.16, 'rgba(6,10,20,0.58)');  // brow shadow
+    pxl(cx - HR*0.05, cy + HR*0.12, HR*0.10, HR*0.24, SKIN_SH);               // nose
+    pxl(cx - HR*0.20, cy + HR*0.52, HR*0.40, HR*0.06, SKIN_DK);               // set mouth
 
-    // ---------------------------------------------------------------------------
-    // 5. OUTSTRETCHED FOREGROUND HAND (Palm facing forward / toward camera, matching reference art)
-    // ---------------------------------------------------------------------------
-    // Arm extending from lower left towards center foreground
-    g.fillStyle = colBase;
-    g.fillRect(0, cy + 15, cx - 12, 35); // forearm base
-    g.fillRect(cx - 38, cy - 2, 32, 28); // palm / heel of hand facing viewer
+    // Hair — curtain cut. Everything stops above cy-0.22HR so the hairline never swallows the
+    // eye line (it used to, leaving only a sliver of jaw visible under a solid mass of hair).
+    ellip(cx, cy - HR*0.70, HR*0.86, HR*0.46, HAIR);              // crown
+    pxl(cx - HR*0.86, cy - HR*0.74, HR*1.72, HR*0.40, HAIR);      // squared top
+    pxl(cx - HR*0.90, cy - HR*0.70, HR*0.30, HR*1.02, HAIR);      // left curtain past the ear
+    pxl(cx + HR*0.60, cy - HR*0.70, HR*0.30, HR*1.02, HAIR);      // right curtain
+    for (let i = 0; i < 4; i++){                                   // bangs tapering to temples
+      pxl(cx - HR*0.56 + i*HR*0.11, cy - HR*0.74, HR*0.12, HR*(0.52 - i*0.10), HAIR);
+      pxl(cx + HR*0.44 - i*HR*0.11, cy - HR*0.74, HR*0.12, HR*(0.52 - i*0.10), HAIR);
+    }
+    pxl(cx - HR*0.70, cy - HR*1.02, HR*0.48, HR*0.07, HAIR_HI);   // sheen
 
-    // Splayed fingers pointing outwards/upwards (Thumb, Index, Middle, Ring, Pinky)
-    // Thumb (left)
-    g.fillRect(cx - 48, cy + 6, 12, 6);
-    g.fillRect(cx - 52, cy + 2, 6, 6);
-    // Index finger (pointing up-left)
-    g.fillRect(cx - 44, cy - 14, 8, 16);
-    g.fillRect(cx - 46, cy - 22, 6, 10);
-    // Middle finger (pointing straight up)
-    g.fillRect(cx - 34, cy - 22, 8, 22);
-    g.fillRect(cx - 35, cy - 30, 6, 10);
-    // Ring finger (pointing up-right)
-    g.fillRect(cx - 24, cy - 20, 8, 20);
-    g.fillRect(cx - 25, cy - 28, 6, 10);
-    // Pinky finger (pointing right)
-    g.fillRect(cx - 14, cy - 12, 8, 16);
-    g.fillRect(cx - 14, cy - 18, 5, 8);
-
-    // Palm energy glow & inner shadows
-    g.fillStyle = colInnerShadow;
-    g.fillRect(cx - 34, cy + 4, 24, 16);
-
-    // Glowing Void Energy Orb forming right on the outstretched palm center (uFace >= 0.35)
-    if (uFace >= 0.35) {
-      const orbScale = Math.min(1, (uFace - 0.35) / 0.3);
-      const orbR = Math.round(12 * orbScale);
-      const orbX = cx - 28, orbY = cy - 2;
-      g.fillStyle = 'rgba(6, 182, 212, 0.65)';
-      g.fillRect(orbX - orbR, orbY - orbR, orbR * 2, orbR * 2);
-      g.fillStyle = '#ffffff';
-      g.fillRect(orbX - 2, orbY - 2, 4, 4);
+    // Hard rim light down the storm-lit edge
+    pxl(cx - HR*0.94, cy - HR*0.62, 2, HR*1.18, colRimHighlight);
+    pxl(cx - HR*0.84, cy - HR*1.08, HR*0.56, 2, colRimHighlight);
+    pxl(cx - HR*0.86, cy + HR*0.10, 2, HR*0.56, colRimHighlight);
+    pxl(cx + HR*0.90, cy - HR*0.54, 2, HR*1.06, 'rgba(159,220,255,0.45)');
+    for (let s = 0; s < 6; s++){
+      pxl(cx - HR*(0.95 + s*0.30), shY + s*(HR*0.12), HR*0.45, 2, colRimHighlight);
     }
 
-    // Rim Highlight Outlines on Silhouette & Outstretched Hand
-    g.fillStyle = colRimHighlight;
-    // Hair top edges
-    g.fillRect(cx - 25, cy - 71, 8, 1);
-    g.fillRect(cx - 11, cy - 81, 8, 1);
-    g.fillRect(cx + 7,  cy - 83, 8, 1);
-    g.fillRect(cx + 21, cy - 67, 8, 1);
-    // Jawline & Ears
-    g.fillRect(cx - 29, cy - 12, 1, 20);
-    g.fillRect(cx + 29, cy - 12, 1, 20);
-    g.fillRect(cx - 25, cy + 12, 1, 5);
-    g.fillRect(cx + 25, cy + 12, 1, 5);
-    // Shoulder tops
-    g.fillRect(0, cy + 28, cx - 36, 1);
-    g.fillRect(cx + 36, cy + 28, bw - (cx + 36), 1);
-
-    // Outstretched Hand Rim Outlines
-    g.fillRect(cx - 46, cy - 22, 6, 1); // index tip
-    g.fillRect(cx - 35, cy - 30, 6, 1); // middle tip
-    g.fillRect(cx - 25, cy - 28, 6, 1); // ring tip
-    g.fillRect(cx - 48, cy + 2, 6, 1);  // thumb tip
-    g.fillRect(cx - 38, cy - 2, 1, 28); // palm outer edge
-
-    // Hand Energy Sparks when eyes ignite
-    if (uFace >= 0.38) {
-      for (let s = 0; s < 6; s++) {
-        const sparkAng = (s / 6) * Math.PI * 2 + nowS * 20;
-        const sparkDist = 6 + (s % 3) * 3;
-        const spx = Math.round(cx - 28 + Math.cos(sparkAng) * sparkDist);
-        const spy = Math.round(cy - 2 + Math.sin(sparkAng) * sparkDist);
-        g.fillStyle = (s % 2 === 0) ? '#ffffff' : '#06b6d4';
-        g.fillRect(spx, spy, 1, 1);
+    // ---------------------------------------------------------------------------
+    // 5. STORM AURA — rising embers + arcs crawling along his silhouette
+    // ---------------------------------------------------------------------------
+    // (Replaces the old outstretched foreground hand: it was authored against the previous
+    // 56px-head scale, so at a real close-up crop it just read as a black slab over his chest.
+    // Amara's close-up is face-and-halo only, and this now matches that framing.)
+    if (uFace >= 0.20) {
+      const auraU = Math.min(1, (uFace - 0.20) / 0.35);
+      // Embers of storm-light drifting up past his face
+      for (let i = 0; i < 26; i++) {
+        const seed = i * 21.7;
+        const ax = cx + Math.sin(seed) * HR * 1.55;
+        const ay = (((Math.cos(seed)*0.5 + 0.5) * bh - nowS*26 - i*3) % bh + bh) % bh;
+        const tw = 0.45 + 0.55*Math.abs(Math.sin(nowS*5 + i));
+        const sz = (i % 4 === 0) ? 2 : 1;
+        pxl(ax, ay, sz, sz, 'rgba(' + (i % 2 ? '190,232,255,' : '125,211,252,') +
+            (tw*auraU*0.9).toFixed(2) + ')');
+      }
+      // Lightning arcs crawling along the rim of his head
+      for (let k = 0; k < 3; k++) {
+        if (Math.sin(nowS*11 + k*2.7) < 0.35) continue;
+        const a0 = -Math.PI*0.85 + k*0.55 + Math.sin(nowS*2 + k)*0.15;
+        for (let s = 0; s < 7; s++) {
+          const aa = a0 + s*0.075;
+          const rr = HR*(0.96 + Math.sin(nowS*17 + s*2.1 + k)*0.05);
+          pxl(cx + Math.cos(aa)*rr*0.86, cy + Math.sin(aa)*rr, 2, 2,
+              'rgba(224,247,255,' + (0.75*auraU).toFixed(2) + ')');
+        }
       }
     }
 
@@ -18792,22 +18917,31 @@
     }
 
     // ---------------------------------------------------------------------------
-    // 6.5. TEMPEST AURA BLOOM BEHIND EYES (uFace >= 0.38)
+    // 6.5. TEMPEST AURA BLOOM BEHIND HIS EYES
     // ---------------------------------------------------------------------------
-    if (uFace >= 0.38 && uFace <= 0.85) {
-      const auraAlpha = Math.min(0.6, (uFace - 0.38) / 0.2) * (uFace > 0.7 ? 1 - (uFace - 0.7) / 0.15 : 1);
-      g.fillStyle = 'rgba(6, 182, 212, ' + (auraAlpha * 0.25).toFixed(2) + ')';
-      g.fillRect(cx - 50, cy - 35, 100, 70);
-      g.fillStyle = 'rgba(147, 51, 234, ' + (auraAlpha * 0.18).toFixed(2) + ')';
-      g.fillRect(cx - 35, cy - 25, 70, 50);
+    // Was two flat translucent rectangles (which read as literal grey boxes on his face);
+    // it's a proper additive radial bloom now, keyed to the head scale.
+    if (uFace >= 0.38 && uFace <= 0.90) {
+      const auraAlpha = Math.min(1, (uFace - 0.38) / 0.18) *
+                        (uFace > 0.78 ? Math.max(0, 1 - (uFace - 0.78) / 0.12) : 1);
+      g.save();
+      g.globalCompositeOperation = 'lighter';
+      const ab = g.createRadialGradient(cx, cy - HR*0.05, HR*0.04, cx, cy - HR*0.05, HR*0.85);
+      ab.addColorStop(0,    'rgba(224,247,255,' + (0.34*auraAlpha).toFixed(3) + ')');
+      ab.addColorStop(0.35, 'rgba(56,189,248,'  + (0.20*auraAlpha).toFixed(3) + ')');
+      ab.addColorStop(1,    'rgba(56,189,248,0)');
+      g.fillStyle = ab;
+      g.fillRect(cx - HR, cy - HR, HR*2, HR*2);
+      g.restore();
     }
 
     // ---------------------------------------------------------------------------
     // 7. PIXEL EYE REVEAL, IGNITION & SHOCKWAVE
     // ---------------------------------------------------------------------------
-    const elX = cx - 12;
-    const erX = cx + 12;
-    const eyeY = cy - 6;
+    const elX = Math.round(cx - HR*0.34);
+    const erX = Math.round(cx + HR*0.34);
+    const eyeY = Math.round(cy - HR*0.05);
+    const eyeW = HR*0.20;   // half-width of a single eye
 
     // Eyelid opening and blinking calculation (uFace: 0.38..0.65 open, blink at 0.70..0.82)
     let eyeOpenFrac = 0;
@@ -18825,78 +18959,68 @@
     }
 
     if (eyeOpenFrac <= 0) {
-      // Eyes closed / in deep shadow: dark pixel eyelid slits
-      g.fillStyle = '#0f172a';
-      g.fillRect(elX - 5, eyeY, 11, 1);
-      g.fillRect(erX - 5, eyeY, 11, 1);
+      // Eyes closed / in deep shadow: dark lash-line slits
+      pxl(elX - eyeW, eyeY, eyeW*2, 2, '#0b1220');
+      pxl(erX - eyeW, eyeY, eyeW*2, 2, '#0b1220');
     } else {
-      // Eyes opening / fully open!
-      const openH = Math.max(1, Math.round(eyeOpenFrac * 5)); // 1 to 5 pixel height
-      const eyeHalfH = Math.floor(openH / 2);
+      // Eyes opening / fully open — all sizes keyed to HR so they track the head.
+      const openH = Math.max(2, eyeOpenFrac * HR*0.21);
+      const halfH = openH / 2;
 
-      // Socket Cutout in Silhouette
-      g.fillStyle = '#000000';
-      g.fillRect(elX - 6, eyeY - eyeHalfH, 12, openH);
-      g.fillRect(erX - 6, eyeY - eyeHalfH, 12, openH);
+      // Deep socket behind the glow, so the light looks like it's coming from inside him
+      pxl(elX - eyeW*1.14, eyeY - halfH*1.30, eyeW*2.28, openH*1.30, '#04141c');
+      pxl(erX - eyeW*1.14, eyeY - halfH*1.30, eyeW*2.28, openH*1.30, '#04141c');
+      // Cold cyan mid-glow
+      pxl(elX - eyeW, eyeY - halfH, eyeW*2, openH, '#06b6d4');
+      pxl(erX - eyeW, eyeY - halfH, eyeW*2, openH, '#06b6d4');
+      // Hot inner core
+      const coreH = Math.max(1, openH*0.55);
+      pxl(elX - eyeW*0.54, eyeY - coreH/2, eyeW*1.08, coreH, '#eaf9ff');
+      pxl(erX - eyeW*0.54, eyeY - coreH/2, eyeW*1.08, coreH, '#eaf9ff');
 
-      // Cold Cyan Mid-Glow Block
-      g.fillStyle = '#06b6d4';
-      g.fillRect(elX - 5, eyeY - eyeHalfH, 10, openH);
-      g.fillRect(erX - 5, eyeY - eyeHalfH, 10, openH);
-
-      // Pure White Inner Core Block
-      const coreH = Math.max(1, openH - 1);
-      g.fillStyle = '#ffffff';
-      g.fillRect(elX - 3, eyeY - Math.floor(coreH / 2), 6, coreH);
-      g.fillRect(erX - 3, eyeY - Math.floor(coreH / 2), 6, coreH);
-
-      // A) White Pressure Ring Shockwave (expanding diamond/octagon ring)
+      // A) Pressure-ring shockwave punching out from the eye line
       if (uFace >= 0.42 && uFace <= 0.68) {
-        const ringR = Math.round((uFace - 0.42) / 0.26 * 32);
-        const ringAlpha = Math.max(0, 1 - (uFace - 0.42) / 0.26);
-        g.fillStyle = 'rgba(224, 242, 254, ' + ringAlpha.toFixed(2) + ')';
-        for (let angle = 0; angle < 8; angle++) {
-          const rad = angle * (Math.PI / 4);
-          const rx = Math.round(cx + Math.cos(rad) * ringR);
-          const ry = Math.round(eyeY + Math.sin(rad) * ringR);
-          g.fillRect(rx - 1, ry - 1, 2, 2);
+        const rp = (uFace - 0.42) / 0.26;
+        const ringR = rp * HR*1.5;
+        const ringAlpha = Math.max(0, 1 - rp);
+        for (let angle = 0; angle < 16; angle++) {
+          const rad = angle * (Math.PI / 8);
+          pxl(cx + Math.cos(rad)*ringR, eyeY + Math.sin(rad)*ringR, 3, 3,
+              'rgba(224,242,254,' + ringAlpha.toFixed(2) + ')');
         }
       }
 
-      // B) Static Eye Burst Sparks (at uFace ~ 0.40..0.58)
+      // B) Static burst sparks
       if (uFace >= 0.40 && uFace <= 0.58) {
-        for (let k = 0; k < 12; k++) {
-          const ang = (k / 12) * Math.PI * 2 + nowS * 8;
-          const dist = 8 + Math.round((uFace - 0.40) * 44);
-          const spX = Math.round(cx + Math.cos(ang) * dist);
-          const spY = Math.round(eyeY + Math.sin(ang) * dist);
-          g.fillStyle = (k % 2 === 0) ? '#ffffff' : '#67e8f9';
-          g.fillRect(spX, spY, 1, 1);
+        for (let k = 0; k < 14; k++) {
+          const ang = (k / 14) * Math.PI * 2 + nowS * 8;
+          const dist = HR*0.35 + (uFace - 0.40) * HR*3.2;
+          pxl(cx + Math.cos(ang)*dist, eyeY + Math.sin(ang)*dist, 2, 2,
+              (k % 2 === 0) ? '#ffffff' : '#67e8f9');
         }
       }
 
-      // C) Horizontal Pixel Laser Eye Trails (at uFace >= 0.52)
+      // C) Laser eye trails streaking outward
       if (uFace >= 0.52) {
-        const trailLen = Math.round((uFace - 0.52) / 0.48 * 45);
-
-        // Dual outwards laser eye trails
-        g.fillStyle = 'rgba(6, 182, 212, 0.85)';
-        g.fillRect(elX - trailLen, eyeY, trailLen, 1);
-        g.fillRect(erX, eyeY, trailLen, 1);
-
-        // White inner core trail
-        g.fillStyle = '#ffffff';
-        g.fillRect(elX - Math.round(trailLen * 0.6), eyeY, Math.round(trailLen * 0.6), 1);
-        g.fillRect(erX, eyeY, Math.round(trailLen * 0.6), 1);
+        const trailLen = (uFace - 0.52) / 0.48 * HR*1.9;
+        const th = Math.max(2, openH*0.42);
+        pxl(elX - trailLen, eyeY - th/2, trailLen, th, 'rgba(6,182,212,0.85)');
+        pxl(erX,            eyeY - th/2, trailLen, th, 'rgba(6,182,212,0.85)');
+        pxl(elX - trailLen*0.6, eyeY - th*0.28, trailLen*0.6, th*0.56, '#ffffff');
+        pxl(erX,                eyeY - th*0.28, trailLen*0.6, th*0.56, '#ffffff');
       }
     }
 
     // ---------------------------------------------------------------------------
-    // 8. CINEMATIC LETTERBOX BARS & RETRO PIXEL SCANLINES
+    // 8. VIGNETTE + RETRO PIXEL SCANLINES
     // ---------------------------------------------------------------------------
-    g.fillStyle = '#020306';
-    g.fillRect(0, 0, bw, 18);
-    g.fillRect(0, bh - 18, bw, 18);
+    // Vignette pulls the eye to his face (the letterbox bars are drawn full-res after the
+    // blit instead, so their edges stay crisp rather than pixel-stepped).
+    const vg = g.createRadialGradient(cx, cy, HR*0.9, cx, cy, HR*3.4);
+    vg.addColorStop(0, 'rgba(4,6,12,0)');
+    vg.addColorStop(1, 'rgba(4,6,12,0.80)');
+    g.fillStyle = vg;
+    g.fillRect(0, 0, bw, bh);
 
     g.fillStyle = 'rgba(0, 0, 0, 0.22)';
     for (let sy = 0; sy < bh; sy += 2) {
@@ -18906,9 +19030,57 @@
     g.restore();
 
     // ---------------------------------------------------------------------------
-    // 8. BLIT PIXEL BUFFER TO MAIN CANVAS (SMOOTHING OFF)
+    // 9. BLIT PIXEL BUFFER, THEN THE FULL-RES AURA PASSES ON TOP
     // ---------------------------------------------------------------------------
     blitDomBuffer();
+
+    // Storm aureole re-struck around his head, clipped OUTSIDE the head so the corona and
+    // lightning rays blaze around the silhouette without washing out his face — the same
+    // two-pass treatment Amara's close-up uses.
+    const U = COURT_PIXEL_UNIT;
+    const headScreenX = cx * U, headScreenY = cy * U;
+    const auraRise = Math.max(0, Math.min(1, (uFace - 0.30) / 0.25));
+    if (auraRise > 0) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, H);
+      ctx.arc(headScreenX, headScreenY, HR * U * 1.02, 0, Math.PI * 2);
+      ctx.clip('evenodd');
+      drawJordanAureole(a * auraRise * 0.85, headScreenX, headScreenY, (HR * U) / 105);
+      ctx.restore();
+
+      // Volumetric light shafts fanning down from above, sold by the rain in the backdrop.
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = a * auraRise * 0.16;
+      for (let s = 0; s < 5; s++) {
+        const sxTop = W * (0.16 + s * 0.17) + Math.sin(nowS * 0.5 + s) * 14;
+        const shaft = ctx.createLinearGradient(sxTop, 0, sxTop + 70, H);
+        shaft.addColorStop(0, 'rgba(190,232,255,0.55)');
+        shaft.addColorStop(1, 'rgba(190,232,255,0)');
+        ctx.fillStyle = shaft;
+        ctx.beginPath();
+        ctx.moveTo(sxTop - 26, 0); ctx.lineTo(sxTop + 26, 0);
+        ctx.lineTo(sxTop + 120, H); ctx.lineTo(sxTop + 40, H);
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // Crisp full-res letterbox bars, last so nothing paints over them.
+    const barH = H * 0.105 * Math.min(1, a * 1.4);
+    if (barH > 0.5) {
+      ctx.save();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = 'rgba(3,5,10,0.97)';
+      ctx.fillRect(0, 0, W, barH);
+      ctx.fillRect(0, H - barH, W, barH);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = 'rgba(125,211,252,0.45)';
+      ctx.fillRect(0, barH - 2, W, 2);
+      ctx.fillRect(0, H - barH, W, 2);
+      ctx.restore();
+    }
   }
 
   function drawUltBurst(){
