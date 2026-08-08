@@ -1,6 +1,6 @@
 {
-  "name": "Rally — 2D Badminton",
-  "description": "An authoritative dedicated server and client for online multiplayer Rally 2D badminton.",
+  "name": "FAULT",
+  "description": "An authoritative dedicated server and client for online multiplayer FAULT 2D badminton.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

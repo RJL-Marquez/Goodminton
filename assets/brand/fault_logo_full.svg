@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -55 600 525" width="600" height="525">
+  <defs>
+    <clipPath id="headClipC">
+      <path d="M110,8 C158,8 176,50 172,92 C168,138 145,168 122,175 L98,175 C75,168 52,138 48,92 C44,50 62,8 110,8 Z"/>
+    </clipPath>
+    <g id="racketC">
+      <path d="M102,394 L118,394 L118,462 A8,8 0 0 1 102,462 Z" fill="#eef1f5"/>
+      <g clip-path="url(#headClipC)" stroke="#7d9bc4" stroke-width="1.5" opacity="0.55">
+        <line x1="50" y1="0" x2="50" y2="180"/>
+        <line x1="66" y1="0" x2="66" y2="180"/>
+        <line x1="82" y1="0" x2="82" y2="180"/>
+        <line x1="98" y1="0" x2="98" y2="180"/>
+        <line x1="114" y1="0" x2="114" y2="180"/>
+        <line x1="130" y1="0" x2="130" y2="180"/>
+        <line x1="146" y1="0" x2="146" y2="180"/>
+        <line x1="162" y1="0" x2="162" y2="180"/>
+        <line x1="40" y1="35" x2="180" y2="35"/>
+        <line x1="40" y1="58" x2="180" y2="58"/>
+        <line x1="40" y1="81" x2="180" y2="81"/>
+        <line x1="40" y1="104" x2="180" y2="104"/>
+        <line x1="40" y1="127" x2="180" y2="127"/>
+        <line x1="40" y1="150" x2="180" y2="150"/>
+      </g>
+      <path d="M110,8 C158,8 176,50 172,92 C168,138 145,168 122,175 L112,196 L113,386 L118,394 L118,462 A8,8 0 0 1 102,462 L102,394 L107,386 L108,196 L98,175 C75,168 52,138 48,92 C44,50 62,8 110,8 Z" fill="none" stroke="#eef1f5" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M98,175 L122,175 L118.2,183 L101.8,183 Z" fill="#f0a8b8"/>
+      <g stroke="#1c2130" stroke-width="3">
+        <line x1="103" y1="416" x2="117" y2="416"/>
+        <line x1="103" y1="432" x2="117" y2="432"/>
+        <line x1="103" y1="448" x2="117" y2="448"/>
+      </g>
+    </g>
+  </defs>
+
+  <use href="#racketC" transform="translate(300,235) rotate(-30) translate(-110,-300)"/>
+  <use href="#racketC" transform="translate(300,235) rotate(30) translate(-110,-300)"/>
+
+  <g transform="translate(64,158)">
+    <g transform="translate(20,122) scale(0.112,-0.112)" fill="#eef1f5"><path d="M74 688H630V523H295V405H583V247H295V0H74Z"/></g><g transform="translate(189.35,122) scale(0.112,-0.112)" fill="#f0a8b8"><path d="M417 -12Q253 -12 163.5 62.0Q74 136 74 277V688H295V280Q295 222 326.0 187.5Q357 153 416 153Q475 153 506.5 188.0Q538 223 538 280V688H759V277Q759 136 670.0 62.0Q581 -12 417 -12Z"/></g><g transform="translate(282.646,122) scale(0.112,-0.112)" fill="#eef1f5"><path d="M74 688H295V176H648V0H74Z"/></g><g transform="translate(357.35,122) scale(0.112,-0.112)" fill="#eef1f5"><path d="M470 512V0H249V512H23V688H695V512Z"/></g>
+
+    <path d="M125,66 L157,66 L151,84 L131,84 Z" fill="#eef1f5"/>
+    <g stroke="#eef1f5" stroke-width="5" fill="none" stroke-linejoin="round">
+      <g transform="translate(141,66) rotate(-35)"><rect x="-8" y="0" width="16" height="64" rx="8"/></g>
+      <g transform="translate(141,66) rotate(-17)"><rect x="-8" y="0" width="16" height="60" rx="8"/></g>
+      <g transform="translate(141,66) rotate(0)"><rect x="-8" y="0" width="16" height="56" rx="8"/></g>
+      <g transform="translate(141,66) rotate(17)"><rect x="-8" y="0" width="16" height="60" rx="8"/></g>
+      <g transform="translate(141,66) rotate(35)"><rect x="-8" y="0" width="16" height="64" rx="8"/></g>
+    </g>
+    <path d="M125,66 A16,22 0 0 1 157,66 Z" fill="#eef1f5"/>
+    <rect x="125" y="63" width="32" height="6" fill="#f0a8b8"/>
+  </g>
+</svg>

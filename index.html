@@ -6,68 +6,385 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Rally — 2D Badminton</title>
+<title>FAULT</title>
+<meta name="description" content="FAULT — a fast, physics-based 2D badminton game.">
+<meta property="og:title" content="FAULT">
+<meta property="og:description" content="A fast, physics-based 2D badminton game.">
+<meta name="apple-mobile-web-app-title" content="FAULT">
+<meta name="application-name" content="FAULT">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
   :root {
-    --court-dark: #0f1523;
-    --court-line: rgba(255, 255, 255, 0.7);
-    --net-color: #e5e7eb;
-    --ink: #060913;
-    --paper: #f8fafc;
-    --accent: #ff4f6b;
-    --accent2: #ffb800;
-    --left-color: #3b82f6;
-    --right-color: #ec4899;
-    --shuttle: #f8fafc;
-    --panel-bg: rgba(10, 15, 30, 0.75);
-    --panel-border: rgba(255, 255, 255, 0.1);
-    --glow-color: rgba(255, 79, 107, 0.35);
+    /* ============================================================
+       FAULT DESIGN SYSTEM — single source of truth.
+       Default (unthemed) palette: steel-blue + blush.
+       --primary and --accent are the two theme-swappable hues; the
+       Arena Theme selector re-skins them via :root[data-theme=...].
+       ============================================================ */
+    --bg:            #10131d;   /* deepest background */
+    --bg-2:          #121826;   /* raised panel background */
+    --bg-3:          #1c2130;   /* insets, grips, input wells */
+    --ink:           #eef1f5;   /* primary text / white elements */
+    --ink-dim:       #8b93a7;   /* secondary / muted text */
+    --primary:       #7d9bc4;   /* steel blue — primary brand hue */
+    --primary-soft:  #a8bfe0;   /* lighter steel blue for highlights */
+    --accent:        #f0a8b8;   /* blush — accent, selection, active state */
+    --border:        #2c3850;   /* hairline borders / dividers */
+
+    /* --- Legacy aliases: kept so not-yet-migrated rules keep working
+           while each surface is moved onto the tokens above. --- */
+    --paper:         var(--ink);
+    --accent2:       var(--primary-soft);
+
+    /* --- Gameplay / court tokens (OUT OF SCOPE — left as-is) --- */
+    --court-dark:    #0f1523;
+    --court-line:    rgba(255, 255, 255, 0.7);
+    --net-color:     #e5e7eb;
+    --left-color:    #3b82f6;
+    --right-color:   #ec4899;
+    --shuttle:       #f8fafc;
+
+    /* --- Overlay / panel chrome (re-derived to the new palette) --- */
+    --panel-bg:      rgba(18, 24, 38, 0.86);
+    --panel-border:  var(--border);
+    --glow-color:    rgba(240, 168, 184, 0.28);
   }
+
+  /* Arena themes: re-skin the two brand hues (--primary/--accent) to
+     tasteful variants that harmonize with the steel-blue/blush base,
+     while keeping each theme's court/player identity intact. */
   :root[data-theme="neon"] {
-    --ink: #07020d;
-    --paper: #f5f3ff;
-    --accent: #d946ef;
-    --accent2: #06b6d4;
-    --left-color: #06b6d4;
-    --right-color: #d946ef;
-    --court-dark: #120324;
-    --panel-bg: rgba(18, 5, 32, 0.82);
-    --panel-border: rgba(217, 70, 239, 0.25);
-    --glow-color: rgba(217, 70, 239, 0.4);
+    --primary:      #6f9fd8;
+    --primary-soft: #a9c6f0;
+    --accent:       #d98fd0;
+    --left-color:   #06b6d4;
+    --right-color:  #d946ef;
+    --court-dark:   #120324;
+    --panel-bg:     rgba(18, 8, 32, 0.86);
+    --glow-color:   rgba(217, 143, 208, 0.32);
   }
   :root[data-theme="sunset"] {
-    --ink: #1c0a00;
-    --paper: #fffaf0;
-    --accent: #f97316;
-    --accent2: #facc15;
-    --left-color: #38bdf8;
-    --right-color: #fb7185;
-    --court-dark: #311100;
-    --panel-bg: rgba(45, 15, 0, 0.8);
-    --panel-border: rgba(249, 115, 22, 0.25);
-    --glow-color: rgba(249, 115, 22, 0.4);
+    --primary:      #d1a06a;
+    --primary-soft: #ecc79a;
+    --accent:       #f0977f;
+    --left-color:   #38bdf8;
+    --right-color:  #fb7185;
+    --court-dark:   #311100;
+    --panel-bg:     rgba(38, 18, 6, 0.86);
+    --glow-color:   rgba(240, 151, 127, 0.32);
   }
   :root[data-theme="pride"] {
-    --ink: #0b0615;
-    --paper: #fbfaff;
-    --accent: #a855f7;
-    --accent2: #22c55e;
-    --left-color: #3b82f6;
-    --right-color: #f43f5e;
-    --court-dark: #120924;
-    --panel-bg: rgba(18, 9, 32, 0.85);
-    --panel-border: rgba(168, 85, 247, 0.25);
-    --glow-color: rgba(168, 85, 247, 0.4);
+    --primary:      #9b8fd8;
+    --primary-soft: #c3b8f0;
+    --accent:       #f28fa8;
+    --left-color:   #3b82f6;
+    --right-color:  #f43f5e;
+    --court-dark:   #120924;
+    --panel-bg:     rgba(16, 10, 30, 0.86);
+    --glow-color:   rgba(242, 143, 168, 0.32);
+  }
+
+  /* ================================================================
+     FAULT SHARED COMPONENT SYSTEM
+     One button/panel/control language used across every menu surface.
+     Retrofit menuTextLink / gameBtn / tekken-panel onto these.
+     ================================================================ */
+
+  /* --- Brand marks --- */
+  .brandLogo {
+    display: block;
+    width: 100%;
+    max-width: 300px;
+    height: auto;
+    /* stronger shadow than a flat-panel logo needs — this one floats
+       directly over a busy, moving rally scene and has to stay legible
+       against whatever's happening behind it at any given moment. */
+    filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.65)) drop-shadow(0 12px 40px rgba(0, 0, 0, 0.5));
+  }
+  /* Fallback wordmark shown until the logo asset is present. */
+  .brandWordmark {
+    font-family: 'Archivo Black', 'Space Grotesk', sans-serif;
+    font-size: clamp(48px, 6vw, 78px);
+    line-height: 0.92;
+    letter-spacing: 2px;
+    color: var(--ink);
+    text-transform: uppercase;
+  }
+  .brandWordmark::after {
+    /* blush band under the mark — echoes the wordmark's accent bar */
+    content: '';
+    display: block;
+    width: 0.62em;
+    height: 0.12em;
+    margin-top: 0.16em;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+  /* Compact wordmark for overlay headers (pause / game over / char select). */
+  .brandMark {
+    font-family: 'Archivo Black', 'Space Grotesk', sans-serif;
+    font-size: 20px;
+    letter-spacing: 3px;
+    color: var(--ink);
+    text-transform: uppercase;
+  }
+  .brandMark .brandMark__dot { color: var(--accent); }
+
+  /* --- Section label (used inside panels to group controls) --- */
+  .fx-section-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    margin: 0 0 2px;
+  }
+  .fx-divider {
+    height: 1px;
+    border: none;
+    background: var(--border);
+    margin: 0;
+  }
+
+  /* ================================================================
+     .fx-item — THE signature control: dot marker + fill underline.
+     Markup:
+       <button class="fx-item">
+         <span class="fx-item__dot"></span>
+         <span class="fx-item__label">PLAY VS AI</span>
+       </button>
+     States that light the dot + fill: :hover, :focus-visible, .is-active.
+     ================================================================ */
+  .fx-item {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 6px 2px;
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    outline: none;
+    text-align: left;
+    color: var(--ink);
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .fx-item__dot {
+    flex: 0 0 auto;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: background-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  }
+  .fx-item__label {
+    position: relative;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 22px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--ink);
+    padding-bottom: 8px;
+    transition: color 0.18s ease;
+  }
+  /* underline TRACK (full label width) */
+  .fx-item__label::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--border);
+  }
+  /* underline FILL (animates 0 -> width on hover/focus/active) */
+  .fx-item__label::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 0;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--glow-color);
+    transition: width 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 1;
+  }
+
+  .fx-item:hover,
+  .fx-item:focus-visible {
+    transform: translateX(6px);
+  }
+  .fx-item:hover .fx-item__dot,
+  .fx-item:focus-visible .fx-item__dot,
+  .fx-item.is-active .fx-item__dot {
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--glow-color);
+  }
+  .fx-item:hover .fx-item__label,
+  .fx-item:focus-visible .fx-item__label,
+  .fx-item.is-active .fx-item__label {
+    color: #ffffff;
+  }
+  .fx-item:hover .fx-item__label::before,
+  .fx-item:focus-visible .fx-item__label::before {
+    width: 65%;
+  }
+  .fx-item.is-active .fx-item__label::before {
+    width: 100%;
+  }
+  /* disabled / coming-soon */
+  .fx-item:disabled,
+  .fx-item.is-disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+    transform: none;
+  }
+  .fx-item:disabled .fx-item__label::before,
+  .fx-item.is-disabled .fx-item__label::before { width: 0; }
+
+  /* Smaller variant for overlay action rows */
+  .fx-item--sm .fx-item__label { font-size: 16px; letter-spacing: 1.5px; }
+  .fx-item--sm .fx-item__dot { width: 7px; height: 7px; }
+
+  /* ================================================================
+     .fx-panel — shared overlay panel (pause / game over / settings /
+     char select). Flat, hairline border, soft shadow, no gradients/glows.
+     ================================================================ */
+  .fx-panel {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 18px 20px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+    color: var(--ink);
+  }
+  .fx-scrim {
+    background: rgba(10, 13, 22, 0.72);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+
+  /* ================================================================
+     .fx-toggle — boolean switch (track --bg-3, knob --ink, ON = --accent)
+     Markup: <button class="fx-toggle" aria-pressed="true|false"></button>
+     JS toggles aria-pressed (or .is-on) to flip state.
+     ================================================================ */
+  .fx-toggle {
+    -webkit-appearance: none;
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--bg-3);
+    width: 46px;
+    height: 26px;
+    border-radius: 999px;
+    position: relative;
+    cursor: pointer;
+    padding: 0;
+    transition: background-color 0.18s ease, border-color 0.18s ease;
+    flex: 0 0 auto;
+  }
+  .fx-toggle::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--ink);
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .fx-toggle[aria-pressed="true"],
+  .fx-toggle.is-on {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .fx-toggle[aria-pressed="true"]::after,
+  .fx-toggle.is-on::after {
+    transform: translateX(20px);
+    background: var(--bg);
+  }
+  .fx-toggle:focus-visible {
+    box-shadow: 0 0 0 3px var(--glow-color);
+  }
+
+  /* ================================================================
+     .fx-segment — segmented / inline option selector for multi-value
+     settings. Selected option carries the dot+underline accent.
+     Markup: <div class="fx-segment"><button class="fx-seg is-active">…</button>…</div>
+     ================================================================ */
+  .fx-segment {
+    display: inline-flex;
+    gap: 4px;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 4px;
+  }
+  .fx-seg {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--ink-dim);
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 6px 12px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: color 0.18s ease, background-color 0.18s ease;
+  }
+  .fx-seg:hover { color: var(--ink); }
+  .fx-seg.is-active {
+    color: var(--bg);
+    background: var(--accent);
+  }
+  .fx-seg:focus-visible { box-shadow: 0 0 0 2px var(--glow-color); }
+
+  /* ================================================================
+     .fx-swatch — Arena Theme two-tone chip (primary / accent pair).
+     Selected chip marked with an --accent ring.
+     ================================================================ */
+  .fx-swatch {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    border: 1px solid var(--border);
+    padding: 0;
+    cursor: pointer;
+    overflow: hidden;
+    position: relative;
+    background: linear-gradient(135deg, var(--sw-primary, var(--primary)) 0 50%, var(--sw-accent, var(--accent)) 50% 100%);
+    transition: box-shadow 0.18s ease, transform 0.18s ease;
+  }
+  .fx-swatch:hover { transform: translateY(-2px); }
+  .fx-swatch.is-active {
+    box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 4px var(--accent);
+  }
+  .fx-swatch:focus-visible {
+    box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 4px var(--accent);
   }
 
   * { box-sizing: border-box; }
-  
+
   html, body {
     margin: 0;
     height: 100%;
-    background: var(--ink);
+    background: var(--bg);
     font-family: 'Plus Jakarta Sans', sans-serif;
     color: var(--paper);
     display: flex;
@@ -96,7 +413,7 @@
     background:
       radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.08) 0%, transparent 45%),
       radial-gradient(circle at 90% 80%, rgba(236, 72, 153, 0.08) 0%, transparent 45%),
-      var(--ink);
+      var(--bg);
     transition: width 0.25s ease, height 0.25s ease, background 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
@@ -204,10 +521,11 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: radial-gradient(circle at center, rgba(13, 10, 24, 0.5) 0%, rgba(5, 3, 10, 0.88) 100%);
+    background: rgba(10, 13, 22, 0.72);
     text-align: center;
     padding: 30px;
-    backdrop-filter: blur(14px);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     z-index: 100;
     transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.35s;
     opacity: 1;
@@ -231,13 +549,11 @@
     flex-direction: column;
     align-items: center;
     gap: 18px;
-    background: var(--panel-bg);
-    border: 1px solid var(--panel-border);
-    border-radius: 24px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
     padding: 32px 42px;
-    box-shadow: 
-      0 25px 60px rgba(0, 0, 0, 0.5),
-      0 0 40px rgba(255, 79, 107, 0.04);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
     max-width: 900px;
     width: 90%;
     max-height: 94%;
@@ -247,14 +563,18 @@
     scrollbar-color: rgba(255,255,255,0.1) transparent;
   }
 
-  /* Fullscreen layout for character and court selection to maximize screen space */
-  #charSelectOverlay, #bgSelectOverlay {
+  /* Fullscreen layout for difficulty, character, and court selection to maximize screen space */
+  #difficultyOverlay, #charSelectOverlay, #bgSelectOverlay {
     padding: 0 !important;
-    background: radial-gradient(circle at center, rgba(16, 18, 32, 0.99) 0%, rgba(6, 7, 14, 1) 100%) !important;
+    background: radial-gradient(circle at 60% 42%, #141a2b 0%, var(--bg) 72%) !important;
     backdrop-filter: none !important;
   }
+  #charSelectTitle, #difficultyOverlay h2, #bgSelectOverlay h2 {
+    font-family: 'Space Grotesk', sans-serif;
+    color: var(--ink);
+  }
 
-  #charSelectOverlay .panel, #bgSelectOverlay .panel {
+  #difficultyOverlay .panel, #charSelectOverlay .panel, #bgSelectOverlay .panel {
     padding: 18px 36px !important;
     gap: 10px !important;
     max-width: 100% !important;
@@ -269,13 +589,13 @@
     justify-content: space-around !important;
     align-items: center !important;
   }
-  
-  #charSelectOverlay h2, #bgSelectOverlay h2 {
+
+  #difficultyOverlay h2, #charSelectOverlay h2, #bgSelectOverlay h2 {
     font-size: 24px !important;
     margin-bottom: 4px !important;
     letter-spacing: 2px !important;
   }
-  
+
   #charSelectOverlay p.subtle, #bgSelectOverlay p.subtle {
     font-size: 14px !important;
     margin-bottom: 0 !important;
@@ -361,55 +681,66 @@
     display: block;
   }
 
-  /* Split Menu Overlay Styles */
+  /* ================================================================
+     Main Menu — "living background": the menu no longer splits the
+     screen into two panels. #startOverlay sits directly over the REAL
+     game canvas (#canvasBox/#game — see the JS "attract mode" block),
+     which is continuously drawing a choreographed highlight rally with
+     the actual drawCourt()/drawPlayer()/drawShuttle() pipeline while
+     state === 'start'. This overlay is just a transparent scrim +
+     floating menu column: dark enough on the left for the logo/menu
+     text to stay crisp, clear on the right so the rally reads clean.
+     ================================================================ */
   .menuOverlay {
     display: flex !important;
     flex-direction: row !important;
-    align-items: stretch !important;
-    justify-content: stretch !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
     padding: 0 !important;
-    background: #060913 !important; /* Solid dark background */
+    background: linear-gradient(
+      90deg,
+      rgba(16, 19, 29, 0.90) 0%,
+      rgba(16, 19, 29, 0.82) 34%,
+      rgba(16, 19, 29, 0.45) 58%,
+      rgba(16, 19, 29, 0.12) 78%,
+      rgba(16, 19, 29, 0.04) 100%
+    ) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     overflow: hidden !important;
   }
 
   .menuLeft {
-    flex: 0 0 45%;
-    background: #090c15;
-    border-right: 1.5px solid rgba(255, 255, 255, 0.06);
+    flex: 0 0 auto;
+    width: min(46%, 560px);
+    background: transparent;
     display: flex;
     flex-direction: column;
-    padding: 24px 32px;
+    padding: 32px 34px 22px 44px;
     justify-content: flex-start;
     gap: 4px;
     text-align: left;
     position: relative;
-    overflow-y: auto;
-    overflow-x: hidden;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255,255,255,0.18) transparent;
-  }
-  .menuLeft::-webkit-scrollbar { width: 6px; }
-  .menuLeft::-webkit-scrollbar-track { background: transparent; }
-  .menuLeft::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
-  .menuLeft::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); }
-
-  .menuRight {
-    flex: 1;
-    background: radial-gradient(circle at center, #111425 0%, #060913 100%);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 30px;
-    position: relative;
+    z-index: 2;
+    max-height: 100%;
     overflow: hidden;
   }
 
-  /* Branding */
+  /* Branding — FAULT logo lockup, the hero floating over the rally */
   .menuBrand {
     display: flex;
-    align-items: center;
-    gap: 12px;
+    align-items: flex-start;
+    margin: 0 0 26px;
+    width: 100%;
+  }
+  .menuBrand .brandText { width: 100%; }
+  /* Logo only makes sense as the top-level main-menu hero — once you're inside
+     a submenu (Settings, Customize Controls, Online, ...) it's just eating
+     vertical space above content that already has its own heading, so hide
+     it there. #mainMenuOptions.hidden is already toggled correctly by every
+     existing "enter submenu" / "back" handler, so this needs no JS of its own. */
+  .menuLeft:has(#mainMenuOptions.hidden) .menuBrand {
+    display: none;
   }
   .inlineLogo {
     animation: logoFloat 4s ease-in-out infinite alternate;
@@ -453,77 +784,96 @@
   .textMenu {
     display: flex;
     flex-direction: column;
-    gap: 24px !important;
-    margin-top: 5px;
+    gap: 15px !important;
+    margin-top: 4px;
     align-items: flex-start;
   }
   .textMenu.hidden {
     display: none !important;
   }
 
+  /* menuTextLink is retrofitted onto the shared dot + fill-underline motif
+     (same language as .fx-item). Single-element markup: ::before = dot,
+     background gradient = underline track, ::after = animated accent fill. */
   .menuTextLink {
-    background: transparent !important;
+    -webkit-appearance: none;
+    appearance: none;
+    background: linear-gradient(var(--border), var(--border)) no-repeat;
+    background-position: 23px bottom;
+    background-size: calc(100% - 23px) 2px;
     border: none !important;
     box-shadow: none !important;
-    padding: 8px 0 !important;
+    padding: 5px 0 10px 0 !important;
     margin: 0 !important;
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 34px !important;
+    font-size: 27px !important;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 3px;
-    color: rgba(255, 255, 255, 0.45);
+    letter-spacing: 2px;
+    color: var(--ink);
     cursor: pointer;
-    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), color 0.18s ease;
     position: relative;
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 12px;
+    gap: 14px;
     text-align: left;
     outline: none;
     width: auto !important;
   }
 
-  /* Left accent-line indicator that grows on hover */
+  /* dot marker (flex item, aligns with the label) */
   .menuTextLink::before {
     content: '';
-    display: block;
-    width: 0px;
-    height: 3px;
-    background: var(--accent);
+    flex: 0 0 auto;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: background-color 0.18s ease, box-shadow 0.18s ease;
+  }
+
+  /* animated accent fill over the underline track */
+  .menuTextLink::after {
+    content: '';
+    position: absolute;
+    left: 23px;
+    right: 100%;
+    bottom: 0;
+    height: 2px;
     border-radius: 2px;
-    transition: width 0.22s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.22s ease;
-  }
-
-  .menuTextLink:hover:not(.disabled) {
-    color: #ffffff !important;
-    transform: translateX(8px);
-    text-shadow: 0 0 15px rgba(255, 255, 255, 0.15);
-  }
-
-  /* On hover, the indicator bar grows */
-  .menuTextLink:hover:not(.disabled)::before {
-    width: 18px;
     background: var(--accent);
+    box-shadow: 0 0 12px var(--glow-color);
+    transition: right 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  /* For custom hover colors (like Easy/Medium/Hard in difficulty menu) */
-  .menuTextLink.diffBtn:hover:not(.disabled) {
-    color: var(--hover-color, #ffffff) !important;
-    text-shadow: 0 0 15px rgba(255, 255, 255, 0.1);
+  .menuTextLink:hover:not(.disabled),
+  .menuTextLink:focus-visible:not(.disabled) {
+    color: #ffffff !important;
+    transform: translateX(6px);
   }
-  .menuTextLink.diffBtn:hover:not(.disabled)::before {
-    background: var(--hover-color, var(--accent)) !important;
+  .menuTextLink:hover:not(.disabled)::before,
+  .menuTextLink:focus-visible:not(.disabled)::before,
+  .menuTextLink.is-active::before {
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--glow-color);
   }
+  .menuTextLink:hover:not(.disabled)::after,
+  .menuTextLink:focus-visible:not(.disabled)::after {
+    right: 35%;
+  }
+  .menuTextLink.is-active::after { right: 0; }
 
   .menuTextLink.disabled {
-    color: rgba(255, 255, 255, 0.15) !important;
+    color: var(--ink-dim) !important;
+    opacity: 0.5;
     cursor: not-allowed;
   }
-  
   .menuTextLink.disabled::before {
-    display: none;
+    background: var(--border);
+    box-shadow: none;
   }
+  .menuTextLink.disabled::after { display: none; }
 
   .soonBadge {
     font-family: 'JetBrains Mono', monospace;
@@ -541,14 +891,14 @@
 
   .submenuTitle {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 700;
-    margin: 0 0 16px 0;
+    margin: 0 0 8px 0;
     letter-spacing: 2px;
     text-transform: uppercase;
     color: rgba(255, 255, 255, 0.3);
     border-bottom: 1.5px solid rgba(255, 255, 255, 0.08);
-    padding-bottom: 8px;
+    padding-bottom: 5px;
     width: 100%;
   }
 
@@ -557,46 +907,103 @@
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 16px;
+    justify-content: space-between;
+    gap: 18px;
     width: 100%;
-    padding: 8px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 11px 0;
+    border-bottom: none;
   }
 
   .menuSettingLabel {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 2px;
-    color: rgba(255, 255, 255, 0.4);
-    text-transform: uppercase;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: var(--ink);
+    text-transform: none;
     min-width: 130px;
   }
 
+  /* ---- Settings, presented in the shared panel with grouped sections ---- */
+  .settingsPanel {
+    width: 100%;
+    max-width: 460px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .settingsPanel .fx-section {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 0;
+  }
+  .settingsPanel .fx-section-title { margin: 2px 0 6px; }
+  .settingsPanel .fx-divider { margin: 4px 0; }
+  /* The three boolean rows use .fx-toggle; their JS-driven ON/OFF text is
+     mirrored onto the switch by a small observer (see JS) and hidden here. */
+  .settingToggle {
+    font-size: 0 !important;
+    color: transparent !important;
+    padding: 0 !important;
+  }
+  .settingToggle::before { display: none !important; }
+  /* Solo inline selector (Screen Mode / Customize Controls) — reuses the
+     segmented option look as a single pill while keeping its handler. */
+  .fx-seg--solo {
+    font-size: 12px !important;
+    color: var(--ink) !important;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 13px !important;
+    letter-spacing: 1px;
+  }
+  .fx-seg--solo::before { display: none !important; }
+  .fx-seg--solo:hover { color: #fff !important; border-color: var(--accent); }
+  /* Match-stats box on the settings screen, in the token system. */
+  .settingsStatsBox {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 6px;
+    font-family: 'Space Grotesk', sans-serif;
+    text-align: left;
+    font-size: 13px;
+    color: var(--ink);
+  }
+
+  /* Utility links (back / small inline actions): plain text, no dot or
+     underline track — those belong to the primary menu items. */
   .backLinkBtn {
-    font-size: 13px !important;
-    color: rgba(255, 255, 255, 0.35) !important;
-    margin-top: 16px !important;
+    font-size: 12px !important;
+    color: var(--ink-dim) !important;
+    margin-top: 6px !important;
     letter-spacing: 1.5px !important;
+    background: none !important;
+    padding: 4px 0 !important;
   }
   .backLinkBtn:hover {
     color: #ffffff !important;
+    transform: none !important;
   }
-  .backLinkBtn::before {
-    display: none !important;
-  }
+  .backLinkBtn::before { display: none !important; }
+  .backLinkBtn::after { display: none !important; }
 
   .inlineTextBtn {
     font-size: 16px !important;
     color: var(--accent) !important;
     padding: 0 !important;
+    background: none !important;
   }
   .inlineTextBtn:hover {
     color: #ffffff !important;
+    transform: none !important;
   }
-  .inlineTextBtn::before {
-    display: none !important;
-  }
+  .inlineTextBtn::before { display: none !important; }
+  .inlineTextBtn::after { display: none !important; }
 
   /* ---- Phase 5: Play Online / Join Lobby / Waiting Room ------------------- */
   .onlineFieldRow {
@@ -919,12 +1326,12 @@
     letter-spacing: 0.3px;
   }
   .keybindBtn {
-    min-width: 48px;
+    min-width: 44px;
     text-align: center;
-    font-size: 12px !important;
+    font-size: 11px !important;
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 6px;
-    padding: 3px 8px !important;
+    padding: 1px 7px !important;
     transition: border-color 0.2s ease, color 0.2s ease;
   }
   .keybindBtn:hover { border-color: rgba(255, 255, 255, 0.35); }
@@ -946,17 +1353,17 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 8px;
+    gap: 3px;
     width: 100%;
   }
 
   .keybindGroupLabel {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     letter-spacing: 2px;
     text-transform: uppercase;
-    margin: 6px 0 2px;
+    margin: 3px 0 1px;
     width: 100%;
   }
   .keybindGroupLabel.p1 { color: var(--left-color); }
@@ -964,8 +1371,8 @@
 
   .controlsTabRow {
     display: flex;
-    gap: 10px;
-    margin-bottom: 16px;
+    gap: 8px;
+    margin-bottom: 8px;
   }
 
   .controlsTabPanel.hidden {
@@ -980,82 +1387,29 @@
     width: 100%;
   }
 
+  /* Small, unobtrusive corner mark — pinned to the menu overlay regardless
+     of which submenu is showing (Settings, Customize Controls, etc.). */
   .versionLabel {
     position: absolute;
-    left: 16px;
-    bottom: 12px;
+    left: 20px;
+    bottom: 16px;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 10.5px;
+    font-size: 10px;
     letter-spacing: 1px;
-    color: rgba(255, 255, 255, 0.35);
+    color: var(--ink-dim);
+    opacity: 0.55;
+    z-index: 2;
     pointer-events: none;
-    z-index: 5;
-  }
-
-  /* Compact Controls Help Block */
-  .compactControlsInfo {
-    margin-top: auto;
-    display: flex;
-    justify-content: space-between;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-    padding-top: 10px;
-    font-size: 9.5px;
-    opacity: 0.65;
-    line-height: 1.35;
-  }
-  .infoGroup {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-  .playerTitle {
-    font-weight: 700;
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 10px;
-    letter-spacing: 0.5px;
-    margin-bottom: 1px;
-  }
-  .playerTitle.p1 { color: var(--left-color); }
-  .playerTitle.p2 { color: var(--right-color); }
-
-  /* Right Column Aesthetics */
-  .aestheticTitle {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    opacity: 0.4;
-    margin-bottom: 12px;
-  }
-  .aestheticFeature {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    letter-spacing: 1.5px;
-    opacity: 0.35;
-    margin-top: 12px;
-  }
-  #menuAestheticCanvas {
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 12px;
-    box-shadow: 
-      0 12px 35px rgba(0,0,0,0.4),
-      inset 0 0 25px rgba(255,255,255,0.02);
   }
 
   .overlay h2 {
     font-family: 'Space Grotesk', sans-serif;
     font-size: 32px;
-    font-weight: 700;
+    font-weight: 800;
     letter-spacing: 2px;
     text-transform: uppercase;
     margin: 0;
-    color: var(--paper);
-    background: linear-gradient(135deg, #fff 30%, rgba(255,255,255,0.7) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    text-shadow: 0 0 30px rgba(255, 255, 255, 0.1);
+    color: var(--ink);
   }
 
   .overlay p, .overlay .controlsGrid {
@@ -1115,71 +1469,95 @@
     margin-right: 4px;
   }
 
+  /* gameBtn is retrofitted onto the shared dot + fill-underline motif (same
+     language as .menuTextLink / .fx-item). No gradient, no glow, no shine.
+     Primary (Resume / Play Again) and secondary share ONE style — hierarchy
+     comes from order, not a louder button. */
   button.gameBtn {
+    -webkit-appearance: none;
+    appearance: none;
     font-family: 'Space Grotesk', sans-serif;
     font-weight: 700;
-    background: linear-gradient(135deg, var(--accent) 0%, #ff1c40 100%);
-    color: var(--ink);
-    border: none;
-    border-radius: 10px;
-    padding: 12px 28px;
-    font-size: 14px;
+    font-size: 16px;
     letter-spacing: 1.5px;
     text-transform: uppercase;
+    color: var(--ink);
+    background: linear-gradient(var(--border), var(--border)) no-repeat;
+    background-position: 23px bottom;
+    background-size: calc(100% - 23px) 2px;
+    border: none;
+    border-radius: 0;
+    padding: 8px 0 12px 0;
     cursor: pointer;
-    box-shadow: 
-      0 6px 20px rgba(255, 79, 107, 0.3),
-      inset 0 -2px 0 rgba(0, 0, 0, 0.15);
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: none;
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), color 0.18s ease;
     position: relative;
-    overflow: hidden;
+    overflow: visible;
     flex-shrink: 0;
     line-height: 1.2;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    min-height: 44px;
+    justify-content: flex-start;
+    gap: 14px;
+    min-height: auto;
   }
-  button.gameBtn::after {
+  button.gameBtn::before { /* dot marker */
+    content: '';
+    flex: 0 0 auto;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: background-color 0.18s ease, box-shadow 0.18s ease;
+  }
+  button.gameBtn::after { /* animated accent fill */
     content: '';
     position: absolute;
-    top: 0; left: -50%; width: 30%; height: 100%;
-    background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0) 100%);
-    transform: skewX(-25deg);
-    transition: 0.75s;
+    left: 23px;
+    right: 100%;
+    bottom: 0;
+    top: auto;
+    width: auto;
+    height: 2px;
+    border-radius: 2px;
+    transform: none;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--glow-color);
+    transition: right 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   }
-  button.gameBtn:hover::after {
-    left: 120%;
+  button.gameBtn:hover,
+  button.gameBtn:focus-visible {
+    color: #ffffff;
+    transform: translateX(6px);
   }
-  button.gameBtn:hover {
-    transform: translateY(-3px);
-    box-shadow: 
-      0 8px 24px rgba(255, 79, 107, 0.4),
-      0 0 12px rgba(255, 79, 107, 0.2);
-    filter: brightness(1.08);
+  button.gameBtn:hover::before,
+  button.gameBtn:focus-visible::before {
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--glow-color);
   }
-  button.gameBtn:active {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(255, 79, 107, 0.25);
-  }
+  button.gameBtn:hover::after,
+  button.gameBtn:focus-visible::after { right: 35%; }
+  button.gameBtn:active { transform: translateX(3px); }
+  /* secondary is now identical to primary (no separate filled treatment) */
   button.gameBtn.secondary {
-    background: rgba(255, 255, 255, 0.04);
-    color: var(--paper);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: linear-gradient(var(--border), var(--border)) no-repeat;
+    background-position: 23px bottom;
+    background-size: calc(100% - 23px) 2px;
+    color: var(--ink);
+    border: none;
     box-shadow: none;
   }
-  button.gameBtn.secondary:hover {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.25);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 15px rgba(0,0,0,0.2);
+  button.gameBtn.secondary:hover,
+  button.gameBtn.secondary:focus-visible {
+    color: #ffffff;
+    transform: translateX(6px);
   }
 
-  /* Pause menu: force every button to the same width so the list reads as one
-     clean stack, while Resume keeps the bold gradient (.gameBtn) that makes it
-     stand out from the secondary (outline-style) buttons below it. */
+  /* Pause / game-over: full-width rows so the underline tracks align into one
+     clean left-aligned stack. */
   .pausePanel, .gameOverPanel {
-    min-width: 320px;
+    min-width: 340px;
+    align-items: stretch;
   }
   .pausePanel button.gameBtn, .gameOverPanel button.gameBtn {
     width: 100%;
@@ -1258,36 +1636,39 @@
     border-radius: 9999px;
   }
   .themeLabel { font-size: 10.5px; font-weight: 600; letter-spacing: 1.5px; opacity: 0.6; text-transform: uppercase; }
+  /* Arena Theme chips — two-tone (primary / accent) with an accent ring on
+     the selected one. Colours come from inline --sw-primary / --sw-accent. */
   .themeSwatch {
-    width: 20px; height: 20px; border-radius: 50%;
-    background: var(--sw);
-    border: 2px solid rgba(255, 255, 255, 0.25);
+    width: 30px; height: 30px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--sw-primary, var(--primary)) 0 50%, var(--sw-accent, var(--accent)) 50% 100%);
+    border: 1px solid var(--border);
     cursor: pointer;
     padding: 0;
-    transition: transform 0.2s, border-color 0.2s;
+    transition: transform 0.18s, box-shadow 0.18s;
   }
-  .themeSwatch:hover { transform: scale(1.15); }
-  .themeSwatch.active { border-color: #fff; box-shadow: 0 0 0 3px var(--sw); transform: scale(1.08); }
+  .themeSwatch:hover { transform: translateY(-2px); }
+  .themeSwatch.active {
+    box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 4px var(--accent);
+  }
 
   .resOption {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     letter-spacing: 1px;
-    color: rgba(255, 255, 255, 0.55);
-    background: rgba(255, 255, 255, 0.06);
-    border: 1.5px solid rgba(255, 255, 255, 0.12);
-    border-radius: 6px;
-    padding: 6px 10px;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    background: transparent;
+    border: none;
+    border-radius: 7px;
+    padding: 6px 12px;
     cursor: pointer;
-    transition: transform 0.15s, border-color 0.15s, color 0.15s, background 0.15s;
+    transition: color 0.18s, background 0.18s;
   }
-  .resOption:hover { color: #fff; border-color: rgba(255, 255, 255, 0.3); }
+  .resOption:hover { color: var(--ink); }
   .resOption.active {
-    color: #fff;
-    background: rgba(255, 79, 107, 0.18);
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent);
+    color: var(--bg);
+    background: var(--accent);
   }
 
   .tabOption {
@@ -1299,7 +1680,7 @@
     background: rgba(255, 255, 255, 0.06);
     border: 1.5px solid rgba(255, 255, 255, 0.12);
     border-radius: 6px;
-    padding: 6px 14px;
+    padding: 4px 12px;
     cursor: pointer;
     transition: transform 0.15s, border-color 0.15s, color 0.15s, background 0.15s;
   }
@@ -1331,6 +1712,124 @@
   }
   .backLink svg { width: 20px; height: 20px; }
   .backLink:hover { opacity: 1; transform: translateX(-3px); color: var(--accent); background: rgba(255,255,255,0.06); }
+
+  /* ================================================================
+     AI Difficulty select — four large square tiles, splash art filling
+     each one, dot+underline-family label at the bottom. Expert gets its
+     own danger-red accent + a slow ambient pulse, even at rest.
+     ================================================================ */
+  .difficultyGrid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 22px;
+    width: 100%;
+    max-width: 1080px;
+    flex-shrink: 0; /* was being flex-shrunk well below its natural size inside .panel's
+                        column flex despite plenty of spare height — this pins it at full size */
+    align-self: stretch; /* .panel's align-items:center (for centering the heading/back-link)
+                             was also quietly capping this at a fit-content width instead of
+                             the full 100% it asks for — override just for this one child */
+    margin-top: 6px;
+  }
+
+  .diffCard {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    width: 100%;
+    min-width: 0;
+    position: relative;
+    aspect-ratio: 3 / 4;
+    border: 1.5px solid var(--border);
+    border-radius: 18px;
+    background: var(--bg-2);
+    overflow: hidden;
+    padding: 0;
+    cursor: pointer;
+    outline: none;
+    box-shadow: 0 10px 26px rgba(0,0,0,0.4);
+    transition: transform 0.22s cubic-bezier(0.16,1,0.3,1), border-color 0.22s ease, box-shadow 0.22s ease;
+  }
+  .diffCard:hover, .diffCard:focus-visible {
+    transform: translateY(-10px) scale(1.045);
+    border-color: var(--accent);
+    box-shadow: 0 24px 50px rgba(0,0,0,0.55), 0 0 0 1.5px var(--accent), 0 0 36px var(--glow-color);
+  }
+  .diffCard:active { transform: translateY(-4px) scale(1.015); }
+
+  .diffCardArt {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+    object-position: center 20%;
+    filter: saturate(0.95) brightness(0.92);
+    transition: transform 0.4s cubic-bezier(0.16,1,0.3,1), filter 0.3s ease;
+  }
+  .diffCard:hover .diffCardArt, .diffCard:focus-visible .diffCardArt {
+    transform: scale(1.08);
+    filter: saturate(1.15) brightness(1.02);
+  }
+
+  .diffCardScrim {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(16,19,29,0.92) 0%, rgba(16,19,29,0.32) 42%, rgba(16,19,29,0) 68%);
+    pointer-events: none;
+  }
+
+  .diffCardLabel {
+    position: absolute;
+    left: 20px;
+    bottom: 18px;
+    right: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .diffCardDot {
+    flex: 0 0 auto;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: background-color 0.22s ease, box-shadow 0.22s ease;
+  }
+  .diffCard:hover .diffCardDot, .diffCard:focus-visible .diffCardDot {
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--glow-color);
+  }
+  .diffCardName {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 23px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+
+  /* Expert — danger-red accent that glows even at rest, plus a slow
+     ambient pulse so it visibly stands apart from the other three. */
+  .diffCard--expert {
+    border-color: #ef4444;
+    box-shadow: 0 0 0 1px rgba(239,68,68,0.5), 0 0 22px rgba(239,68,68,0.3);
+    animation: diffExpertPulse 2.6s ease-in-out infinite;
+  }
+  .diffCard--expert .diffCardDot {
+    background: #ef4444;
+    box-shadow: 0 0 10px rgba(239,68,68,0.7);
+  }
+  .diffCard--expert:hover, .diffCard--expert:focus-visible {
+    border-color: #ff6b6b;
+    box-shadow: 0 18px 40px rgba(0,0,0,0.5), 0 0 0 1px #ff6b6b, 0 0 42px rgba(239,68,68,0.6);
+    animation-play-state: paused;
+  }
+  @keyframes diffExpertPulse {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(239,68,68,0.5), 0 0 22px rgba(239,68,68,0.3); }
+    50%      { box-shadow: 0 0 0 1px rgba(239,68,68,0.8), 0 0 38px rgba(239,68,68,0.55); }
+  }
 
   .cardGrid {
     display: grid;
@@ -1572,8 +2071,8 @@
     font-family: 'Space Grotesk', sans-serif;
     font-size: 28px;
     font-weight: 700;
-    color: var(--ink);
-    box-shadow: 
+    color: var(--bg);
+    box-shadow:
       0 0 30px var(--glow-color),
       inset 0 -2px 0 rgba(0,0,0,0.2);
     border: 2px solid var(--paper);
@@ -1655,7 +2154,7 @@
     width: 100%;
     max-width: 1000px;
     margin: 0 auto;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid var(--border);
     padding-bottom: 8px;
     margin-bottom: 4px;
     gap: 14px;
@@ -1681,13 +2180,15 @@
   }
   
   .p1-profile .profile-label {
-    background: linear-gradient(135deg, #ef4444 0%, #991b1b 100%);
-    box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+    background: var(--primary);
+    color: var(--bg);
+    box-shadow: 0 0 12px rgba(125, 155, 196, 0.35);
   }
-  
+
   .p2-profile .profile-label {
-    background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%);
-    box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+    background: var(--accent);
+    color: var(--bg);
+    box-shadow: 0 0 12px var(--glow-color);
   }
   
   .profile-canvas-wrapper {
@@ -1714,10 +2215,10 @@
 
   /* selected: a soft glow that hugs the character silhouette (no rectangle) */
   .p1-profile.active .profile-canvas-wrapper {
-    filter: drop-shadow(0 0 12px rgba(239, 68, 68, 0.7));
+    filter: drop-shadow(0 0 12px rgba(125, 155, 196, 0.8));
   }
   .p2-profile.active .profile-canvas-wrapper {
-    filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.7));
+    filter: drop-shadow(0 0 12px rgba(240, 168, 184, 0.8));
   }
   
   .profile-name {
@@ -1733,11 +2234,11 @@
   }
   
   .p1-profile .profile-name {
-    color: #fca5a5;
+    color: var(--primary-soft);
   }
-  
+
   .p2-profile .profile-name {
-    color: #93c5fd;
+    color: var(--accent);
   }
   
   .tekken-middle-attributes {
@@ -1751,22 +2252,22 @@
   .vs-badge {
     font-size: 22px;
     font-weight: 900;
-    color: #ef4444;
-    text-shadow: 0 0 12px rgba(239, 68, 68, 0.8);
+    color: var(--accent);
+    text-shadow: 0 0 12px var(--glow-color);
     font-style: italic;
     font-family: 'Space Grotesk', sans-serif;
     letter-spacing: 1.5px;
   }
-  
+
   .attribute-display {
     width: 100%;
     display: flex;
     flex-direction: column;
     gap: 6px;
-    background: rgba(0,0,0,0.55);
+    background: var(--bg-3);
     padding: 8px 12px;
     border-radius: 8px;
-    border: 1px solid rgba(255,255,255,0.06);
+    border: 1px solid var(--border);
   }
   
   .attr-row-tekken {
@@ -1836,56 +2337,70 @@
   
   .tekken-grid-box {
     aspect-ratio: 1;
-    border: 2px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border);
     border-radius: 10px;
-    background: rgba(255,255,255,0.03);
+    background: var(--bg-2);
     cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.18s ease, box-shadow 0.18s ease;
     overflow: hidden;
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
   }
-  
+
   .tekken-grid-box canvas {
     display: block;
     width: 100%;
     height: 100%;
     object-fit: cover;
   }
-  
+
   .tekken-grid-box:hover {
-    border-color: #ef4444;
-    transform: scale(1.08);
-    box-shadow: 0 0 20px rgba(239, 68, 68, 0.55);
+    border-color: var(--primary-soft);
+    transform: scale(1.06);
+    box-shadow: 0 0 18px rgba(125, 155, 196, 0.35);
     z-index: 10;
   }
-  
-  .tekken-grid-box.selected-left {
-    border-color: #ef4444;
-    background: rgba(239, 68, 68, 0.15);
-    box-shadow: 0 0 16px rgba(239, 68, 68, 0.55);
-  }
-  
+
+  /* Selection marker echoes the menu language: an accent/primary ring plus a
+     corner dot (::after). Left = --primary, right = --accent. */
+  .tekken-grid-box.selected-left,
   .tekken-grid-box.selected-right {
-    border-color: #3b82f6;
-    background: rgba(59, 130, 246, 0.15);
-    box-shadow: 0 0 16px rgba(59, 130, 246, 0.55);
+    background: var(--bg-3);
   }
-  
+  .tekken-grid-box.selected-left {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px var(--primary), 0 0 18px rgba(125, 155, 196, 0.5);
+  }
+  .tekken-grid-box.selected-right {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent), 0 0 18px var(--glow-color);
+  }
+  .tekken-grid-box.selected-left::after,
+  .tekken-grid-box.selected-right::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    box-shadow: 0 0 8px currentColor;
+  }
+  .tekken-grid-box.selected-left::after { background: var(--primary); color: var(--primary); }
+  .tekken-grid-box.selected-right::after { background: var(--accent); color: var(--accent); }
+
   .tekken-grid-box.random-box {
-    background: radial-gradient(circle at center, #181824, #08080f);
+    background: radial-gradient(circle at center, var(--bg-3), var(--bg));
     font-family: 'Space Grotesk', sans-serif;
     font-size: 32px;
     font-weight: 800;
-    color: rgba(255,255,255,0.3);
-    text-shadow: 0 0 10px rgba(255,255,255,0.1);
+    color: var(--ink-dim);
   }
-  
+
   .tekken-grid-box.random-box:hover {
-    color: #fff;
-    text-shadow: 0 0 15px rgba(255,255,255,0.5);
+    color: var(--ink);
   }
   
   .tekken-confirm-container {
@@ -1895,39 +2410,70 @@
     margin-top: 6px;
   }
   
+  /* Confirm action uses the shared dot + fill-underline item style. */
   .tekken-confirm-btn {
+    -webkit-appearance: none;
+    appearance: none;
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 13px;
-    font-weight: 800;
-    letter-spacing: 1.5px;
-    color: #fff;
-    background: linear-gradient(135deg, #ef4444 0%, #991b1b 100%);
-    border: none;
-    border-radius: 8px;
-    padding: 10px 36px;
-    cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-    box-shadow: 0 4px 16px rgba(239, 68, 68, 0.35);
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 2px;
     text-transform: uppercase;
+    color: var(--ink);
+    background: linear-gradient(var(--border), var(--border)) no-repeat;
+    background-position: 23px bottom;
+    background-size: calc(100% - 23px) 2px;
+    border: none;
+    border-radius: 0;
+    padding: 8px 0 12px 0;
+    cursor: pointer;
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), color 0.18s ease;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
   }
-  
-  .tekken-confirm-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 18px rgba(239, 68, 68, 0.45);
-    filter: brightness(1.15);
+  .tekken-confirm-btn::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: background-color 0.18s ease, box-shadow 0.18s ease;
   }
-  
-  .tekken-confirm-btn:active {
-    transform: translateY(0);
+  .tekken-confirm-btn::after {
+    content: '';
+    position: absolute;
+    left: 23px;
+    right: 100%;
+    bottom: 0;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--glow-color);
+    transition: right 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   }
-  
+  .tekken-confirm-btn:hover,
+  .tekken-confirm-btn:focus-visible {
+    color: #ffffff;
+    transform: translateX(6px);
+  }
+  .tekken-confirm-btn:hover::before,
+  .tekken-confirm-btn:focus-visible::before {
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--glow-color);
+  }
+  .tekken-confirm-btn:hover::after,
+  .tekken-confirm-btn:focus-visible::after { right: 20%; }
+
   .tekken-confirm-btn.disabled {
-    opacity: 0.4;
+    opacity: 0.35;
     cursor: not-allowed;
     transform: none !important;
-    box-shadow: none !important;
-    filter: grayscale(1);
   }
+  .tekken-confirm-btn.disabled::before { background: var(--border); box-shadow: none; }
+  .tekken-confirm-btn.disabled::after { right: 100%; }
 
   /* LOADING VS STATS */
   .vsStats {
@@ -2302,10 +2848,13 @@
     <div id="startOverlay" class="overlay menuOverlay">
       <!-- Left Column (Navigation Menu) -->
       <div class="menuLeft">
-        <div class="menuBrand" style="display: block; margin-bottom: 2px; width: 100%;">
-          <div class="brandText" style="width: 100%;">
-            <h2 style="font-family: 'Space Grotesk', sans-serif; font-size: 54px; font-weight: 800; margin: 0; letter-spacing: 2px; line-height: 1.0; background: linear-gradient(135deg, #ffffff 40%, var(--accent) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 0 35px rgba(255, 79, 107, 0.22); text-transform: uppercase;">GOODMINTON</h2>
-            <div class="brandSub" style="font-family: 'Space Grotesk', sans-serif; font-size: 15px; font-weight: 600; letter-spacing: 2px; opacity: 0.75; text-transform: uppercase; margin-top: 10px; color: var(--accent2);">A Badminton Simulator</div>
+        <div class="menuBrand">
+          <div class="brandText">
+            <!-- Brand hero: full FAULT lockup (transparent), floating directly
+                 over the live rally. Falls back to an Archivo Black wordmark
+                 if the asset is ever missing. -->
+            <img src="assets/brand/fault_logo_full_trans.png" alt="FAULT" class="brandLogo"
+                 onerror="this.onerror=null; var w=document.createElement('div'); w.className='brandWordmark'; w.textContent='FAULT'; this.replaceWith(w);">
           </div>
         </div>
 
@@ -2319,16 +2868,6 @@
             <button class="menuTextLink" id="btnAIvAI">AI VS AI</button>
             <button class="menuTextLink" id="btnOnline">ONLINE MULTIPLAYER</button>
             <button class="menuTextLink" id="btnOptions">SETTINGS</button>
-          </div>
-
-          <!-- Container 2: Difficulty Selection (Initially Hidden) -->
-          <div id="difficultyMenuOptions" class="textMenu hidden">
-            <h3 class="submenuTitle" style="margin-bottom: 12px;">Select AI Difficulty</h3>
-            <button class="menuTextLink diffBtn" data-diff="easy" style="--hover-color: #10b981;">EASY</button>
-            <button class="menuTextLink diffBtn" data-diff="medium" style="--hover-color: var(--accent2);">MEDIUM</button>
-            <button class="menuTextLink diffBtn" data-diff="hard" style="--hover-color: #ef4444;">HARD</button>
-            <button class="menuTextLink diffBtn" data-diff="expert" style="--hover-color: #a855f7;">EXPERT</button>
-            <button class="menuTextLink backLinkBtn" id="btnDiffBack">← BACK TO MAIN MENU</button>
           </div>
 
           <!-- Phase 5: Play Online — Host or Join -->
@@ -2418,54 +2957,59 @@
           <!-- Container 3: Options Selection (Initially Hidden) -->
           <div id="optionsMenuOptions" class="textMenu hidden">
             <h3 class="submenuTitle" style="margin-bottom: 12px;">Settings</h3>
-            
-            <!-- Active Match Stats on Settings screen (visible when in-game/post-game) -->
-            <div id="settingsStatsBox" class="hidden" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 12px; margin-bottom: 16px; font-family: 'Space Grotesk', sans-serif; text-align: left; font-size: 13px; min-width: 300px;">
-              <!-- Filled dynamically -->
-            </div>
-            
-            <div class="menuSettingRow">
-              <div class="menuSettingLabel">Arena Theme</div>
-              <div class="swatchRow">
-                <button class="themeSwatch" data-theme="classic" style="--sw:#ff4f6b" title="Classic Gym"></button>
-                <button class="themeSwatch" data-theme="neon" style="--sw:#d946ef" title="Neon Arena"></button>
-                <button class="themeSwatch" data-theme="sunset" style="--sw:#f97316" title="Sunset Park"></button>
-                <button class="themeSwatch" data-theme="pride" style="--sw:#ef4444; background: linear-gradient(135deg, #ef4444, #f97316, #eab308, #22c55e, #3b82f6, #a855f7)" title="Pride Arena"></button>
+
+            <div class="fx-panel settingsPanel">
+              <!-- Active Match Stats on Settings screen (visible in-game/post-game) -->
+              <div id="settingsStatsBox" class="settingsStatsBox hidden">
+                <!-- Filled dynamically -->
               </div>
-            </div>
 
-            <div class="menuSettingRow">
-              <div class="menuSettingLabel">Screen Mode</div>
-              <button class="menuTextLink inlineTextBtn" id="btnFullscreen">FULLSCREEN MODE</button>
-            </div>
-
-            <div class="menuSettingRow">
-              <div class="menuSettingLabel">Resolution</div>
-              <div class="swatchRow">
-                <button class="resOption active" data-res="auto" title="Backdrop fills the current window — gameplay size is unaffected">AUTO</button>
-                <button class="resOption" data-res="1366x768" title="Backdrop sized to 1366 × 768 — gameplay size is unaffected">1366×768</button>
-                <button class="resOption" data-res="1920x1080" title="Backdrop sized to 1920 × 1080 — gameplay size is unaffected">1920×1080</button>
+              <!-- DISPLAY -->
+              <div class="fx-section">
+                <div class="fx-section-title">Display</div>
+                <div class="menuSettingRow">
+                  <div class="menuSettingLabel">Screen Mode</div>
+                  <button class="fx-seg--solo" id="btnFullscreen">FULLSCREEN MODE</button>
+                </div>
+                <div class="menuSettingRow">
+                  <div class="menuSettingLabel">Resolution</div>
+                  <div class="fx-segment resSegment">
+                    <button class="resOption active" data-res="auto" title="Backdrop fills the current window — gameplay size is unaffected">AUTO</button>
+                    <button class="resOption" data-res="1366x768" title="Backdrop sized to 1366 × 768 — gameplay size is unaffected">1366×768</button>
+                    <button class="resOption" data-res="1920x1080" title="Backdrop sized to 1920 × 1080 — gameplay size is unaffected">1920×1080</button>
+                  </div>
+                </div>
+                <div class="menuSettingRow">
+                  <div class="menuSettingLabel">Dynamic Camera</div>
+                  <button class="fx-toggle settingToggle" id="btnDynamicCamera" aria-pressed="true" title="Enable Dynamic Drifting Camera — camera zooms and pans during play">ON</button>
+                </div>
               </div>
-            </div>
 
-            <div class="menuSettingRow">
-              <div class="menuSettingLabel">Advanced Controls</div>
-              <button class="menuTextLink inlineTextBtn" id="btnAdvancedControls" title="Enable Advanced Controls — manual attack angle for human players">OFF</button>
-            </div>
+              <hr class="fx-divider">
 
-            <div class="menuSettingRow">
-              <div class="menuSettingLabel">Dynamic Camera</div>
-              <button class="menuTextLink inlineTextBtn" id="btnDynamicCamera" title="Enable Dynamic Drifting Camera — camera zooms and pans during play">ON</button>
-            </div>
+              <!-- GAMEPLAY -->
+              <div class="fx-section">
+                <div class="fx-section-title">Gameplay</div>
+                <div class="menuSettingRow">
+                  <div class="menuSettingLabel">Hit Meter</div>
+                  <button class="fx-toggle settingToggle" id="btnHitMeter" aria-pressed="false" title="Toggle timing & charge meter overhead (Default: OFF)">OFF</button>
+                </div>
+                <div class="menuSettingRow">
+                  <div class="menuSettingLabel">Advanced Controls</div>
+                  <button class="fx-toggle settingToggle" id="btnAdvancedControls" aria-pressed="false" title="Enable Advanced Controls — manual attack angle for human players">OFF</button>
+                </div>
+              </div>
 
-            <div class="menuSettingRow">
-              <div class="menuSettingLabel">Hit Meter</div>
-              <button class="menuTextLink inlineTextBtn" id="btnHitMeter" title="Toggle timing & charge meter overhead (Default: OFF)">OFF</button>
-            </div>
+              <hr class="fx-divider">
 
-            <div class="menuSettingRow">
-              <div class="menuSettingLabel">Customize Controls</div>
-              <button class="menuTextLink inlineTextBtn" id="btnCustomizeControls" title="Remap movement, jump, hit and attack-angle keys">BUTTON MAPPING</button>
+              <!-- CONTROLS -->
+              <div class="fx-section">
+                <div class="fx-section-title">Controls</div>
+                <div class="menuSettingRow">
+                  <div class="menuSettingLabel">Customize Controls</div>
+                  <button class="fx-seg--solo" id="btnCustomizeControls" title="Remap movement, jump, hit and attack-angle keys">BUTTON MAPPING</button>
+                </div>
+              </div>
             </div>
 
             <button class="menuTextLink backLinkBtn" id="btnOptionsBack">← BACK TO MAIN MENU</button>
@@ -2557,30 +3101,61 @@
             <button class="menuTextLink backLinkBtn" id="btnControlsBack">← BACK TO SETTINGS</button>
           </div>
         </div>
-        
-        <!-- Controls Helper Info -->
-        <div class="compactControlsInfo">
-          <div class="infoGroup">
-            <span class="playerTitle p1">P1 CONTROLS</span>
-            <span id="p1MoveHint">A/D: Move • W: Jump/Smash</span>
-            <span id="p1HitHint">Space: Hold to Charge Hit</span>
-          </div>
-          <div class="infoGroup" style="text-align: right;">
-            <span class="playerTitle p2">P2 CONTROLS</span>
-            <span id="p2MoveHint">←/→: Move • ↑: Jump/Smash</span>
-            <span id="p2HitHint">Enter: Hold to Charge Hit</span>
-          </div>
+      </div>
+
+      <!-- Small, unobtrusive corner mark — the living rally behind the menu
+           replaces the old boxed preview / controls legend / stadium labels. -->
+      <div id="versionLabel" class="versionLabel"></div>
+    </div>
+
+    <div id="difficultyOverlay" class="overlay hidden">
+      <div class="panel difficultyPanel">
+        <div class="backLink" id="btnDiffBack">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg>
+          Back
+        </div>
+        <h2>SELECT DIFFICULTY</h2>
+
+        <div class="difficultyGrid">
+          <button class="diffCard" data-diff="easy" id="diffCardEasy">
+            <canvas class="diffCardArt" id="diffCardEasyCanvas" width="380" height="380"></canvas>
+            <div class="diffCardScrim"></div>
+            <div class="diffCardLabel">
+              <span class="diffCardDot"></span>
+              <span class="diffCardName">Easy</span>
+            </div>
+          </button>
+
+          <button class="diffCard" data-diff="medium" id="diffCardMedium">
+            <canvas class="diffCardArt" id="diffCardMediumCanvas" width="380" height="380"></canvas>
+            <div class="diffCardScrim"></div>
+            <div class="diffCardLabel">
+              <span class="diffCardDot"></span>
+              <span class="diffCardName">Medium</span>
+            </div>
+          </button>
+
+          <button class="diffCard" data-diff="hard" id="diffCardHard">
+            <canvas class="diffCardArt" id="diffCardHardCanvas" width="380" height="380"></canvas>
+            <div class="diffCardScrim"></div>
+            <div class="diffCardLabel">
+              <span class="diffCardDot"></span>
+              <span class="diffCardName">Hard</span>
+            </div>
+          </button>
+
+          <button class="diffCard diffCard--expert" data-diff="expert" id="diffCardExpert">
+            <img class="diffCardArt diffCardArt--photo" id="diffCardExpertImg" src="assets/characters/jordan-ultimate-splash.png" alt=""
+                 onerror="this.onerror=null; this.classList.add('hidden'); var c=document.getElementById('diffCardExpertCanvas'); if(c) c.classList.remove('hidden');">
+            <canvas class="diffCardArt hidden" id="diffCardExpertCanvas" width="380" height="380"></canvas>
+            <div class="diffCardScrim"></div>
+            <div class="diffCardLabel">
+              <span class="diffCardDot"></span>
+              <span class="diffCardName">Expert</span>
+            </div>
+          </button>
         </div>
       </div>
-
-      <!-- Right Column (Aesthetics / Graphic) -->
-      <div class="menuRight">
-        <div class="aestheticTitle">GOODMINTON STADIUM</div>
-        <canvas id="menuAestheticCanvas" width="480" height="340"></canvas>
-        <div class="aestheticFeature">ACCURATE PHYSICS • 8 CHARACTERS • 6 COURTS</div>
-      </div>
-
-      <div id="versionLabel" class="versionLabel"></div>
     </div>
 
     <div id="charSelectOverlay" class="overlay hidden">
@@ -2732,6 +3307,7 @@
 
     <div id="gameOverOverlay" class="overlay hidden">
       <div class="panel gameOverPanel">
+        <div class="brandMark"><span class="brandMark__dot">●</span>&nbsp;FAULT</div>
         <div class="trophyBox">
           <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="#ffb800" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
@@ -2745,7 +3321,7 @@
         <p id="finalScoreText" style="font-size: 15px; font-weight: 600; opacity: 0.85; margin: 4px 0 10px 0;"></p>
         
         <!-- Post-Game Match Stats Box -->
-        <div id="postGameStatsBox" style="display: none; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 12px; margin: 8px 0 16px 0; font-family: 'Space Grotesk', sans-serif; text-align: left; font-size: 13px; min-width: 300px;">
+        <div id="postGameStatsBox" class="settingsStatsBox" style="display: none; margin: 8px 0 16px 0; min-width: 300px;">
           <!-- Filled dynamically -->
         </div>
 
@@ -2759,11 +3335,12 @@
 
     <div id="pauseOverlay" class="overlay hidden">
       <div class="panel pausePanel">
+        <div class="brandMark"><span class="brandMark__dot">●</span>&nbsp;FAULT</div>
         <h2>⏸ Game Paused</h2>
         <p class="subtle" style="margin-top:-6px; margin-bottom: 8px;">Press Esc to resume</p>
-        
+
         <!-- Live In-Game Match Stats Box -->
-        <div id="pauseStatsBox" style="display: none; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 12px; margin: 8px 0 16px 0; font-family: 'Space Grotesk', sans-serif; text-align: left; font-size: 13px; min-width: 300px;">
+        <div id="pauseStatsBox" class="settingsStatsBox" style="display: none; margin: 8px 0 16px 0; min-width: 300px;">
           <!-- Filled dynamically -->
         </div>
 
@@ -2828,11 +3405,11 @@
 <div id="iosFullscreenHint" class="iosHint">
   <div class="iosHintCard">
     <div class="iosHintTitle">Safari blocks in-page fullscreen on iPhone</div>
-    <div class="iosHintBody">Install GOODMINTON to your Home Screen for the real thing — it opens with no browser bar at all:</div>
+    <div class="iosHintBody">Install FAULT to your Home Screen for the real thing — it opens with no browser bar at all:</div>
     <ol class="iosHintSteps">
       <li>Tap the <b>Share</b> icon <span class="iosShareGlyph">⎋</span> in Safari's toolbar</li>
       <li>Choose <b>Add to Home Screen</b></li>
-      <li>Launch GOODMINTON from your Home Screen icon</li>
+      <li>Launch FAULT from your Home Screen icon</li>
     </ol>
     <button id="iosHintCloseBtn" class="iosHintCloseBtn">GOT IT</button>
   </div>
@@ -7513,6 +8090,7 @@
   }
 
   function updateAI(dt, now){
+    if(state === 'start') return; // main menu owns left/right during the attract-mode rally
     if(mode !== 'ai' && mode !== 'aivai') return;
     // right player is AI in both modes; left joins in AI vs AI
     runAI(right, left, aiControllers.right, dt, now);
@@ -9766,7 +10344,6 @@
   function openSettingsFromPause(){
     document.getElementById('pauseOverlay').classList.add('hidden');
     document.getElementById('mainMenuOptions').classList.add('hidden');
-    document.getElementById('difficultyMenuOptions').classList.add('hidden');
     document.getElementById('menuIntro').classList.add('hidden');
     document.getElementById('optionsMenuOptions').classList.remove('hidden');
     document.getElementById('startOverlay').classList.remove('hidden');
@@ -9787,7 +10364,6 @@
   function openSettingsFromGameOver(){
     document.getElementById('gameOverOverlay').classList.add('hidden');
     document.getElementById('mainMenuOptions').classList.add('hidden');
-    document.getElementById('difficultyMenuOptions').classList.add('hidden');
     document.getElementById('menuIntro').classList.add('hidden');
     document.getElementById('optionsMenuOptions').classList.remove('hidden');
     document.getElementById('startOverlay').classList.remove('hidden');
@@ -9876,10 +10452,10 @@
     document.getElementById('serveTag').classList.add('hidden');
     document.getElementById('charSelectOverlay').classList.add('hidden');
     document.getElementById('bgSelectOverlay').classList.add('hidden');
-    
+    document.getElementById('difficultyOverlay').classList.add('hidden');
+
     // Reset our nested start menu container displays
     document.getElementById('mainMenuOptions').classList.remove('hidden');
-    document.getElementById('difficultyMenuOptions').classList.add('hidden');
     document.getElementById('optionsMenuOptions').classList.add('hidden');
     document.getElementById('onlineMenuOptions').classList.add('hidden');
     document.getElementById('joinLobbyOptions').classList.add('hidden');
@@ -9888,7 +10464,7 @@
     
     document.getElementById('startOverlay').classList.remove('hidden');
     state = 'start';
-    initMenuAesthetic();
+    attract = null; // force a fresh attract-mode rally (new characters/loop) next frame
   }
   document.getElementById('mainMenuBtn').addEventListener('click', goToMainMenu);
   document.getElementById('gameOverMenuBtn').addEventListener('click', goToMainMenu);
@@ -10001,121 +10577,225 @@
     });
   });
 
-  // Mini-Game Menu Preview Loop
-  let menuAestheticCanvas = null;
-  let menuAestheticCtx = null;
-  let menuAnimationId = null;
-  let menuTime = 0;
+  // ================================================================
+  // FAULT living menu background — "attract mode"
+  //
+  // A choreographed highlight rally that plays behind the main menu using
+  // the REAL rendering pipeline: draw() already calls drawCourt()/
+  // drawPlayer(left)/drawPlayer(right)/drawShuttle() on the real canvas
+  // every frame regardless of `state` (the main menu simply used to sit on
+  // top of it, opaque). This block never touches score/mode/match state —
+  // it only drives left/right/shuttle's position & animation fields with
+  // scripted "shots", the same way updatePlayer()/updateShuttle() would
+  // during a real point, just choreographed instead of input-driven. Every
+  // real match start (character-select confirm) already resets left/right/
+  // shuttle via setupServe() + character assignment, so nothing here needs
+  // its own teardown — see updateAI()'s `state === 'start'` guard and
+  // draw()'s `state !== 'start'` HUD gate for the other half of the seam.
+  // ================================================================
+  let attract = null;
 
-  function initMenuAesthetic() {
-    menuAestheticCanvas = document.getElementById('menuAestheticCanvas');
-    if (!menuAestheticCanvas) return;
-    menuAestheticCtx = menuAestheticCanvas.getContext('2d');
-    
-    if (menuAnimationId) cancelAnimationFrame(menuAnimationId);
-    animateMenuAesthetic();
+  function attractLeftX(bias){ return COURT_LEFT + 70 + bias; }
+  function attractRightX(bias){ return COURT_RIGHT - 70 - bias - PLAYER_W; }
+
+  function attractPickCharacters(){
+    const a = CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
+    let b = a, guard = 0;
+    while (b.id === a.id && guard++ < 20) b = CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
+    return Math.random() < 0.5 ? [a, b] : [b, a];
   }
-  
-  function animateMenuAesthetic() {
-    if (state !== 'start') {
-      menuAnimationId = null;
-      return;
-    }
-    
-    const ctx = menuAestheticCtx;
-    const w = menuAestheticCanvas.width;
-    const h = menuAestheticCanvas.height;
-    ctx.clearRect(0, 0, w, h);
-    
-    menuTime += 0.016;
-    
-    const groundY = h - 50;
-    const netX = w / 2;
-    
-    // Floor area
-    const floorGrad = ctx.createLinearGradient(0, groundY, 0, h);
-    floorGrad.addColorStop(0, '#0f1423');
-    floorGrad.addColorStop(1, '#070a13');
-    ctx.fillStyle = floorGrad;
-    ctx.fillRect(0, groundY, w, h - groundY);
-    
-    // Floor boundary line
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(10, groundY);
-    ctx.lineTo(w - 10, groundY);
-    ctx.stroke();
-    
-    // Net post
-    ctx.strokeStyle = '#5a5e73';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(netX, groundY);
-    ctx.lineTo(netX, groundY - 45);
-    ctx.stroke();
-    
-    // Net mesh
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let ny = groundY - 45; ny <= groundY - 5; ny += 6) {
-      ctx.moveTo(netX - 8, ny);
-      ctx.lineTo(netX + 8, ny);
-    }
-    ctx.stroke();
-    
-    // Simple poses for previews
-    const p1Anim = {
-      legFront: Math.sin(menuTime * 2.5) * 0.2,
-      legBack: -Math.sin(menuTime * 2.5) * 0.2,
-      armFront: 0.2 + Math.sin(menuTime * 1.5) * 0.2,
-      armBack: -0.3
+
+  // Builds one loop as an ordered list of "shots" — each carries who hits
+  // it, where it starts/lands, how high it arcs, and how long it takes.
+  // Every shot's landing spot becomes the next shot's start, so the rally
+  // always reads as one continuous exchange; the hitter alternates by
+  // construction. The final shot in every flavor is a bigger, faster
+  // finishing beat so the loop always ends on something dramatic.
+  function attractBuildScript(flavor){
+    const shots = [];
+    let hitter = Math.random() < 0.5 ? 'left' : 'right';
+    let curX = hitter === 'left' ? attractLeftX(20) : attractRightX(20);
+    let curY = GROUND_Y - PLAYER_H - 20;
+    const push = function(toX, toY, apex, dur, smash){
+      shots.push({ hitter: hitter, fromX: curX, fromY: curY, toX: toX, toY: toY, apex: apex, dur: dur, smash: !!smash });
+      hitter = hitter === 'left' ? 'right' : 'left';
+      curX = toX; curY = toY;
     };
-    const p2Anim = {
-      legFront: -Math.sin(menuTime * 2.5) * 0.2,
-      legBack: Math.sin(menuTime * 2.5) * 0.2,
-      armFront: 0.2 + Math.cos(menuTime * 1.5) * 0.2,
-      armBack: -0.3
+    const netY = GROUND_Y - 150;
+    if (flavor === 0) { // baseline rally -> big smash finish
+      const n = 2 + Math.floor(Math.random() * 2);
+      for (let i = 0; i < n; i++){
+        const toX = hitter === 'left' ? attractRightX(30 + Math.random()*30) : attractLeftX(30 + Math.random()*30);
+        push(toX, GROUND_Y - PLAYER_H - 12, 190, 1.05, false);
+      }
+      const toX = hitter === 'left' ? attractRightX(120) : attractLeftX(120);
+      push(toX, GROUND_Y - PLAYER_H + 4, 40, 0.5, true);
+    } else if (flavor === 1) { // net battle -> net kill
+      const n = 3 + Math.floor(Math.random() * 2);
+      for (let i = 0; i < n; i++){
+        const toX = hitter === 'left' ? NET_X + 110 + Math.random()*30 : NET_X - 110 - Math.random()*30;
+        push(toX, netY, 26, 0.48, false);
+      }
+      const toX = hitter === 'left' ? attractRightX(140) : attractLeftX(140);
+      push(toX, GROUND_Y - PLAYER_H + 4, 30, 0.48, true);
+    } else if (flavor === 2) { // wide-angle dash rally -> smash finish
+      const n = 2 + Math.floor(Math.random() * 2);
+      for (let i = 0; i < n; i++){
+        const wide = i % 2 === 0 ? -70 : 70;
+        const toX = hitter === 'left' ? attractRightX(wide) : attractLeftX(wide);
+        push(toX, GROUND_Y - PLAYER_H - 8, 140, 0.8, false);
+      }
+      const toX = hitter === 'left' ? attractRightX(90) : attractLeftX(90);
+      push(toX, GROUND_Y - PLAYER_H + 4, 34, 0.48, true);
+    } else { // long building rally -> emphatic finish (longest loop)
+      const n = 4 + Math.floor(Math.random() * 2);
+      for (let i = 0; i < n; i++){
+        const toX = hitter === 'left' ? attractRightX(20 + Math.random()*20) : attractLeftX(20 + Math.random()*20);
+        push(toX, GROUND_Y - PLAYER_H - 15, 165, 0.9, false);
+      }
+      const toX = hitter === 'left' ? attractRightX(150) : attractLeftX(150);
+      push(toX, GROUND_Y - PLAYER_H + 4, 36, 0.55, true);
+    }
+    return shots;
+  }
+
+  // Stamps absolute t0/t1 onto each shot, with a short pause at every
+  // contact point so hits read as discrete beats rather than a blur.
+  function attractAssignTimes(shots){
+    let t = 0.2;
+    const GAP = 0.14;
+    for (let i = 0; i < shots.length; i++){
+      shots[i].t0 = t;
+      t += shots[i].dur;
+      shots[i].t1 = t;
+      t += GAP;
+    }
+  }
+
+  function attractSideWaypoints(shots, side){
+    const wps = [];
+    for (let i = 0; i < shots.length; i++){
+      if (shots[i].hitter === side) wps.push({ t: shots[i].t0, x: shots[i].fromX, smash: shots[i].smash });
+    }
+    return wps;
+  }
+
+  function attractStartLoop(nowSec){
+    const chars = attractPickCharacters();
+    left.character = chars[0];
+    right.character = chars[1];
+    const flavor = Math.floor(Math.random() * 4);
+    const shots = attractBuildScript(flavor);
+    attractAssignTimes(shots);
+    const leftWps = attractSideWaypoints(shots, 'left');
+    const rightWps = attractSideWaypoints(shots, 'right');
+    const last = shots[shots.length - 1];
+    attract = {
+      startTime: nowSec,
+      shots: shots,
+      leftWps: leftWps,
+      rightWps: rightWps,
+      loopEnd: nowSec + last.t1 + 1.2,
+      prevShuttleX: shots[0].fromX,
+      prevShuttleY: shots[0].fromY,
+      prevLocalT: 0
     };
-    
-    // Draw characters (Maya & Kenji)
-    drawHumanoid(ctx, 100, groundY, 1.2, CHARACTERS[0], p1Anim, 1);
-    drawHumanoid(ctx, w - 100, groundY, 1.2, CHARACTERS[2], p2Anim, -1);
-    
-    // Glowing golden shuttlecock floating gently
-    const shuttleX = netX + Math.sin(menuTime * 1.2) * 80;
-    const shuttleY = groundY - 110 + Math.cos(menuTime * 2.4) * 30;
-    
-    ctx.save();
-    ctx.translate(shuttleX, shuttleY);
-    // Draw subtle shuttle shadow
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-    ctx.beginPath();
-    ctx.ellipse(0, groundY - shuttleY, 10, 3, 0, 0, Math.PI * 2);
-    ctx.fill();
-    
-    ctx.rotate(Math.sin(menuTime * 1.2) * 0.4 + Math.PI/2);
-    ctx.fillStyle = '#f8fafc';
-    ctx.beginPath();
-    ctx.arc(0, 3, 3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    ctx.beginPath();
-    ctx.moveTo(0, 3);
-    ctx.lineTo(-3, -5);
-    ctx.lineTo(3, -5);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-    
-    // Glowing text/branding at bottom
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
-    ctx.font = '700 42px "Space Grotesk", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText("RALLY 2D", w/2, groundY - 100);
-    
-    menuAnimationId = requestAnimationFrame(animateMenuAesthetic);
+    left.x = leftWps.length ? leftWps[0].x : attractLeftX(20);
+    right.x = rightWps.length ? rightWps[0].x : attractRightX(20);
+    left.y = right.y = GROUND_Y - PLAYER_H;
+    left.vx = right.vx = 0;
+    left.vy = right.vy = 0;
+    left.onGround = right.onGround = true;
+    left.charging = right.charging = false;
+    left.swingTimer = right.swingTimer = 0;
+    shuttle.x = shots[0].fromX; shuttle.y = shots[0].fromY;
+    shuttle.vx = 0; shuttle.vy = 0;
+    shuttle.active = true;
+  }
+
+  // Eases a puppet's x toward whichever waypoint it needs to reach next
+  // (their next scripted hit). Once a side has no more waypoints: if THEY
+  // hit the final shot, they just hold their position (that was their last
+  // action) — if they're the receiver of the final shot instead, they
+  // reach toward its landing spot, like diving for the closing smash. Mixing
+  // these up was the bug where a player got dragged across the court after
+  // their own last hit — they'd chase the finisher's landing spot even
+  // though they were the one who'd just hit it.
+  function attractTargetX(wps, shots, localT, side){
+    if (!wps.length) return null;
+    if (localT <= wps[0].t) return wps[0].x;
+    for (let i = 0; i < wps.length - 1; i++){
+      if (localT >= wps[i].t && localT < wps[i+1].t){
+        const u = (localT - wps[i].t) / Math.max(0.001, wps[i+1].t - wps[i].t);
+        const e = u < 0.5 ? 2*u*u : 1 - Math.pow(-2*u+2, 2)/2; // ease-in-out quad
+        return wps[i].x + (wps[i+1].x - wps[i].x) * e;
+      }
+    }
+    const last = shots[shots.length - 1];
+    const lastWp = wps[wps.length-1];
+    if (last.hitter === side) return lastWp.x; // just hit the finisher — hold position
+    const u = Math.min(1, (localT - lastWp.t) / 0.4);
+    return lastWp.x + (last.toX - lastWp.x) * u; // receiver reaching for the finisher
+  }
+
+  function attractStepSide(side, localT, dt){
+    const p = side === 'left' ? left : right;
+    const wps = side === 'left' ? attract.leftWps : attract.rightWps;
+    const targetX = attractTargetX(wps, attract.shots, localT, side);
+    if (targetX == null) return;
+    const prevX = p.x;
+    p.x = targetX;
+    p.vx = dt > 0 ? Math.max(-MOVE_SPEED, Math.min(MOVE_SPEED, (p.x - prevX) / dt)) : 0;
+
+    for (let i = 0; i < wps.length; i++){
+      if (attract.prevLocalT < wps[i].t && localT >= wps[i].t){
+        p.swingTimer = SWING_DURATION;
+        p.swingPowerFrac = wps[i].smash ? 1 : 0.5;
+        if (wps[i].smash){ p.onGround = false; p.vy = JUMP_VELOCITY; }
+      }
+    }
+    if (p.swingTimer > 0) p.swingTimer = Math.max(0, p.swingTimer - dt);
+
+    if (!p.onGround){
+      p.vy += PLAYER_GRAVITY * dt;
+      p.y += p.vy * dt;
+      const restY = GROUND_Y - PLAYER_H;
+      if (p.y >= restY){ p.y = restY; p.vy = 0; p.onGround = true; }
+    }
+  }
+
+  function attractStepShuttle(localT, dt){
+    const shots = attract.shots;
+    let shot = null;
+    for (let i = 0; i < shots.length; i++){
+      if (localT >= shots[i].t0 && localT < shots[i].t1){ shot = shots[i]; break; }
+    }
+    let x, y;
+    if (shot){
+      const u = (localT - shot.t0) / Math.max(0.001, shot.t1 - shot.t0);
+      x = shot.fromX + (shot.toX - shot.fromX) * u;
+      y = shot.fromY + (shot.toY - shot.fromY) * u - shot.apex * 4 * u * (1 - u);
+    } else {
+      let landed = shots[0];
+      for (let i = 0; i < shots.length; i++){ if (localT >= shots[i].t1) landed = shots[i]; }
+      x = landed.toX; y = landed.toY;
+    }
+    const dtSafe = Math.max(0.001, dt);
+    shuttle.vx = (x - attract.prevShuttleX) / dtSafe;
+    shuttle.vy = (y - attract.prevShuttleY) / dtSafe;
+    shuttle.x = x; shuttle.y = y;
+    shuttle.active = true;
+    attract.prevShuttleX = x; attract.prevShuttleY = y;
+  }
+
+  function updateAttractMode(nowSec, dt){
+    if (state !== 'start'){ attract = null; return; }
+    if (!attract || nowSec >= attract.loopEnd) attractStartLoop(nowSec);
+    const localT = nowSec - attract.startTime;
+    attractStepSide('left', localT, dt);
+    attractStepSide('right', localT, dt);
+    attractStepShuttle(localT, dt);
+    attract.prevLocalT = localT;
   }
 
   // ---------- menu flow: mode -> character select -> background select -> game ----------
@@ -10124,27 +10804,24 @@
     startCharacterSelect();
   });
   
-  // the difficulty submenu serves both AI modes — this remembers which button opened it
+  // the difficulty screen serves both AI modes — this remembers which button opened it
   let pendingAIMode = 'ai';
 
   document.getElementById('btnAI').addEventListener('click', ()=>{
     pendingAIMode = 'ai';
-    document.getElementById('mainMenuOptions').classList.add('hidden');
-    document.getElementById('difficultyMenuOptions').classList.remove('hidden');
-    document.getElementById('menuIntro').classList.add('hidden');
+    document.getElementById('startOverlay').classList.add('hidden');
+    document.getElementById('difficultyOverlay').classList.remove('hidden');
   });
 
   document.getElementById('btnAIvAI').addEventListener('click', ()=>{
     pendingAIMode = 'aivai';
-    document.getElementById('mainMenuOptions').classList.add('hidden');
-    document.getElementById('difficultyMenuOptions').classList.remove('hidden');
-    document.getElementById('menuIntro').classList.add('hidden');
+    document.getElementById('startOverlay').classList.add('hidden');
+    document.getElementById('difficultyOverlay').classList.remove('hidden');
   });
 
   document.getElementById('btnDiffBack').addEventListener('click', ()=>{
-    document.getElementById('difficultyMenuOptions').classList.add('hidden');
-    document.getElementById('mainMenuOptions').classList.remove('hidden');
-    document.getElementById('menuIntro').classList.remove('hidden');
+    document.getElementById('difficultyOverlay').classList.add('hidden');
+    document.getElementById('startOverlay').classList.remove('hidden');
   });
 
   // ===========================================================================
@@ -10184,7 +10861,7 @@
     let myReady = false;
 
     function showOnlySubmenu(el){
-      ['mainMenuOptions','difficultyMenuOptions','optionsMenuOptions','controlsMenuOptions',
+      ['mainMenuOptions','optionsMenuOptions','controlsMenuOptions',
        'onlineMenuOptions','joinLobbyOptions','waitingRoomOptions'].forEach(function(id){
         document.getElementById(id).classList.toggle('hidden', document.getElementById(id) !== el);
       });
@@ -10723,6 +11400,24 @@
     document.getElementById('btnHitMeter').textContent = showHitMeter ? 'ON' : 'OFF';
   });
 
+  /* Mirror the ON/OFF text of the settings boolean buttons onto the FAULT
+     toggle-switch visual. The existing click handlers above keep owning the
+     state + textContent; this observer only reflects it into .is-on /
+     aria-pressed so no gameplay/settings logic had to change. */
+  (function syncSettingToggles(){
+    ['btnAdvancedControls','btnDynamicCamera','btnHitMeter'].forEach(function(id){
+      const el = document.getElementById(id);
+      if(!el) return;
+      const apply = () => {
+        const on = el.textContent.trim().toUpperCase() === 'ON';
+        el.classList.toggle('is-on', on);
+        el.setAttribute('aria-pressed', on ? 'true' : 'false');
+      };
+      apply();
+      new MutationObserver(apply).observe(el, { childList: true, characterData: true, subtree: true });
+    });
+  })();
+
   document.querySelectorAll('.keybindBtn').forEach(function(btn){
     btn.addEventListener('click', function(){
       listeningForAction = btn.getAttribute('data-action');
@@ -10767,13 +11462,15 @@
     });
   });
 
-  document.querySelectorAll('.diffBtn').forEach(btn=>{
+  document.querySelectorAll('.diffCard').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       mode = pendingAIMode; // 'ai' or 'aivai', depending on which main-menu button led here
       aiDifficulty = btn.getAttribute('data-diff');
+      document.getElementById('difficultyOverlay').classList.add('hidden');
       startCharacterSelect();
     });
   });
+
   document.getElementById('restartBtn').addEventListener('click', function(){
     // Phase 9: for an online match, "Play Again" requests a rematch through
     // the server instead of resetting local state directly — the server owns
@@ -12124,6 +12821,7 @@
           const cinematicLock = tempestActive || amaraBuildup;
 
           if(!jordanPaused && !cinematicLock) updateAI(simDt, nowSec);
+          updateAttractMode(nowSec, simDt); // main-menu living background — no-ops unless state === 'start'
 
           if((state === 'rally' || state === 'serve') && !cinematicLock){
             if(jordanFrozenSide !== 'left'){
@@ -18356,8 +19054,11 @@
     ctx.restore(); // Restore camera transform
 
     // UI elements stay static in overlay space
-    drawScore();
-    drawMomentumBars();
+    // (skipped on the main menu — the attract-mode rally has no score/match yet)
+    if (state !== 'start') {
+      drawScore();
+      drawMomentumBars();
+    }
     drawPointMessage();
     drawStinger(); // draw our beautiful cinematic stinger
     drawAIDebug();
@@ -18397,9 +19098,36 @@
     ctx.drawImage(_scanCanvas, 0, 0);
   }
 
+  // Splash art for the difficulty cards: Expert (Jordan) uses his real
+  // ultimate splash-art image (wired directly via <img src> in the markup);
+  // the other three are rendered with the game's own portrait renderer
+  // (drawDetailedPortrait — the same one char-select's grid/preview canvases
+  // use) so they're visually consistent with everything else in the app.
+  // Called down here, after every module-level const it depends on
+  // (drawDetailedPortrait's pixel path lazily inits _portCtx etc.) has
+  // actually run — calling it any earlier hits their temporal dead zone.
+  function renderDifficultyCardArt(){
+    const casts = [
+      { id: 'sofia',   canvasId: 'diffCardEasyCanvas' },
+      { id: 'elijah',  canvasId: 'diffCardMediumCanvas' },
+      { id: 'sherman', canvasId: 'diffCardHardCanvas' },
+      // Jordan's real splash-art <img> is the primary Expert art; this canvas
+      // only ever becomes visible if that image fails to load (see its
+      // onerror handler in the markup) — rendered unconditionally up front
+      // so the fallback is ready instantly if/when it's needed.
+      { id: 'jordan',  canvasId: 'diffCardExpertCanvas' }
+    ];
+    casts.forEach(function(entry){
+      const ch = CHARACTERS.find(function(c){ return c.id === entry.id; });
+      const canvas = document.getElementById(entry.canvasId);
+      if (!ch || !canvas) return;
+      drawDetailedPortrait(canvas.getContext('2d'), ch, false, canvas.width, canvas.height, 1, true);
+    });
+  }
+
   draw();
   requestAnimationFrame(loop);
-  initMenuAesthetic();
+  renderDifficultyCardArt();
   setTimeout(adjustScale, 50);
 })();
 </script>
