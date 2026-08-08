@@ -4912,13 +4912,19 @@
     triggerUltBurst(p, artId);
   }
 
+  // Single knob for the shared "Pixel Shatter" splash length across the whole roster (Step 2).
+  // Domain-driving characters (Jordan) override this with their own phase-coupled length below.
+  const ULT_SPLASH_DUR = 0.85;
   let ultBurst = null; // {timer, dur, side, character, name, artName, color, accent}
+  let _ultNameBuf = null, _ultNameBufCtx = null; // cached small buffer for the pixelated name slam (reused, never per-frame alloc)
   function triggerUltBurst(p, artId){
     // Jordan's splash art beat is timed to exactly cover his own JORDAN_TEMPEST_BURST phase so
-    // it hands off cleanly to the face-closeup camera move (see tickJordanTempest for the
-    // phase timeline). Other characters use the generic 0.85s beat.
+    // it hands off cleanly to the consume-silhouette / face-closeup camera move (see
+    // tickJordanTempest for the phase timeline). Everyone else uses the shared ULT_SPLASH_DUR.
+    // The VISUAL is the uniform Pixel Shatter template for all of them (Step 3); only the
+    // duration bows to Jordan's domain sequence (Step 4).
     const isJordan = p.character && p.character.id === 'jordan';
-    const dur = isJordan ? JORDAN_TEMPEST_BURST : 0.85;
+    const dur = isJordan ? JORDAN_TEMPEST_BURST : ULT_SPLASH_DUR;
     ultBurst = {
       timer: dur, dur: dur,
       side: p.side,
@@ -5473,9 +5479,13 @@
   const JORDAN_TEMPEST_FACE     = 1.0;
   const JORDAN_TEMPEST_EXPAND   = 1.6;
   const JORDAN_TEMPEST_BUILDUP  = JORDAN_TEMPEST_SPLASH + JORDAN_TEMPEST_CONSUME + JORDAN_TEMPEST_FACE + JORDAN_TEMPEST_EXPAND;
-  // Legacy alias so anywhere still referencing the old "burst" length keeps working. The
-  // triggerUltBurst() call for Jordan now uses JORDAN_TEMPEST_SPLASH directly.
-  const JORDAN_TEMPEST_BURST = JORDAN_TEMPEST_SPLASH;
+  // How long Jordan's splash-art overlay stays up. This is deliberately NOT
+  // JORDAN_TEMPEST_SPLASH: the tempest phases are ticked with simDt (scaled by timeScale,
+  // ~0.18 during the splash) while ultBurst.timer counts down in REAL dt. Reusing the 0.15
+  // phase length therefore tore the splash off screen after 0.15s real while the beat itself
+  // ran ~0.83s — which is what made the splash feel like a blink. Matching ULT_SPLASH_DUR
+  // keeps it on screen for the whole beat and in step with the rest of the roster.
+  const JORDAN_TEMPEST_BURST = ULT_SPLASH_DUR;
   const JORDAN_DOMAIN_LIVE_DURATION = 30.0; // live rally window once the domain is fully formed
   function startJordanTempestCinematic(p, isAir) {
     triggerDomainExpansion(p, 'TEMPEST KING\'S DOMINION', '#d4d4d8', JORDAN_TEMPEST_BUILDUP + JORDAN_DOMAIN_LIVE_DURATION);
@@ -5735,9 +5745,8 @@
   const AMARA_POWDER    = 0.5;   // dust rockets up fast, leaving a trail
   const AMARA_RIFT      = 0.55;  // the trail tears into a quantum rip
   const AMARA_TRANSFORM = 1.0;
-  const AMARA_FACE      = 0.65;  // hard cut to a composed, cyan-lit close-up (control ring + shuttlecocks)
   const AMARA_EXPAND    = 1.15;  // the rip widens open to reveal the domain behind it
-  const AMARA_BUILDUP   = AMARA_POWDER + AMARA_RIFT + AMARA_TRANSFORM + AMARA_FACE + AMARA_EXPAND;
+  const AMARA_BUILDUP   = AMARA_POWDER + AMARA_RIFT + AMARA_TRANSFORM + AMARA_EXPAND;
   const AMARA_LIVE_MAXHOLD  = 7.0;   // if she never commits, the real shuttle auto-drops
   const AMARA_CLEOPATRA_DUR = 20.0;  // matches TRANSFORM_CONFIG.CLEOPATRA — the flash window
 
@@ -5755,14 +5764,13 @@
   // so it survives across frames; wiped in setupServe and the full-reset paths.
   let amaraDecoys = [];
 
-  // Cumulative elapsed cutoffs for the five buildup beats — readability everywhere.
+  // Cumulative elapsed cutoffs for the four buildup beats — readability everywhere.
   function amaraPhaseTimes(){
     const a = AMARA_POWDER;
     const b = a + AMARA_RIFT;
     const c = b + AMARA_TRANSFORM;
-    const d = c + AMARA_FACE;
-    const e = d + AMARA_EXPAND;
-    return { powderEnd:a, riftEnd:b, transformEnd:c, faceEnd:d, expandEnd:e };
+    const d = c + AMARA_EXPAND;
+    return { powderEnd:a, riftEnd:b, transformEnd:c, expandEnd:d };
   }
 
   function startAmaraPuppeteerCinematic(p){
@@ -5772,14 +5780,12 @@
     p.amaraRift = 0;
     p.amaraGlow = 0;
     p.amaraArmor = 0;
-    p.amaraFaceCloseup = 0;
     p.amaraDomainReveal = 0;
     p.amaraLiveActive = false;
     p.amaraLiveTimer = 0;
     p.amaraRealDropped = false;
     p._amaraRiftImpact = false;
     p._amaraTransformImpact = false;
-    p._amaraFaceImpact = false;
     p._amaraExpandImpact = false;
     p._amaraLiveStarted = false;
     // Freeze the real shuttle, invisible, hanging at the top for the whole ultimate.
@@ -5813,7 +5819,6 @@
     if (elapsed < T.powderEnd)         timeScale = Math.min(timeScale, 0.16);
     else if (elapsed < T.riftEnd)      timeScale = Math.min(timeScale, 0.22);
     else if (elapsed < T.transformEnd) timeScale = Math.min(timeScale, 0.30);
-    else if (elapsed < T.faceEnd)      timeScale = Math.min(timeScale, 0.35);
     else                               timeScale = Math.min(timeScale, 0.45);
 
     // POWDER — the plume chases the shuttle up.
@@ -5857,30 +5862,15 @@
         // Judgment, which tags its own window 'solar' instead (see tickAmaraSolarJudgment).
         p.amaraCleopatraSource = 'puppeteer';
       }
-    } else if (elapsed < T.faceEnd) {
-      p.amaraArmor = 1;
-      const u = (elapsed - T.transformEnd) / AMARA_FACE;
-      p.amaraGlow = Math.max(0, 1 - u * 2.5); // the transform flash finishes fading out fast
-      // FACE — a hard cut to a composed, cyan-lit close-up: her control ring turning behind
-      // her head with the four shuttlecocks hung around it. Snaps in, holds most of the beat
-      // so the emblem actually reads, then leaves cleanly (see drawAmaraPortrait, mode 'face').
-      p.amaraFaceCloseup = u < 0.10 ? amEaseOut(u / 0.10)
-                         : (u > 0.82 ? amEaseIn(amClamp01((1 - u) / 0.18)) : 1);
-      if (!p._amaraFaceImpact) {
-        p._amaraFaceImpact = true;
-        hitFreezeFrames = Math.max(hitFreezeFrames, 3);
-        playSound('bell');
-      }
     } else {
-      p.amaraGlow = 0;
+      p.amaraGlow = Math.max(0, 1 - (elapsed - T.transformEnd) / AMARA_EXPAND);
       p.amaraArmor = 1;
-      p.amaraFaceCloseup = 0;
     }
 
     // EXPAND — the domain scatters open.
-    if (elapsed < T.faceEnd) p.amaraDomainReveal = 0;
+    if (elapsed < T.transformEnd) p.amaraDomainReveal = 0;
     else {
-      p.amaraDomainReveal = Math.min(1, (elapsed - T.faceEnd) / AMARA_EXPAND);
+      p.amaraDomainReveal = Math.min(1, (elapsed - T.transformEnd) / AMARA_EXPAND);
       if (!p._amaraExpandImpact) {
         p._amaraExpandImpact = true;
         // Domain background stays up through the whole hold window + the Cleopatra buff.
@@ -6052,7 +6042,15 @@
     if (paused || state !== 'rally') return;
     p.amaraLiveTimer -= dt;
     if (p.amaraLiveTimer <= 0 && !p.amaraRealDropped){
-      amaraTryDrop(p, 'down'); // she took too long — the real shuttle drops on its own
+      // Auto-drop whichever slot is ACTUALLY real — this used to hardcode 'down', which was
+      // safe back when the real slot was always down. Now that it's randomized per cast,
+      // hardcoding it meant: if she guessed 'down' herself as a decoy (dropping it) and then
+      // never found the real one before time ran out, this call silently no-op'd (amaraTryDrop
+      // bails on an already-dropped slot) — the real shuttle stayed frozen and invisible
+      // forever, with no shuttlecock in play and the rally stuck. Find the real key instead.
+      const slots = p.amaraSlots;
+      const realKey = slots && Object.keys(slots).find(function(k){ return slots[k].real; });
+      if (realKey) amaraTryDrop(p, realKey);
     }
   }
 
@@ -6152,12 +6150,6 @@
       ctx.restore();
     }
 
-    // NOTE: the FACE close-up is deliberately NOT drawn here. This function runs inside the
-    // camera transform (see draw()), and during that beat the camera is pushed to ~2.35x and
-    // panned onto Amara — a full-screen portrait drawn here came out oversized, off-centre and
-    // with its "full-screen" backdrop covering only a slice of the viewport. It's drawn in
-    // screen space by drawAmaraCloseupOverlay(), alongside Jordan's equivalent.
-
     // EXPAND — an expanding luminous shockwave riding just ahead of the domain front. Uses
     // the SAME easing as the reveal mask (amaraRevealPath) — on a different curve the ring
     // raced ahead of the wipe it is supposed to be leading and detached from it entirely.
@@ -6180,13 +6172,10 @@
     }
   }
 
-  // ---- Amara's cinematic close-up ------------------------------------------------------
+  // ---- Amara's cinematic close-up (Solar Judgment's THE GAZE) --------------------------
   // Rendered as chunky 16-bit PIXEL ART into the shared low-res buffer and upscaled with
-  // smoothing off — the same technique as Jordan's face close-up. The previous version drew
-  // smooth canvas arcs/beziers with shadowBlur, which put soft vector art in the middle of a
-  // hard-pixel game; against the pixelated domain behind it the mismatch was obvious.
-  //   mode 'face' — Puppeteer: quick, sly half-smile, one eye narrowed in a flick.
-  //   mode 'gaze' — Solar Judgment: held, still, solid molten-gold eyes.
+  // smoothing off — the same technique as Jordan's face close-up. Held, still, solid
+  // molten-gold eyes — the stillness of this beat is the whole point.
   // `alpha` fades the whole card; `pushIn` (0..1) drives a subtle scale so the portrait
   // settles rather than appearing at rest.
   // Where the portrait card's head sits. Shared so the close-up and the halo blazing behind
@@ -6196,14 +6185,13 @@
     return { cx: W/2, cy: H*0.46, R: Math.min(W, H) * 0.20 * grow };
   }
 
-  function drawAmaraPortrait(p, alpha, mode, pushIn){
+  function drawAmaraPortrait(p, alpha, pushIn){
     if (alpha <= 0.001) return;
     const ch = p.character || {};
     const skin  = ch.skin  || '#6b4226';
     const hair  = ch.hair  || '#161513';
     const shirt = ch.shirt || '#6a2ba8';
     const gold  = '#f2c94c';
-    const gaze  = (mode === 'gaze');
     const now   = performance.now() * 0.001;
 
     const g = domPixelCtx();
@@ -6231,19 +6219,17 @@
     // was still only ~0.5 opaque out at the corners, so the court and the little in-world
     // sprites stayed clearly readable behind what is supposed to be a cut.
     g.save();
-    const backAlpha = gaze ? 0.92 : 0.86;
     const vg = g.createRadialGradient(cx, cy, R*1.05, cx, cy, R*3.2);
     vg.addColorStop(0, 'rgba(12,6,2,0)');
-    vg.addColorStop(1, 'rgba(8,4,1,' + backAlpha + ')');
+    vg.addColorStop(1, 'rgba(8,4,1,0.92)');
     g.fillStyle = vg;
     g.fillRect(0, 0, W, H);
 
-    // Rim light behind the head — gold for the gaze, cool cyan for the sly Puppeteer beat.
-    const rimCol = gaze ? 'rgba(251,191,36,' : 'rgba(34,211,238,';
-    const rimPulse = gaze ? (0.30 + 0.10*Math.sin(now*2.2)) : 0.26;
+    // Gold rim light behind the head.
+    const rimPulse = 0.30 + 0.10*Math.sin(now*2.2);
     const rim = g.createRadialGradient(cx, cy - R*0.1, R*0.8, cx, cy - R*0.1, R*2.3);
-    rim.addColorStop(0, rimCol + rimPulse + ')');
-    rim.addColorStop(1, rimCol + '0)');
+    rim.addColorStop(0, 'rgba(251,191,36,' + rimPulse + ')');
+    rim.addColorStop(1, 'rgba(251,191,36,0)');
     g.fillStyle = rim;
     g.fillRect(0, 0, W, H);
 
@@ -6304,18 +6290,13 @@
     });
 
     {
-      // Both beats share the same composed, glowing-eyed treatment — only the colour of the
-      // light changes (Solar Judgment burns gold, Puppeteer burns her cyan). The Puppeteer
-      // beat used to be a wink-and-smirk, which read as goofy next to the Gaze; the still,
-      // lit-from-within look is the one that lands, so both use it now.
-      const glowRim  = gaze ? '#7a4a06' : '#0b4f5e';
-      const glowMain = gaze ? gold      : '#22d3ee';
-      const glowCore = gaze ? 'rgba(255,245,190,' : 'rgba(224,247,255,';
-      const heat = 0.82 + 0.18*Math.sin(now * (gaze ? 2.6 : 3.6));
+      // THE GAZE — molten gold, no pupil, faintly breathing. Stillness is the point, so the
+      // only motion permitted is a slow luminance pulse.
+      const heat = 0.82 + 0.18*Math.sin(now*2.6);
       [-1, 1].forEach(function(s){
-        ell(cx + s*eyeDX, eyeY, eyeW, eyeH, glowRim);
-        ell(cx + s*eyeDX, eyeY, eyeW*0.86, eyeH*0.84, glowMain);
-        ell(cx + s*eyeDX, eyeY, eyeW*0.55, eyeH*0.55, glowCore + heat.toFixed(3) + ')');
+        ell(cx + s*eyeDX, eyeY, eyeW, eyeH, '#7a4a06');
+        ell(cx + s*eyeDX, eyeY, eyeW*0.86, eyeH*0.84, gold);
+        ell(cx + s*eyeDX, eyeY, eyeW*0.55, eyeH*0.55, 'rgba(255,245,190,' + heat.toFixed(3) + ')');
         px(cx + s*eyeDX - eyeW*0.20, eyeY - eyeH*0.30, eyeW*0.24, eyeH*0.30, '#ffffff');
       });
       // level, unimpressed mouth
@@ -6334,7 +6315,7 @@
   // Letterbox bars (full-res, crisp). Kept OUT of drawAmaraPortrait and drawn as the very last
   // step of the close-up pass — the halo's second (on-top) pass would otherwise paint its rays
   // straight over the bars, which broke the framing.
-  function drawAmaraLetterbox(alpha, gaze){
+  function drawAmaraLetterbox(alpha){
     const barH = H * 0.115 * amEaseOut(alpha);
     if (barH <= 0.5) return;
     ctx.save();
@@ -6342,38 +6323,17 @@
     ctx.fillRect(0, 0, W, barH);
     ctx.fillRect(0, H - barH, W, barH);
     ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = gaze ? 'rgba(251,191,36,0.45)' : 'rgba(34,211,238,0.40)';
+    ctx.fillStyle = 'rgba(251,191,36,0.45)';
     ctx.fillRect(0, barH - 2, W, 2);
     ctx.fillRect(0, H - barH, W, 2);
     ctx.restore();
   }
 
-  // SCREEN-SPACE close-up pass for BOTH of Amara's ultimates. Called from draw() outside the
+  // SCREEN-SPACE close-up pass for Solar Judgment's GAZE. Called from draw() outside the
   // camera transform, right next to drawJordanFaceCloseup() — these are full-frame cuts, so
   // they must not inherit the buildup camera's zoom/pan (which is exactly what made the old
   // close-up render oversized and off-centre).
   function drawAmaraCloseupOverlay(){
-    // Puppeteer — FACE beat.
-    const fp = (left && (left.amaraFaceCloseup||0) > 0.001) ? left
-             : (right && (right.amaraFaceCloseup||0) > 0.001) ? right : null;
-    if (fp){
-      const fz = fp.amaraFaceCloseup;
-      const fgeo = amaraPortraitGeometry(fz);
-      const FHALO = 2.7;
-      // Same two-pass emblem treatment as THE GAZE — behind the card, then re-struck on top
-      // clipped outside her head so it blazes around the silhouette instead of washing her out.
-      drawAmaraAureole(fz, fgeo.cx, fgeo.cy, FHALO, 'puppeteer');
-      drawAmaraPortrait(fp, fz, 'face', fz);
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, W, H);
-      ctx.arc(fgeo.cx, fgeo.cy, fgeo.R * 1.16, 0, Math.PI * 2);
-      ctx.clip('evenodd');
-      drawAmaraAureole(fz * 0.6, fgeo.cx, fgeo.cy, FHALO, 'puppeteer');
-      ctx.restore();
-      drawAmaraLetterbox(fz, false);
-      return;
-    }
     // Solar Judgment — THE GAZE. The halo re-anchors behind the portrait card and is drawn
     // first so it sits behind her head; the card's vignette is transparent at its centre, so
     // the corona still reads through. (The ASCENSION halo is world-space — see
@@ -6389,8 +6349,8 @@
       // was completely occluded by her own face.
       const HALO = 2.7;
       // Pass 1 — behind the card, so the card's vignette softens it into the backdrop.
-      drawAmaraAureole(gz, geo.cx, geo.cy, HALO, 'solar');
-      drawAmaraPortrait(sp, gz, 'gaze', sp.amaraSolarGazeIn === undefined ? 1 : sp.amaraSolarGazeIn);
+      drawAmaraSolarHalo(gz, geo.cx, geo.cy, HALO);
+      drawAmaraPortrait(sp, gz, sp.amaraSolarGazeIn === undefined ? 1 : sp.amaraSolarGazeIn);
       // Pass 2 — the same halo re-struck ON TOP, but clipped to everything OUTSIDE her head,
       // so the corona and rays blaze around the silhouette without washing out her face.
       ctx.save();
@@ -6398,7 +6358,7 @@
       ctx.rect(0, 0, W, H);
       ctx.arc(geo.cx, geo.cy, geo.R * 1.16, 0, Math.PI * 2);
       ctx.clip('evenodd');
-      drawAmaraAureole(gz * 0.6, geo.cx, geo.cy, HALO, 'solar');
+      drawAmaraSolarHalo(gz * 0.6, geo.cx, geo.cy, HALO);
       ctx.restore();
       // The blowout itself — light floods out from behind her and swallows the frame, which
       // is what actually carries the hand-off from close-up to open domain.
@@ -6413,7 +6373,7 @@
         ctx.fillRect(0, 0, W, H);
         ctx.restore();
       }
-      drawAmaraLetterbox(Math.max(gz, blow), true);
+      drawAmaraLetterbox(Math.max(gz, blow));
     }
   }
 
@@ -6794,7 +6754,7 @@
     const halo = p.amaraSolarHaloGrow || 0;
     if (halo > 0 && (p.amaraSolarGaze||0) <= 0.001){
       const e = amEaseOut(halo);
-      drawAmaraAureole(e, ax, p.y + PLAYER_H*0.18, 0.55 + 0.25*e, 'solar');
+      drawAmaraSolarHalo(e, ax, p.y + PLAYER_H*0.18, 0.55 + 0.25*e);
     }
   }
 
@@ -10211,8 +10171,8 @@
       p.amaraBuildupActive = false; p.amaraBuildupTimer = 0;
       p.amaraLiveActive = false; p.amaraLiveTimer = 0; p._amaraLiveStarted = false;
       p.amaraRealDropped = false; p.amaraSlots = null;
-      p.amaraPowder = 0; p.amaraRift = 0; p.amaraGlow = 0; p.amaraArmor = 0; p.amaraFaceCloseup = 0; p.amaraDomainReveal = 0;
-      p._amaraRiftImpact = false; p._amaraTransformImpact = false; p._amaraFaceImpact = false; p._amaraExpandImpact = false;
+      p.amaraPowder = 0; p.amaraRift = 0; p.amaraGlow = 0; p.amaraArmor = 0; p.amaraDomainReveal = 0;
+      p._amaraRiftImpact = false; p._amaraTransformImpact = false; p._amaraExpandImpact = false;
       p.amaraCleopatraSource = null;
       // Amara — Solar Judgment (buildup cinematic: ignition → ascension → gaze → descent)
       p.amaraSolarActive = false; p.amaraSolarTimer = 0;
@@ -14107,14 +14067,19 @@
     if(!ch.pixSilhouette) drawPixFace(px,hx+1,hy,expr,t,ch.glasses); // pure silhouette: no eyes/brows/mouth baked into the sprite — only the overlay glow-eyes read
     // Jordan's transformation glow
     if(ang.eyeGlow > 0){
+      // The head sprite is only ~8px wide, so the old 5px-radius halo per eye (alpha 0.9)
+      // overlapped across the whole skull and read as a glowing HEAD rather than eyes. The
+      // halo is now tight and dim; the eyes themselves carry the read as two hard-edged
+      // angled slits — a cyan slit with a hot white core, slanting down toward the nose for
+      // a glare instead of two neutral square dots.
       var _gfx=hx+1, _gfy=hy, _geL=2, _geR=5, _gey=3;
       _pixCtx.save();
       _pixCtx.globalCompositeOperation='lighter';
-      _pixCtx.globalAlpha=ang.eyeGlow;
-      var _haloR=5;
-      [[_gfx+_geL+1,_gfy+_gey+1],[_gfx+_geR+1,_gfy+_gey+1]].forEach(function(pt){
-        var grad=_pixCtx.createRadialGradient(pt[0],pt[1],0.3,pt[0],pt[1],_haloR);
-        grad.addColorStop(0,'rgba(220,250,255,0.9)');
+      _pixCtx.globalAlpha=ang.eyeGlow*0.55;
+      var _haloR=2.4;
+      [[_gfx+_geL+1,_gfy+_gey+0.5],[_gfx+_geR+1,_gfy+_gey+0.5]].forEach(function(pt){
+        var grad=_pixCtx.createRadialGradient(pt[0],pt[1],0.2,pt[0],pt[1],_haloR);
+        grad.addColorStop(0,'rgba(200,245,255,0.75)');
         grad.addColorStop(1,'rgba(120,220,255,0)');
         _pixCtx.fillStyle=grad;
         _pixCtx.fillRect(pt[0]-_haloR,pt[1]-_haloR,_haloR*2,_haloR*2);
@@ -14122,9 +14087,16 @@
       _pixCtx.restore();
       _pixCtx.save();
       _pixCtx.globalAlpha=ang.eyeGlow;
+      // cyan slit body (2x1), with the OUTER pixel dropped one row so the pair slants inward
+      _pixCtx.fillStyle='#22d3ee';
+      _pixCtx.fillRect(_gfx+_geL,   _gfy+_gey, 2, 1);
+      _pixCtx.fillRect(_gfx+_geL,   _gfy+_gey-1, 1, 1);   // outer corner lifts → angry slant
+      _pixCtx.fillRect(_gfx+_geR,   _gfy+_gey, 2, 1);
+      _pixCtx.fillRect(_gfx+_geR+1, _gfy+_gey-1, 1, 1);
+      // hot white core, kept to the inner pixel of each slit so the eyes stay distinct
       _pixCtx.fillStyle='#eafeff';
-      _pixCtx.fillRect(_gfx+_geL,_gfy+_gey,2,2);
-      _pixCtx.fillRect(_gfx+_geR,_gfy+_gey,2,2);
+      _pixCtx.fillRect(_gfx+_geL+1, _gfy+_gey, 1, 1);
+      _pixCtx.fillRect(_gfx+_geR,   _gfy+_gey, 1, 1);
       _pixCtx.restore();
     }
     // Fursona Unleashed — ginger cat ears, whiskers + a pink nose over the head
@@ -16284,94 +16256,22 @@
     ctx.restore();
   }
 
-  // The emblem that blazes behind Amara's head during her close-ups. Two variants:
-  //   'solar'     — Solar Judgment: winged solar disc + gold corona + Aten-style rays.
-  //   'puppeteer' — Puppeteer: cyan corona + a slowly turning control ring, marionette
-  //                 strings, and the four shuttlecocks of her mind-game hanging around her.
+  // Sun-disk halo that ignites behind Amara's head during Solar Judgment's ASCENSION beat and
+  // holds through THE GAZE — a winged solar disc + corona + Aten-style rays.
   // Position is passed in because the beats live in different coordinate spaces: ASCENSION
   // anchors to her actual head in world space (it has to ride the camera as it pushes in),
-  // the close-ups anchor behind the screen-space portrait card.
-  function drawAmaraAureole(alpha, atX, atY, scale, variant){
+  // THE GAZE anchors it behind the screen-space portrait card.
+  function drawAmaraSolarHalo(alpha, atX, atY, scale){
     if (alpha <= 0.001) return;
     const cx = (atX === undefined) ? W/2 : atX;
     const cy = (atY === undefined) ? (H*0.42 - Math.min(W,H)*0.02) : atY;
     const k  = (scale === undefined) ? 1 : scale;
-    const t  = performance.now();
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = alpha;
     ctx.translate(cx, cy);
     ctx.scale(k, k);
     ctx.translate(-cx, -cy);
-
-    if (variant === 'puppeteer'){
-      // Corona — cold cyan rather than solar gold. Kept tighter and with more tonal steps than
-      // the solar version: neon cyan at full spread reads as one flat glowing blob.
-      const cor = ctx.createRadialGradient(cx, cy, 4, cx, cy, 125);
-      cor.addColorStop(0,    'rgba(255,255,255,1.0)');
-      cor.addColorStop(0.14, `rgba(224,247,255,${(alpha*0.92).toFixed(3)})`);
-      cor.addColorStop(0.42, `rgba(34,211,238,${(alpha*0.55).toFixed(3)})`);
-      cor.addColorStop(0.74, `rgba(14,116,144,${(alpha*0.26).toFixed(3)})`);
-      cor.addColorStop(1,    'rgba(14,116,144,0)');
-      ctx.fillStyle = cor;
-      ctx.beginPath(); ctx.arc(cx, cy, 125, 0, Math.PI*2); ctx.fill();
-
-      // Marionette strings — taut, fine, radiating out past the frame.
-      const strings = 16;
-      ctx.lineWidth = 1;
-      for (let i = 0; i < strings; i++){
-        const a = (i * Math.PI*2 / strings) + t*0.00018;
-        const len = 132 + Math.sin(t*0.004 + i*1.7) * 10;
-        ctx.strokeStyle = `rgba(224,247,255,${(alpha*0.5).toFixed(3)})`;
-        ctx.beginPath();
-        ctx.moveTo(cx + Math.cos(a)*30, cy + Math.sin(a)*30);
-        ctx.lineTo(cx + Math.cos(a)*len, cy + Math.sin(a)*len);
-        ctx.stroke();
-      }
-
-      // Control ring — a segmented band turning slowly, like a puppeteer's control bar.
-      // Radius is deliberately tight: the four shuttlecocks ride this ring, and any wider
-      // puts the top and bottom two out under the letterbox bars where they get clipped.
-      const ringR = 86;
-      const segs = 12;
-      ctx.lineWidth = 5;
-      ctx.strokeStyle = `rgba(34,211,238,${(alpha*0.85).toFixed(3)})`;
-      for (let i = 0; i < segs; i++){
-        const a0 = (i * Math.PI*2 / segs) + t*0.00042;
-        ctx.beginPath();
-        ctx.arc(cx, cy, ringR, a0, a0 + (Math.PI*2/segs)*0.55);
-        ctx.stroke();
-      }
-      ctx.lineWidth = 1.6;
-      ctx.strokeStyle = `rgba(254,240,138,${(alpha*0.6).toFixed(3)})`;
-      ctx.beginPath(); ctx.arc(cx, cy, ringR*0.86, 0, Math.PI*2); ctx.stroke();
-
-      // Her four shuttlecocks, hung at the cardinal points. Foreshadows the choice she is
-      // about to offer without hinting which one is live — they are deliberately identical.
-      for (let i = 0; i < 4; i++){
-        const a = (i * Math.PI/2) - Math.PI/2 + t*0.00042;
-        const sx = cx + Math.cos(a)*ringR, sy = cy + Math.sin(a)*ringR;
-        ctx.save();
-        ctx.translate(sx, sy);
-        ctx.rotate(a + Math.PI/2);
-        const gl = ctx.createRadialGradient(0,0,1,0,0,21);
-        gl.addColorStop(0, `rgba(224,247,255,${(alpha*0.85).toFixed(3)})`);
-        gl.addColorStop(1, 'rgba(34,211,238,0)');
-        ctx.fillStyle = gl;
-        ctx.beginPath(); ctx.arc(0,0,21,0,Math.PI*2); ctx.fill();
-        ctx.fillStyle = `rgba(255,255,255,${alpha.toFixed(3)})`;
-        ctx.beginPath(); ctx.arc(0, 6, 4.2, 0, Math.PI*2); ctx.fill();
-        ctx.strokeStyle = `rgba(224,247,255,${(alpha*0.9).toFixed(3)})`;
-        ctx.lineWidth = 1.5;
-        for (let f = -2; f <= 2; f++){
-          ctx.beginPath(); ctx.moveTo(0,6); ctx.lineTo(f*4.4, -12); ctx.stroke();
-        }
-        ctx.restore();
-      }
-
-      ctx.restore();
-      return;
-    }
 
     // Winged solar disc
     const wingGrad = ctx.createLinearGradient(cx - 160, cy, cx + 160, cy);
@@ -18314,7 +18214,7 @@
   // as a full-screen shape rather than a scaled sprite so the pose can be dramatic and the
   // silhouette can bleed into the surrounding storm fog without a bounding box.
   // ---- Jordan's Storm-King aureole ------------------------------------------------------
-  // The storm analogue of drawAmaraAureole, and used the same way (struck behind the portrait,
+  // The storm analogue of drawAmaraSolarHalo, and used the same way (struck behind the portrait,
   // then re-struck on top clipped outside his head so it blazes around the silhouette instead
   // of washing out his face). Cold corona + jagged lightning rays + a turning storm ring.
   function drawJordanAureole(alpha, atX, atY, scale){
@@ -18533,6 +18433,9 @@
   }
 
   // Jordan splash art — full-colour pixel bust of the Storm King, backlit by his own storm.
+  // SUPERSEDED (kept dormant): Jordan now flows through the shared Pixel Shatter template in
+  // drawUltBurst() like the rest of the roster (Step 3). This bespoke pixel-portrait splash is
+  // preserved unused in case we promote it back later — no caller references it anymore.
   function drawJordanUltBurst(b, t, env, clamp01, easeOut){
     // Timeline (short — the splash is only JORDAN_TEMPEST_SPLASH long):
     //  0.00–0.10  impact flash
@@ -18789,14 +18692,12 @@
     const cy = Math.floor(bh * 0.48) + shakeY + headOffsetY;
 
     // ---------------------------------------------------------------------------
-    // 4. JORDAN'S FACE — full-colour 16-bit pixel art, lit hard from behind
+    // 4. JORDAN'S VOID FACE — 16-bit pixel art at a true close-up crop
     // ---------------------------------------------------------------------------
-    // This used to draw him as a pure-black silhouette (#020306) with a tiny 56px head, which
-    // is exactly why the close-up read as a featureless shadow rather than a character. He is
-    // rendered in his own palette now, at a real close-up crop, matching Amara's portrait card.
-    const SKIN = '#f0c9a0', SKIN_SH = '#9a6f4e', SKIN_DK = '#5d4331';
-    const HAIR = '#121316', HAIR_HI = '#2c3648';
-    const JERSEY = '#2b3a67', JERSEY_DK = '#141d38', ORANGE = '#ff9d3d';
+    // The head used to be a tiny 56px featureless black block. It's a real close-up now, and
+    // deliberately his VOID form rather than his normal colours: the CONSUME beat has already
+    // eaten his body by the time this cut plays, so full-colour Jordan here contradicted the
+    // sequence. The void palette lives inline with the body below.
     const colRimHighlight = isImpactFrame ? '#ffffff' : (uFace >= 0.40 ? '#9fdcff' : 'rgba(159,220,255,0.55)');
 
     const HR = Math.min(bw, bh) * 0.34;   // head half-height unit — a true close-up crop
@@ -18823,46 +18724,69 @@
     g.fillRect(cx - HR*2.6, cy - HR*2.6, HR*5.2, HR*5.2);
     g.restore();
 
+    // --- VOID FORM ----------------------------------------------------------------------
+    // By this beat the domain has already consumed him (see the CONSUME phase), so the
+    // close-up is NOT regular full-colour Jordan — it's his void body: a starless black mass
+    // with light leaking out of its fissures, held together by a hard storm-cyan rim. Flat
+    // black alone just reads as a hole punched in the screen, so the interior carries a faint
+    // drifting texture and the silhouette keeps his curtain-cut shape so he stays recognisable.
+    const VOID_BODY = '#05060c', VOID_DEEP = '#020306';
+
     // Shoulders / chest filling the bottom of the frame
     const shY = cy + HR*1.00;
     for (let s = 0; s < 6; s++){
       const wHalf = HR*(0.95 + s*0.30);
-      pxl(cx - wHalf, shY + s*(HR*0.12), wHalf*2, HR*0.14 + 1, JERSEY_DK);
+      pxl(cx - wHalf, shY + s*(HR*0.12), wHalf*2, HR*0.14 + 1, VOID_BODY);
     }
-    pxl(0, shY + HR*0.72, bw, bh - (shY + HR*0.72), JERSEY_DK);
-    pxl(0, shY + HR*0.30, cx - HR*0.75, bh - (shY + HR*0.30), JERSEY);   // lit side of the kit
-    pxl(0, shY + HR*0.92, bw, HR*0.13, ORANGE);                          // team stripe
+    pxl(0, shY + HR*0.72, bw, bh - (shY + HR*0.72), VOID_BODY);
 
-    // Neck + collar shadow
-    pxl(cx - HR*0.30, cy + HR*0.66, HR*0.60, HR*0.44, SKIN_SH);
-    pxl(cx - HR*0.42, shY - HR*0.05, HR*0.84, HR*0.10, 'rgba(0,0,0,0.40)');
+    // Neck
+    pxl(cx - HR*0.30, cy + HR*0.66, HR*0.60, HR*0.44, VOID_DEEP);
 
-    // Head + stepped jaw
-    ellip(cx, cy, HR*0.80, HR*0.96, SKIN);
-    pxl(cx - HR*0.60, cy + HR*0.62, HR*1.20, HR*0.16, SKIN);
-    pxl(cx - HR*0.44, cy + HR*0.76, HR*0.88, HR*0.14, SKIN);
-    pxl(cx - HR*0.24, cy + HR*0.88, HR*0.48, HR*0.12, SKIN);
+    // Head + stepped jaw — void mass
+    ellip(cx, cy, HR*0.80, HR*0.96, VOID_BODY);
+    pxl(cx - HR*0.60, cy + HR*0.62, HR*1.20, HR*0.16, VOID_BODY);
+    pxl(cx - HR*0.44, cy + HR*0.76, HR*0.88, HR*0.14, VOID_BODY);
+    pxl(cx - HR*0.24, cy + HR*0.88, HR*0.48, HR*0.12, VOID_BODY);
 
-    // Backlit shading — the front of the face falls away into shadow
-    pxl(cx + HR*0.08, cy - HR*0.95, HR*0.74, HR*1.92, 'rgba(10,16,30,0.36)');
-    pxl(cx - HR*0.80, cy - HR*0.95, HR*0.24, HR*1.92, 'rgba(10,16,30,0.20)');
-    pxl(cx - HR*0.74, cy - HR*0.30, HR*1.48, HR*0.16, 'rgba(6,10,20,0.58)');  // brow shadow
-    pxl(cx - HR*0.05, cy + HR*0.12, HR*0.10, HR*0.24, SKIN_SH);               // nose
-    pxl(cx - HR*0.20, cy + HR*0.52, HR*0.40, HR*0.06, SKIN_DK);               // set mouth
-
-    // Hair — curtain cut. Everything stops above cy-0.22HR so the hairline never swallows the
-    // eye line (it used to, leaving only a sliver of jaw visible under a solid mass of hair).
-    ellip(cx, cy - HR*0.70, HR*0.86, HR*0.46, HAIR);              // crown
-    pxl(cx - HR*0.86, cy - HR*0.74, HR*1.72, HR*0.40, HAIR);      // squared top
-    pxl(cx - HR*0.90, cy - HR*0.70, HR*0.30, HR*1.02, HAIR);      // left curtain past the ear
-    pxl(cx + HR*0.60, cy - HR*0.70, HR*0.30, HR*1.02, HAIR);      // right curtain
-    for (let i = 0; i < 4; i++){                                   // bangs tapering to temples
-      pxl(cx - HR*0.56 + i*HR*0.11, cy - HR*0.74, HR*0.12, HR*(0.52 - i*0.10), HAIR);
-      pxl(cx + HR*0.44 - i*HR*0.11, cy - HR*0.74, HR*0.12, HR*(0.52 - i*0.10), HAIR);
+    // Hair silhouette — same curtain cut, rendered as deeper void so the shape still reads
+    ellip(cx, cy - HR*0.70, HR*0.86, HR*0.46, VOID_DEEP);
+    pxl(cx - HR*0.86, cy - HR*0.74, HR*1.72, HR*0.40, VOID_DEEP);
+    pxl(cx - HR*0.90, cy - HR*0.70, HR*0.30, HR*1.02, VOID_DEEP);
+    pxl(cx + HR*0.60, cy - HR*0.70, HR*0.30, HR*1.02, VOID_DEEP);
+    for (let i = 0; i < 4; i++){
+      pxl(cx - HR*0.56 + i*HR*0.11, cy - HR*0.74, HR*0.12, HR*(0.52 - i*0.10), VOID_DEEP);
+      pxl(cx + HR*0.44 - i*HR*0.11, cy - HR*0.74, HR*0.12, HR*(0.52 - i*0.10), VOID_DEEP);
     }
-    pxl(cx - HR*0.70, cy - HR*1.02, HR*0.48, HR*0.07, HAIR_HI);   // sheen
 
-    // Hard rim light down the storm-lit edge
+    // Drifting interior void texture — faint motes so the mass has depth
+    for (let i = 0; i < 44; i++){
+      const sd = i * 12.9898;
+      const vx = cx + Math.sin(sd) * HR*0.80;
+      const vy = cy + Math.cos(sd*1.7) * HR*0.92 + Math.sin(nowS*0.7 + i)*2;
+      const nx = (vx - cx)/(HR*0.80), ny = (vy - cy)/(HR*0.96);
+      if (nx*nx + ny*ny > 0.84) continue;              // keep the motes inside the head
+      const tw = 0.20 + 0.32*Math.abs(Math.sin(nowS*1.6 + i*0.9));
+      pxl(vx, vy, 1, 1, 'rgba(90,140,200,' + tw.toFixed(2) + ')');
+    }
+
+    // Fissures — cracks of storm light splitting the void face, spreading as the beat runs
+    const crackU = Math.max(0, Math.min(1, (uFace - 0.34) / 0.30));
+    if (crackU > 0) {
+      const cracks = [[-0.55, 0.28, -0.30], [0.50, 0.22, 0.34], [-0.18, 0.62, 0.10]];
+      for (let c2 = 0; c2 < cracks.length; c2++){
+        const ox = cracks[c2][0], oy = cracks[c2][1], drift = cracks[c2][2];
+        let px2 = cx + HR*ox, py2 = cy + HR*oy;
+        const segs = Math.round(5 * crackU);
+        for (let s2 = 0; s2 < segs; s2++){
+          px2 += HR*0.055*drift + Math.sin(s2*2.3 + c2)*HR*0.03;
+          py2 += HR*0.075;
+          pxl(px2, py2, 2, 3, 'rgba(103,232,249,' + (0.55*crackU).toFixed(2) + ')');
+        }
+      }
+    }
+
+    // Hard rim light — this is what keeps the void body from becoming a flat black blob
     pxl(cx - HR*0.94, cy - HR*0.62, 2, HR*1.18, colRimHighlight);
     pxl(cx - HR*0.84, cy - HR*1.08, HR*0.56, 2, colRimHighlight);
     pxl(cx - HR*0.86, cy + HR*0.10, 2, HR*0.56, colRimHighlight);
@@ -18917,66 +18841,87 @@
     }
 
     // ---------------------------------------------------------------------------
-    // 6.5. TEMPEST AURA BLOOM BEHIND HIS EYES
+    // 6.5. (the eye bloom now lives PER-EYE, down in section 7)
     // ---------------------------------------------------------------------------
-    // Was two flat translucent rectangles (which read as literal grey boxes on his face);
-    // it's a proper additive radial bloom now, keyed to the head scale.
-    if (uFace >= 0.38 && uFace <= 0.90) {
-      const auraAlpha = Math.min(1, (uFace - 0.38) / 0.18) *
-                        (uFace > 0.78 ? Math.max(0, 1 - (uFace - 0.78) / 0.12) : 1);
-      g.save();
-      g.globalCompositeOperation = 'lighter';
-      const ab = g.createRadialGradient(cx, cy - HR*0.05, HR*0.04, cx, cy - HR*0.05, HR*0.85);
-      ab.addColorStop(0,    'rgba(224,247,255,' + (0.34*auraAlpha).toFixed(3) + ')');
-      ab.addColorStop(0.35, 'rgba(56,189,248,'  + (0.20*auraAlpha).toFixed(3) + ')');
-      ab.addColorStop(1,    'rgba(56,189,248,0)');
-      g.fillStyle = ab;
-      g.fillRect(cx - HR, cy - HR, HR*2, HR*2);
-      g.restore();
-    }
+    // A single wide bloom centred between the eyes is exactly what made the void head read as
+    // a glowing skull rather than glowing EYES, so each socket emits its own tight light now.
 
     // ---------------------------------------------------------------------------
-    // 7. PIXEL EYE REVEAL, IGNITION & SHOCKWAVE
+    // 7. VOID EYE REVEAL, IGNITION & SHOCKWAVE
     // ---------------------------------------------------------------------------
     const elX = Math.round(cx - HR*0.34);
     const erX = Math.round(cx + HR*0.34);
     const eyeY = Math.round(cy - HR*0.05);
     const eyeW = HR*0.20;   // half-width of a single eye
 
-    // Eyelid opening and blinking calculation (uFace: 0.38..0.65 open, blink at 0.70..0.82)
-    let eyeOpenFrac = 0;
+    // Eye-open animation — staged, instead of one flat linear ramp:
+    //   0.28–0.38  a hairline seam of light leaks through the closed lids (anticipation)
+    //   0.38–0.52  the lids SNAP open on a hard ease-out that overshoots, then settles
+    //   0.70–0.80  one fast blink
+    const clampU = function(v){ return v < 0 ? 0 : (v > 1 ? 1 : v); };
+    const seamU = clampU((uFace - 0.28) / 0.10);
+    let eyeOpenFrac = 0, openScale = 1;
     if (uFace >= 0.38 && uFace < 0.70) {
-      eyeOpenFrac = Math.min(1, (uFace - 0.38) / 0.18);
-    } else if (uFace >= 0.70 && uFace <= 0.82) {
-      const blinkU = (uFace - 0.70) / 0.12; // 0 to 1 across blink
-      if (blinkU < 0.5) {
-        eyeOpenFrac = Math.max(0, 1 - blinkU * 2); // closing
-      } else {
-        eyeOpenFrac = Math.min(1, (blinkU - 0.5) * 2); // opening back up
-      }
-    } else if (uFace > 0.82) {
+      const o = clampU((uFace - 0.38) / 0.14);
+      eyeOpenFrac = 1 - Math.pow(1 - o, 5);                                        // hard snap
+      openScale = 1 + 0.30 * Math.sin(Math.PI * clampU(o / 0.6)) * (1 - o*0.55);   // overshoot → settle
+    } else if (uFace >= 0.70 && uFace <= 0.80) {
+      const blinkU = (uFace - 0.70) / 0.10;
+      eyeOpenFrac = blinkU < 0.45 ? Math.max(0.05, 1 - blinkU / 0.45)
+                                  : Math.min(1, (blinkU - 0.45) / 0.55);
+    } else if (uFace > 0.80) {
       eyeOpenFrac = 1.0;
     }
 
-    if (eyeOpenFrac <= 0) {
-      // Eyes closed / in deep shadow: dark lash-line slits
-      pxl(elX - eyeW, eyeY, eyeW*2, 2, '#0b1220');
-      pxl(erX - eyeW, eyeY, eyeW*2, 2, '#0b1220');
-    } else {
-      // Eyes opening / fully open — all sizes keyed to HR so they track the head.
-      const openH = Math.max(2, eyeOpenFrac * HR*0.21);
+    // One void eye: a recessed socket, an ANGULAR slit rising toward the outer corner (a glare
+    // rather than a neutral rectangle), a hot core, hard lid lines defining the aperture, and
+    // its own tight bloom. The framing darkness is what makes it read as an eye.
+    const drawVoidEye = function(ex, outward, openH){
       const halfH = openH / 2;
+      pxl(ex - eyeW*1.34, eyeY - halfH*1.85, eyeW*2.68, openH*1.85, '#01040a');   // socket recess
+      const slices = 6, sw = (eyeW*2) / slices;
+      for (let s2 = 0; s2 < slices; s2++){
+        const f = s2 / (slices - 1);
+        const along = outward > 0 ? f : (1 - f);          // 0 = inner corner, 1 = outer corner
+        const hgt = openH * (0.42 + 0.58*along);          // taller toward the outer corner
+        const sx2 = ex - eyeW + s2*sw;
+        pxl(sx2, eyeY - hgt/2, sw + 1, hgt, '#06b6d4');
+        pxl(sx2, eyeY - hgt*0.26, sw + 1, hgt*0.52, '#9ceaff');
+      }
+      pxl(ex - eyeW*0.34 - outward*eyeW*0.22, eyeY - openH*0.24, eyeW*0.68, openH*0.48, '#eaf9ff');
+      pxl(ex - eyeW*1.10, eyeY - openH*0.66, eyeW*2.20, 2, '#000308');            // upper lid
+      pxl(ex - eyeW*1.10, eyeY + openH*0.54, eyeW*2.20, 2, '#000308');            // lower lid
+      g.save();
+      g.globalCompositeOperation = 'lighter';
+      const eb = g.createRadialGradient(ex, eyeY, 0.5, ex, eyeY, eyeW*2.4);
+      eb.addColorStop(0, 'rgba(190,240,255,0.55)');
+      eb.addColorStop(1, 'rgba(56,189,248,0)');
+      g.fillStyle = eb;
+      g.fillRect(ex - eyeW*2.4, eyeY - eyeW*2.4, eyeW*4.8, eyeW*4.8);
+      g.restore();
+    };
 
-      // Deep socket behind the glow, so the light looks like it's coming from inside him
-      pxl(elX - eyeW*1.14, eyeY - halfH*1.30, eyeW*2.28, openH*1.30, '#04141c');
-      pxl(erX - eyeW*1.14, eyeY - halfH*1.30, eyeW*2.28, openH*1.30, '#04141c');
-      // Cold cyan mid-glow
-      pxl(elX - eyeW, eyeY - halfH, eyeW*2, openH, '#06b6d4');
-      pxl(erX - eyeW, eyeY - halfH, eyeW*2, openH, '#06b6d4');
-      // Hot inner core
-      const coreH = Math.max(1, openH*0.55);
-      pxl(elX - eyeW*0.54, eyeY - coreH/2, eyeW*1.08, coreH, '#eaf9ff');
-      pxl(erX - eyeW*0.54, eyeY - coreH/2, eyeW*1.08, coreH, '#eaf9ff');
+    if (eyeOpenFrac <= 0) {
+      // Closed — but the light is already building behind the lids as a brightening seam.
+      [elX, erX].forEach(function(ex){
+        pxl(ex - eyeW*1.10, eyeY - 1, eyeW*2.20, 2, '#000308');
+        if (seamU > 0) {
+          pxl(ex - eyeW*0.92*seamU, eyeY, eyeW*1.84*seamU, Math.max(1, 1 + seamU*2),
+              'rgba(154,232,255,' + (0.85*seamU).toFixed(2) + ')');
+          g.save();
+          g.globalCompositeOperation = 'lighter';
+          const sb = g.createRadialGradient(ex, eyeY, 0.5, ex, eyeY, eyeW*1.7);
+          sb.addColorStop(0, 'rgba(160,230,255,' + (0.40*seamU).toFixed(2) + ')');
+          sb.addColorStop(1, 'rgba(56,189,248,0)');
+          g.fillStyle = sb;
+          g.fillRect(ex - eyeW*1.7, eyeY - eyeW*1.7, eyeW*3.4, eyeW*3.4);
+          g.restore();
+        }
+      });
+    } else {
+      const openH = Math.max(2, eyeOpenFrac * HR*0.21 * openScale);
+      drawVoidEye(elX, -1, openH);
+      drawVoidEye(erX, +1, openH);
 
       // A) Pressure-ring shockwave punching out from the eye line
       if (uFace >= 0.42 && uFace <= 0.68) {
@@ -19083,6 +19028,20 @@
     }
   }
 
+  // ============================================================================
+  // PIXEL SHATTER — the shared, character-agnostic ultimate splash template.
+  // Render-only, fully data-driven from the ultBurst object `b` (reads ONLY cosmetic
+  // fields: b.color, b.accent, b.character, b.name, b.artName, b.side). It NEVER reads
+  // sim state that feeds back into the simulation, so AI-vs-AI determinism is preserved
+  // exactly as the old burst did.
+  //
+  // Pixel-native: the core beats render into the shared low-res buffer (domPixelCtx) at
+  // COURT_PIXEL_UNIT and blit up with smoothing OFF, matching the game's 16-bit grid. The
+  // character bust is drawHumanoid(...) so it works for ANY character from b.character with
+  // zero per-character art. The global drawRetroOverlay() lays scanlines over the whole
+  // frame afterward, so we do NOT add scanlines here.
+  //
+  // Each beat below is its own clearly-commented block so any one can be swapped later.
   function drawUltBurst(){
     if(!ultBurst) return;
     const b = ultBurst;
@@ -19090,173 +19049,193 @@
     const clamp01 = function(v){ return v < 0 ? 0 : (v > 1 ? 1 : v); };
     const easeOut = function(x){ return 1 - Math.pow(1 - clamp01(x), 4); };
     const fromLeft = b.side === 'left';
-    const cxCenter = W / 2, cyCenter = H / 2;
 
-    // global fade envelope so the whole beat rises fast and wipes out at the end
-    const rise = clamp01(t / 0.12);
-    const fall = t > 0.85 ? (1 - (t - 0.85) / 0.15) : 1;
+    // Global rise/fall envelope — snaps in, holds, wipes out at the tail.
+    const rise = clamp01(t / 0.10);
+    const fall = t > 0.90 ? (1 - (t - 0.90) / 0.10) : 1;
     const env = clamp01(rise) * clamp01(fall);
 
-    // Jordan uses his own bespoke splash art — void silhouette, glowing yellow eyes, raised
-    // palm-out hand — matching the character reference. Bypasses the generic burst below.
-    if (b.character && b.character.id === 'jordan') {
-      drawJordanUltBurst(b, t, env, clamp01, easeOut, fromLeft);
-      return;
+    // Deterministic per-block hash (0..1). Used for the dissolve reveal order so the
+    // effect is identical every cast — no Math.random, so sim determinism is untouched.
+    const hash = function(i, j){ let h = (i * 73856093) ^ (j * 19349663); h = (h ^ (h >>> 13)) >>> 0; return (h % 997) / 997; };
+
+    const col = b.color, accent = b.accent;
+    const ch = b.character;
+    const facing = fromLeft ? 1 : -1;
+    const poseAnchorX = fromLeft ? W * 0.44 : W * 0.56;    // caster-side-biased bust anchor
+    const cyMid = H * 0.5;
+    const scale = 5.0;
+    // Dramatic overhead-smash pose (negative armFront cocks the racket arm up/back).
+    const poseAng = { legFront: 0.4, legBack: -0.5, armFront: -2.1, armBack: -1.0, expr: 'smash', onGround: true, air: true };
+
+    // ---- pixel-native core rendered into the shared low-res buffer, blitted once ----
+    const g = domPixelCtx();          // full-res coords, downsampled at COURT_PIXEL_UNIT
+    const U = COURT_PIXEL_UNIT;
+
+    // === BEAT 3 — PIXEL DISSOLVE → DITHERED FLOOD (0.12–0.36) ================
+    // Screen blocks flip on (in a fixed hashed order) to reveal a 2-tone dithered flood
+    // keyed to b.color, with b.accent as the second dither tone. Once full it stays as the
+    // stylized backdrop behind the bust/name until the wipe.
+    {
+      const diss = clamp01((t - 0.12) / 0.24);         // 0→1 reveal, holds at 1 afterward
+      const toneA = shade(col, -0.52);                 // primary dither tone
+      const toneB = shade(accent, -0.62);              // second dither tone
+      const cell = U * 12;                             // reveal-block size (chunky flip)
+      const dot  = U * 2;                              // dither dot size within a block
+      for (let by = 0; by < H; by += cell) {
+        for (let bx = 0; bx < W; bx += cell) {
+          const thr = hash((bx / cell) | 0, (by / cell) | 0);
+          if (diss <= thr) continue;                   // this block hasn't flipped on yet
+          // ordered 2-tone dither inside the revealed block
+          for (let yy = by; yy < by + cell && yy < H; yy += dot) {
+            for (let xx = bx; xx < bx + cell && xx < W; xx += dot) {
+              g.fillStyle = (((xx / dot) | 0) + ((yy / dot) | 0)) & 1 ? toneA : toneB;
+              g.fillRect(xx, yy, dot, dot);
+            }
+          }
+        }
+      }
     }
 
-    ctx.save();
+    // === BEAT 4 — STEPPED SHOCKWAVE RINGS (0.30–0.62) =======================
+    // 1–2 concentric rings; radius quantized to the pixel unit so they read blocky
+    // (drawing into the low-res buffer also snaps the stroke to the grid).
+    if (t > 0.30 && t < 0.64) {
+      const ringT = (t - 0.30) / 0.32;
+      g.save();
+      g.globalCompositeOperation = 'lighter';
+      for (let r = 0; r < 2; r++) {
+        const rp = clamp01((ringT - r * 0.16) / 0.6);
+        if (rp <= 0 || rp >= 1) continue;
+        const rawR = 40 + easeOut(rp) * Math.min(W, H) * 0.55;
+        const rad = Math.round(rawR / (U * 3)) * (U * 3);   // quantized → blocky ring
+        g.globalAlpha = (1 - rp) * 0.6;
+        g.strokeStyle = r === 0 ? accent : col;
+        g.lineWidth = U * 2;
+        g.beginPath();
+        g.arc(poseAnchorX, cyMid, rad, 0, Math.PI * 2);
+        g.stroke();
+      }
+      g.restore();
+    }
 
-    // 0. Opening white impact flash (very first frames only)
-    if (t < 0.14) {
-      ctx.globalAlpha = (1 - t / 0.14) * 0.9;
+    // === BEAT 5 — PIXEL BUST (0.34–0.68) ====================================
+    // drawHumanoid bust blits up from below (ease-out), rim-lit in b.accent. Holds after.
+    if (ch && t > 0.34) {
+      const bustProg = easeOut(clamp01((t - 0.34) / 0.34));
+      const groundY = H * 0.99 + (1 - bustProg) * H * 0.42;   // starts below frame, rises to rest
+      // rim-light pass: bright accent silhouette offset toward the light
+      const rimCh = { id: ch.id, skin: accent, hair: accent, hairStyle: ch.hairStyle, cap: ch.cap, glasses: ch.glasses, shirt: accent, shirt2: accent, shorts: accent, shoe: accent, demeanor: ch.demeanor, pixSilhouette: true };
+      g.save();
+      g.globalCompositeOperation = 'lighter';
+      drawHumanoid(g, poseAnchorX - facing * 5, groundY, scale, rimCh, poseAng, facing);
+      g.restore();
+      // solid dark body on top so the accent reads as an edge light
+      const blackCh = { id: ch.id, skin: '#08090f', hair: '#08090f', hairStyle: ch.hairStyle, cap: ch.cap, glasses: ch.glasses, shirt: '#08090f', shirt2: '#08090f', shorts: '#08090f', shoe: '#08090f', demeanor: ch.demeanor, pixSilhouette: true };
+      drawHumanoid(g, poseAnchorX, groundY, scale, blackCh, poseAng, facing);
+      // the real colored character faded in so you recognize who it is
+      g.save();
+      g.globalAlpha = clamp01((t - 0.42) / 0.18) * 0.9;
+      drawHumanoid(g, poseAnchorX, groundY, scale, ch, poseAng, facing);
+      g.restore();
+    }
+
+    // === BEAT 2 — RGB-SPLIT JUDDER (0.00–0.12) ==============================
+    // The bust drawn 3× in offset red/green/blue with 'lighter' compositing, offset
+    // juddering toward 0 for a contact "freeze". Drawn last into the buffer so it reads
+    // over the (still-empty) early flood; gone by the time the dissolve takes over.
+    if (ch && t < 0.12) {
+      const jFade = 1 - t / 0.12;
+      const jit = jFade * (U * 5) + Math.sin(t * 140) * (U * 1.5) * jFade; // converges to 0
+      const restGroundY = H * 0.99;
+      const chan = function(colr, ox){
+        const cc = { id: ch.id, skin: colr, hair: colr, hairStyle: ch.hairStyle, cap: ch.cap, glasses: ch.glasses, shirt: colr, shirt2: colr, shorts: colr, shoe: colr, demeanor: ch.demeanor, pixSilhouette: true };
+        drawHumanoid(g, poseAnchorX + ox, restGroundY, scale * 1.04, cc, poseAng, facing);
+      };
+      g.save();
+      g.globalCompositeOperation = 'lighter';
+      g.globalAlpha = 0.9;
+      chan('#ff0030', -jit);   // red channel, offset left
+      chan('#00ff40', 0);      // green channel, centered
+      chan('#2060ff', jit);    // blue channel, offset right
+      g.restore();
+    }
+
+    // ---- blit the pixel-native core to screen (upscaled, smoothing off) ----
+    ctx.save();
+    ctx.globalAlpha = env;
+    blitDomBuffer(null);
+    ctx.restore();
+
+    // === BEAT 1 — IMPACT FLASH (0.00–0.03) ==================================
+    // White full-screen flash, fast fade. Drawn full-res ON TOP so it reads as the hit.
+    if (t < 0.05) {
+      ctx.save();
+      ctx.globalAlpha = (1 - t / 0.05) * 0.95;
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, W, H);
-    }
-
-    // 1. Dark veil so the cut-in reads (kept off the exact center band lightly to preserve court feel)
-    ctx.globalAlpha = 0.78 * env;
-    ctx.fillStyle = '#04050a';
-    ctx.fillRect(0, 0, W, H);
-
-    // 2. Diagonal color band sweeping across behind the pose
-    ctx.save();
-    ctx.globalAlpha = 0.5 * env;
-    ctx.globalCompositeOperation = 'lighter';
-    const bandSweep = easeOut((t - 0.08) / 0.5);
-    const bandCX = (fromLeft ? -W * 0.2 : W * 1.2) + (cxCenter - (fromLeft ? -W * 0.2 : W * 1.2)) * bandSweep;
-    const bandGrad = ctx.createLinearGradient(bandCX - 320, 0, bandCX + 320, H);
-    bandGrad.addColorStop(0, 'rgba(0,0,0,0)');
-    bandGrad.addColorStop(0.5, b.color);
-    bandGrad.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = bandGrad;
-    ctx.beginPath();
-    const sk = 120;
-    ctx.moveTo(bandCX - 260 + sk, 0);
-    ctx.lineTo(bandCX + 260 + sk, 0);
-    ctx.lineTo(bandCX + 260 - sk, H);
-    ctx.lineTo(bandCX - 260 - sk, H);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-
-    // 3. Radial converging speed-lines centered on the pose anchor
-    const poseAnchorX = fromLeft ? W * 0.36 : W * 0.64;
-    ctx.save();
-    ctx.globalAlpha = 0.5 * env;
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-    ctx.lineCap = 'butt';
-    const lineCount = 40;
-    const spin = t * 0.6;
-    const innerR = 120 + 240 * easeOut((t - 0.1) / 0.6); // lines retreat outward, opening a clear pocket
-    for (let i = 0; i < lineCount; i++) {
-      const a = (i / lineCount) * Math.PI * 2 + spin + (i % 2) * 0.04;
-      const wob = (i % 3) * 6;
-      ctx.lineWidth = (i % 4 === 0) ? 4 : 1.6;
-      ctx.beginPath();
-      ctx.moveTo(poseAnchorX + Math.cos(a) * (innerR + wob), cyCenter + Math.sin(a) * (innerR + wob));
-      ctx.lineTo(poseAnchorX + Math.cos(a) * (innerR + 900), cyCenter + Math.sin(a) * (innerR + 900));
-      ctx.stroke();
-    }
-    ctx.restore();
-
-    // 4. Giant rim-lit character cut-in, sliding in from the caster's side then holding
-    const poseProg = easeOut((t - 0.08) / 0.26);
-    const groundY = H * 0.92;
-    const startX = fromLeft ? -260 : W + 260;
-    const poseX = startX + (poseAnchorX - startX) * poseProg;
-    const facing = fromLeft ? 1 : -1;
-    const scale = 5.4;
-    // dramatic overhead-smash pose (negative armFront cocks the racket arm up/back)
-    const poseAng = { legFront: 0.4, legBack: -0.5, armFront: -2.1, armBack: -1.0, expr: 'smash', onGround: true, air: true };
-    const ch = b.character;
-    if (ch) {
-      // colored aura halo behind the figure
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.55 * env;
-      const haloY = groundY - PLAYER_H * scale * 0.32;
-      const halo = ctx.createRadialGradient(poseX, haloY, 20, poseX, haloY, 260);
-      halo.addColorStop(0, b.color);
-      halo.addColorStop(0.4, 'rgba(120,140,255,0.15)');
-      halo.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = halo;
-      ctx.fillRect(poseX - 300, haloY - 300, 600, 600);
-      ctx.restore();
-
-      // rim-light pass: bright accent-colored silhouette, offset a few px toward the light
-      const rimCh = { id: ch.id, skin: b.accent, hair: b.accent, hairStyle: ch.hairStyle, cap: ch.cap, glasses: ch.glasses, shirt: b.accent, shirt2: b.accent, shorts: b.accent, shoe: b.accent, demeanor: ch.demeanor, pixSilhouette: true };
-      ctx.save();
-      ctx.globalAlpha = env;
-      ctx.globalCompositeOperation = 'lighter';
-      drawHumanoid(ctx, poseX - facing * 4, groundY, scale, rimCh, poseAng, facing);
-      ctx.restore();
-
-      // solid black body on top so the rim reads as an edge light
-      const blackCh = { id: ch.id, skin: '#08090f', hair: '#08090f', hairStyle: ch.hairStyle, cap: ch.cap, glasses: ch.glasses, shirt: '#08090f', shirt2: '#08090f', shorts: '#08090f', shoe: '#08090f', demeanor: ch.demeanor, pixSilhouette: true };
-      ctx.save();
-      ctx.globalAlpha = env;
-      drawHumanoid(ctx, poseX, groundY, scale, blackCh, poseAng, facing);
-      ctx.restore();
-
-      // then the real colored character, faded in, so you still recognize who it is
-      ctx.save();
-      ctx.globalAlpha = env * clamp01((t - 0.18) / 0.2) * 0.9;
-      drawHumanoid(ctx, poseX, groundY, scale, ch, poseAng, facing);
       ctx.restore();
     }
 
-    // 5. Art-name slam + expanding shockwave rings
-    if (t > 0.4) {
-      const nameT = (t - 0.4) / 0.6;
-      const slam = easeOut(nameT / 0.25);
-      const nameScale = 1 + (1 - clamp01(nameT / 0.22)) * 0.6; // overshoots big → settles
-      const nameX = fromLeft ? W * 0.62 : W * 0.38;
-      const nameY = H * 0.34;
+    // === BEAT 6 — PIXEL NAME SLAM (0.50–0.85) ===============================
+    // b.name (small) + b.artName (large), rendered into a small buffer and upscaled HARD
+    // so the type crunches to fat pixels. Slam-eases in with an overshoot, then settles.
+    if (t > 0.50) {
+      const nameT = clamp01((t - 0.50) / 0.35);
+      const slam = easeOut(nameT / 0.28);
+      const overshoot = 1 + (1 - clamp01(nameT / 0.22)) * 0.5;
+      const nameX = fromLeft ? W * 0.60 : W * 0.40;
+      const nameY = H * 0.30;
 
-      // shockwave rings from the name
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      for (let r = 0; r < 2; r++) {
-        const rp = clamp01((nameT - r * 0.12) / 0.5);
-        if (rp <= 0 || rp >= 1) continue;
-        ctx.globalAlpha = (1 - rp) * 0.5 * env;
-        ctx.strokeStyle = b.color;
-        ctx.lineWidth = 5 * (1 - rp);
-        ctx.beginPath();
-        ctx.arc(nameX, nameY + 20, 30 + rp * 420, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      ctx.restore();
+      const PX = 4;                                   // hard pixel chunk for the name
+      const regW = 660, regH = 190;                   // logical draw region
+      const bw = Math.ceil(regW / PX), bh = Math.ceil(regH / PX);
+      if (!_ultNameBuf) { _ultNameBuf = document.createElement('canvas'); _ultNameBufCtx = _ultNameBuf.getContext('2d'); }
+      if (_ultNameBuf.width !== bw || _ultNameBuf.height !== bh) { _ultNameBuf.width = bw; _ultNameBuf.height = bh; }
+      const nb = _ultNameBufCtx;
+      nb.setTransform(1, 0, 0, 1, 0, 0);
+      nb.clearRect(0, 0, bw, bh);
+      nb.imageSmoothingEnabled = false;
+      nb.setTransform(1 / PX, 0, 0, 1 / PX, 0, 0);    // draw in region-space, buffer holds it low-res
+      nb.textAlign = 'center';
+      nb.textBaseline = 'middle';
+      const midX = regW / 2;
+      // character name (small, above)
+      nb.font = '900 34px "Space Grotesk", sans-serif';
+      nb.lineWidth = 6; nb.strokeStyle = '#04050a';
+      nb.strokeText(b.name, midX, regH * 0.30);
+      nb.fillStyle = col;
+      nb.fillText(b.name, midX, regH * 0.30);
+      // art title (big gold slam)
+      nb.font = '900 60px "Space Grotesk", sans-serif';
+      nb.lineWidth = 8; nb.strokeStyle = '#04050a';
+      nb.strokeText(b.artName, midX, regH * 0.66);
+      const goldGrad = nb.createLinearGradient(0, regH * 0.5, 0, regH * 0.82);
+      goldGrad.addColorStop(0, '#fff6c8'); goldGrad.addColorStop(0.5, '#facc15'); goldGrad.addColorStop(1, '#e0a000');
+      nb.fillStyle = goldGrad;
+      nb.fillText(b.artName, midX, regH * 0.66);
 
+      // upscale HARD onto screen at the slam transform
       ctx.save();
       ctx.globalAlpha = env * slam;
       ctx.translate(nameX, nameY);
-      ctx.scale(nameScale, nameScale);
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-
-      // character name (smaller, above)
-      ctx.font = '900 30px "Space Grotesk", sans-serif';
-      ctx.lineWidth = 6; ctx.strokeStyle = '#04050a';
-      ctx.strokeText(b.name, 0, -30);
-      ctx.fillStyle = b.color;
-      ctx.shadowColor = b.color; ctx.shadowBlur = 12;
-      ctx.fillText(b.name, 0, -30);
-
-      // art title (big gold slam)
-      ctx.shadowBlur = 0;
-      ctx.font = '900 46px "Space Grotesk", sans-serif';
-      ctx.lineWidth = 8; ctx.strokeStyle = '#04050a';
-      ctx.strokeText(b.artName, 0, 14);
-      const goldGrad = ctx.createLinearGradient(0, -10, 0, 40);
-      goldGrad.addColorStop(0, '#fff6c8'); goldGrad.addColorStop(0.5, '#facc15'); goldGrad.addColorStop(1, '#e0a000');
-      ctx.fillStyle = goldGrad;
-      ctx.shadowColor = 'rgba(250,204,21,0.8)'; ctx.shadowBlur = 18;
-      ctx.fillText(b.artName, 0, 14);
+      ctx.scale(overshoot, overshoot);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(_ultNameBuf, 0, 0, bw, bh, -regW / 2, -regH / 2, bw * PX, bh * PX);
+      ctx.imageSmoothingEnabled = true;
       ctx.restore();
     }
 
-    ctx.restore();
+    // === BEAT 7 — WIPE OUT (0.88–1.00) ======================================
+    // Quick flash-cut back to gameplay. The env fall already fades the whole splash out;
+    // this brief white flick sells the hard cut on the way out.
+    if (t > 0.88) {
+      ctx.save();
+      ctx.globalAlpha = clamp01((t - 0.88) / 0.06) * clamp01((1 - t) / 0.06) * 0.5;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
   }
 
   // ---------- Rage Art cinematic overlay (Persona 5 / P3 Reload Style) ----------
@@ -19599,14 +19578,8 @@
         targetCamX = (ax - W/2) * (0.25 + easeIn*0.6);
         targetCamY = (ay - H/2) * (0.2 + easeIn*0.55) - 40*(1-easeIn);
         targetCamZoom = 1.10 + easeIn*1.25;
-      } else if (elapsed < T.faceEnd) {
-        // FACE — held tight at the transform's push-in; the full-screen portrait overlay
-        // (drawAmaraPortrait) covers everything anyway, same idea as Jordan's FACE hold.
-        targetCamX = (ax - W/2) * 0.85;
-        targetCamY = (ay - H/2) * 0.75;
-        targetCamZoom = 2.35;
       } else {
-        const u = Math.min(1,(elapsed - T.faceEnd)/AMARA_EXPAND);
+        const u = Math.min(1,(elapsed - T.transformEnd)/AMARA_EXPAND);
         const easeOut = 1 - Math.pow(1-u,3);
         targetCamX = (ax - W/2) * (0.85*(1-easeOut));
         targetCamY = ((ay - H/2)*0.75)*(1-easeOut);
