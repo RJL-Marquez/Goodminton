@@ -5735,22 +5735,34 @@
   const AMARA_POWDER    = 0.5;   // dust rockets up fast, leaving a trail
   const AMARA_RIFT      = 0.55;  // the trail tears into a quantum rip
   const AMARA_TRANSFORM = 1.0;
+  const AMARA_FACE      = 0.5;   // quick, sharp cut to a knowing half-smile — fast and sly
   const AMARA_EXPAND    = 1.15;  // the rip widens open to reveal the domain behind it
-  const AMARA_BUILDUP   = AMARA_POWDER + AMARA_RIFT + AMARA_TRANSFORM + AMARA_EXPAND;
+  const AMARA_BUILDUP   = AMARA_POWDER + AMARA_RIFT + AMARA_TRANSFORM + AMARA_FACE + AMARA_EXPAND;
   const AMARA_LIVE_MAXHOLD  = 7.0;   // if she never commits, the real shuttle auto-drops
   const AMARA_CLEOPATRA_DUR = 20.0;  // matches TRANSFORM_CONFIG.CLEOPATRA — the flash window
+
+  // Solar Judgment (Air) buildup — a proper four-beat cinematic, fully telegraphed (no
+  // in-flight deception): IGNITION → ASCENSION → THE GAZE → DESCENT. Both players stay
+  // movement-locked the whole way (see cinematicLock in the sim loop); control returns the
+  // instant the shuttle leaves her hand at the end of DESCENT.
+  const AMARA_IGNITION  = 0.3;   // a single flare of gold light ignites at her hand
+  const AMARA_ASCENSION = 0.9;   // Cleopatra armor snaps on hard; sun-disk halo ignites behind her
+  const AMARA_GAZE      = 1.6;   // held, static face closeup — the stillness IS the telegraph
+  const AMARA_DESCENT   = 0.6;   // hard cut back to normal framing; the shuttle launches
+  const AMARA_SOLAR_BUILDUP = AMARA_IGNITION + AMARA_ASCENSION + AMARA_GAZE + AMARA_DESCENT;
 
   // Active falling decoy shuttlecocks (see tickAmaraDecoys / drawAmaraDecoys). Module-scoped
   // so it survives across frames; wiped in setupServe and the full-reset paths.
   let amaraDecoys = [];
 
-  // Cumulative elapsed cutoffs for the four buildup beats — readability everywhere.
+  // Cumulative elapsed cutoffs for the five buildup beats — readability everywhere.
   function amaraPhaseTimes(){
     const a = AMARA_POWDER;
     const b = a + AMARA_RIFT;
     const c = b + AMARA_TRANSFORM;
-    const d = c + AMARA_EXPAND;
-    return { powderEnd:a, riftEnd:b, transformEnd:c, expandEnd:d };
+    const d = c + AMARA_FACE;
+    const e = d + AMARA_EXPAND;
+    return { powderEnd:a, riftEnd:b, transformEnd:c, faceEnd:d, expandEnd:e };
   }
 
   function startAmaraPuppeteerCinematic(p){
@@ -5760,12 +5772,14 @@
     p.amaraRift = 0;
     p.amaraGlow = 0;
     p.amaraArmor = 0;
+    p.amaraFaceCloseup = 0;
     p.amaraDomainReveal = 0;
     p.amaraLiveActive = false;
     p.amaraLiveTimer = 0;
     p.amaraRealDropped = false;
     p._amaraRiftImpact = false;
     p._amaraTransformImpact = false;
+    p._amaraFaceImpact = false;
     p._amaraExpandImpact = false;
     p._amaraLiveStarted = false;
     // Freeze the real shuttle, invisible, hanging at the top for the whole ultimate.
@@ -5799,6 +5813,7 @@
     if (elapsed < T.powderEnd)         timeScale = Math.min(timeScale, 0.16);
     else if (elapsed < T.riftEnd)      timeScale = Math.min(timeScale, 0.22);
     else if (elapsed < T.transformEnd) timeScale = Math.min(timeScale, 0.30);
+    else if (elapsed < T.faceEnd)      timeScale = Math.min(timeScale, 0.35);
     else                               timeScale = Math.min(timeScale, 0.45);
 
     // POWDER — the plume chases the shuttle up.
@@ -5835,16 +5850,36 @@
       p.amaraArmor = Math.min(1, u * 1.15);
       // Materialize the Cleopatra transform right as the armor begins forming so
       // drawPlayer renders her armored form for the rest of the beat.
-      if (!p.transform && u > 0.15) activateTransform(p, 'CLEOPATRA', performance.now() / 1000);
-    } else {
-      p.amaraGlow = Math.max(0, 1 - (elapsed - T.transformEnd) / AMARA_EXPAND);
+      if (!p.transform && u > 0.15) {
+        activateTransform(p, 'CLEOPATRA', performance.now() / 1000);
+        // Tags this Cleopatra window as Puppeteer's — the constant opponent-strobe below is
+        // her mind-game gimmick and shouldn't also fire after the (fully-telegraphed) Solar
+        // Judgment, which tags its own window 'solar' instead (see tickAmaraSolarJudgment).
+        p.amaraCleopatraSource = 'puppeteer';
+      }
+    } else if (elapsed < T.faceEnd) {
       p.amaraArmor = 1;
+      const u = (elapsed - T.transformEnd) / AMARA_FACE;
+      p.amaraGlow = Math.max(0, 1 - u * 2.5); // the transform flash finishes fading out fast
+      // FACE — quick, sharp cut to a close-up: a knowing half-smile, a single eye-flick.
+      // Fast and sly on purpose (contrast with Solar Judgment's held gaze) — in fast, brief
+      // hold, out fast, so it never lingers (see drawAmaraPortrait, mode 'face').
+      p.amaraFaceCloseup = u < 0.18 ? (u / 0.18) : (u > 0.75 ? Math.max(0, 1 - (u - 0.75) / 0.25) : 1);
+      if (!p._amaraFaceImpact) {
+        p._amaraFaceImpact = true;
+        hitFreezeFrames = Math.max(hitFreezeFrames, 3);
+        playSound('bell');
+      }
+    } else {
+      p.amaraGlow = 0;
+      p.amaraArmor = 1;
+      p.amaraFaceCloseup = 0;
     }
 
     // EXPAND — the domain scatters open.
-    if (elapsed < T.transformEnd) p.amaraDomainReveal = 0;
+    if (elapsed < T.faceEnd) p.amaraDomainReveal = 0;
     else {
-      p.amaraDomainReveal = Math.min(1, (elapsed - T.transformEnd) / AMARA_EXPAND);
+      p.amaraDomainReveal = Math.min(1, (elapsed - T.faceEnd) / AMARA_EXPAND);
       if (!p._amaraExpandImpact) {
         p._amaraExpandImpact = true;
         // Domain background stays up through the whole hold window + the Cleopatra buff.
@@ -5886,18 +5921,19 @@
     p._amaraLiveStarted = true;
     p.amaraLiveActive = true;
     p.amaraLiveTimer = AMARA_LIVE_MAXHOLD;
-    // Four shuttlecocks share the top: one slot per directional key. The DOWN slot is the
-    // real one, the other three are decoys. `dropped` guards one drop per key.
+    // Four shuttlecocks share the top: one slot per directional key, picked uniformly at
+    // random each cast — 25% each, nothing telegraphs which one it is. `dropped` guards one
+    // drop per key.
+    const realKey = ['up', 'left', 'right', 'down'][Math.floor(Math.random() * 4)];
     p.amaraSlots = {
-      up:    { dropped:false, real:false },
-      left:  { dropped:false, real:false },
-      right: { dropped:false, real:false },
-      down:  { dropped:false, real:true  }
+      up:    { dropped:false, real: realKey === 'up'    },
+      left:  { dropped:false, real: realKey === 'left'  },
+      right: { dropped:false, real: realKey === 'right' },
+      down:  { dropped:false, real: realKey === 'down'  }
     };
     p.amaraRealDropped = false;
     shuttle.amaraFrozen = true;
     shuttle.amaraOwner = p.side;
-    spawnFloatText(p.x + PLAYER_W/2, p.y - 40, 'CHOOSE… ⬇ = REAL ⭐', '#fbbf24');
   }
 
   // Drop one of Amara's four held shuttlecocks. slotName is 'up'|'left'|'right'|'down'.
@@ -5931,9 +5967,12 @@
       ultLaunchToward(targetX, 20, 4.5, 6);
       shuttle.kind = 'float';
       shuttle.hitterSide = p.side;
+      // Renders through the same glitter-shuttlecock path as the decoys (see drawShuttle) so
+      // it's visually indistinguishable from the three fakes while in flight.
+      shuttle.amaraPuppeteerReal = true;
+      shuttle.amaraPuppeteerSeed = Math.random() * 100;
       playSound('smash');
       triggerShake(14, 0.35);
-      spawnFloatText(startX, 70, 'REAL SHUTTLE! ⭐', '#22d3ee');
     } else {
       // Decoy: a glittering fake falls into a random opponent-side spot.
       const startX = W/2 + (Math.random()*2-1)*120;
@@ -5976,18 +6015,18 @@
       d.angle = Math.atan2(d.vy, d.vx) - Math.PI/2;
       if (Math.random() < 0.4) spawnHitParticles(d.x, d.y, 1, false, d.color);
 
-      // Opponent "hits" the decoy by running into it (within their reach box) → blind.
+      // Opponent "hits" the decoy by running into it (within their reach box) — cosmetic-only
+      // "wrong guess" feedback (shatter burst + shake + sound). It's a fake, so touching it
+      // doesn't impair their vision, just reveals it wasn't the real one.
       if (opp){
         const headX = opp.x + PLAYER_W/2;
         const inX = Math.abs(d.x - headX) <= 46;
         const inY = d.y >= opp.y - 40 && d.y <= opp.y + PLAYER_H + 20;
         if (inX && inY){
           d.hit = true;
-          amaraBlindOpponent(opp, 1.0);
           spawnHitParticles(d.x, d.y, 20, true, '#e0f7ff');
           triggerShake(8, 0.2);
           playSound('smash');
-          spawnFloatText(headX, opp.y - 20, 'DECOY! BLIND 🌀', '#22d3ee');
           continue;
         }
       }
@@ -6000,11 +6039,6 @@
       keep.push(d);
     }
     amaraDecoys = keep;
-  }
-
-  function amaraBlindOpponent(opp, dur){
-    if (!opp) return;
-    opp.amaraBlindTimer = Math.max(opp.amaraBlindTimer || 0, dur);
   }
 
   // Held-phase timer — keeps the domain background alive and auto-drops the real shuttle
@@ -6117,80 +6151,645 @@
       ctx.restore();
     }
 
-    // EXPAND — an expanding luminous ring opening the domain outward from Amara.
+    // NOTE: the FACE close-up is deliberately NOT drawn here. This function runs inside the
+    // camera transform (see draw()), and during that beat the camera is pushed to ~2.35x and
+    // panned onto Amara — a full-screen portrait drawn here came out oversized, off-centre and
+    // with its "full-screen" backdrop covering only a slice of the viewport. It's drawn in
+    // screen space by drawAmaraCloseupOverlay(), alongside Jordan's equivalent.
+
+    // EXPAND — an expanding luminous shockwave riding just ahead of the domain front. Uses
+    // the SAME easing as the reveal mask (amaraRevealPath) — on a different curve the ring
+    // raced ahead of the wipe it is supposed to be leading and detached from it entirely.
     if ((p.amaraDomainReveal||0) > 0 && (p.amaraDomainReveal||0) < 1){
       const u = p.amaraDomainReveal;
+      const e = amEaseInOut(u);
+      // Fades in over the first sliver so the ring doesn't pop into existence at full strength.
+      const puff = Math.sin(amClamp01(u) * Math.PI);
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      const R = u * Math.hypot(W, H) * 0.75;
-      ctx.strokeStyle = `rgba(254,240,138,${(1-u)*0.8})`;
-      ctx.lineWidth = 10 * (1-u) + 2;
+      // Matched to the tear's own reach so the ring sits on the leading edge of the rip.
+      const R = e * (Math.max(ax, W - ax) * 1.12) * 1.06;
+      ctx.strokeStyle = `rgba(254,240,138,${(puff*0.8).toFixed(3)})`;
+      ctx.lineWidth = 10 * (1-e) + 2;
       ctx.beginPath(); ctx.arc(ax, p.y+PLAYER_H*0.4, R, 0, Math.PI*2); ctx.stroke();
-      ctx.strokeStyle = `rgba(34,211,238,${(1-u)*0.6})`;
+      ctx.strokeStyle = `rgba(34,211,238,${(puff*0.6).toFixed(3)})`;
       ctx.lineWidth = 4;
       ctx.beginPath(); ctx.arc(ax, p.y+PLAYER_H*0.4, R*0.82, 0, Math.PI*2); ctx.stroke();
       ctx.restore();
     }
   }
 
-  // The falling decoy shuttlecocks — each a glittering cyan fake with a powder aura.
-  function drawAmaraDecoys(){
-    if (!amaraDecoys.length) return;
-    const now = performance.now() * 0.001;
-    for (let i=0;i<amaraDecoys.length;i++){
-      const d = amaraDecoys[i];
-      if (d.hit) continue;
-      ctx.save();
-      ctx.translate(d.x, d.y);
-      ctx.globalCompositeOperation = 'lighter';
-      const aura = ctx.createRadialGradient(0,0,2,0,0,22);
-      aura.addColorStop(0,'rgba(224,247,255,0.55)');
-      aura.addColorStop(0.5,'rgba(34,211,238,0.3)');
-      aura.addColorStop(1,'rgba(34,211,238,0)');
-      ctx.fillStyle = aura;
-      ctx.beginPath(); ctx.arc(0,0,22,0,Math.PI*2); ctx.fill();
-      ctx.rotate(d.angle);
-      ctx.fillStyle = '#e0f7ff';
-      ctx.beginPath(); ctx.arc(0,7,4,0,Math.PI*2); ctx.fill();
-      ctx.strokeStyle = 'rgba(224,247,255,0.85)';
-      ctx.lineWidth = 1.4;
-      for (let f=-2; f<=2; f++){
-        ctx.beginPath(); ctx.moveTo(0,7); ctx.lineTo(f*5, -12); ctx.stroke();
+  // ---- Amara's cinematic close-up ------------------------------------------------------
+  // Rendered as chunky 16-bit PIXEL ART into the shared low-res buffer and upscaled with
+  // smoothing off — the same technique as Jordan's face close-up. The previous version drew
+  // smooth canvas arcs/beziers with shadowBlur, which put soft vector art in the middle of a
+  // hard-pixel game; against the pixelated domain behind it the mismatch was obvious.
+  //   mode 'face' — Puppeteer: quick, sly half-smile, one eye narrowed in a flick.
+  //   mode 'gaze' — Solar Judgment: held, still, solid molten-gold eyes.
+  // `alpha` fades the whole card; `pushIn` (0..1) drives a subtle scale so the portrait
+  // settles rather than appearing at rest.
+  // Where the portrait card's head sits. Shared so the close-up and the halo blazing behind
+  // it can't disagree about the silhouette they're composing around.
+  function amaraPortraitGeometry(pushIn){
+    const grow = 1 + 0.06 * (1 - amEaseOut(pushIn === undefined ? 1 : pushIn));
+    return { cx: W/2, cy: H*0.46, R: Math.min(W, H) * 0.20 * grow };
+  }
+
+  function drawAmaraPortrait(p, alpha, mode, pushIn){
+    if (alpha <= 0.001) return;
+    const ch = p.character || {};
+    const skin  = ch.skin  || '#6b4226';
+    const hair  = ch.hair  || '#161513';
+    const shirt = ch.shirt || '#6a2ba8';
+    const gold  = '#f2c94c';
+    const gaze  = (mode === 'gaze');
+    const now   = performance.now() * 0.001;
+
+    const g = domPixelCtx();
+    const U = COURT_PIXEL_UNIT;
+    const q = function(v){ return Math.round(v / U) * U; };
+    const px = function(x, y, w, h, c){ g.fillStyle = c; g.fillRect(q(x), q(y), q(w) + U, q(h) + U); };
+    // Filled pixel ellipse — scanline rows snapped to the grid, so edges stay blocky.
+    const ell = function(cx, cy, rx, ry, c){
+      g.fillStyle = c;
+      for (let yy = -ry; yy <= ry; yy += U){
+        const half = rx * Math.sqrt(Math.max(0, 1 - (yy*yy)/(ry*ry)));
+        g.fillRect(q(cx - half), q(cy + yy), q(half*2) + U, U);
       }
-      ctx.restore();
+    };
+
+    // Framing: a gentle push-in that eases to rest (settle, don't snap).
+    const geo = amaraPortraitGeometry(pushIn);
+    const cx = geo.cx, cy = geo.cy, R = geo.R;
+
+    // Backdrop: darken the court so she reads, but stay translucent enough that the domain
+    // reveal blooming behind her is still visible through it (that's the point of the beat).
+    // Heavy enough to suppress the tiny in-world sprites — this is a CUT, and seeing the
+    // little court figures wandering behind the card broke the illusion.
+    // Falloff is measured in head-radii, not screen size: keyed to the screen the gradient
+    // was still only ~0.5 opaque out at the corners, so the court and the little in-world
+    // sprites stayed clearly readable behind what is supposed to be a cut.
+    g.save();
+    const backAlpha = gaze ? 0.92 : 0.86;
+    const vg = g.createRadialGradient(cx, cy, R*1.05, cx, cy, R*3.2);
+    vg.addColorStop(0, 'rgba(12,6,2,0)');
+    vg.addColorStop(1, 'rgba(8,4,1,' + backAlpha + ')');
+    g.fillStyle = vg;
+    g.fillRect(0, 0, W, H);
+
+    // Rim light behind the head — gold for the gaze, cool cyan for the sly Puppeteer beat.
+    const rimCol = gaze ? 'rgba(251,191,36,' : 'rgba(34,211,238,';
+    const rimPulse = gaze ? (0.30 + 0.10*Math.sin(now*2.2)) : 0.26;
+    const rim = g.createRadialGradient(cx, cy - R*0.1, R*0.8, cx, cy - R*0.1, R*2.3);
+    rim.addColorStop(0, rimCol + rimPulse + ')');
+    rim.addColorStop(1, rimCol + '0)');
+    g.fillStyle = rim;
+    g.fillRect(0, 0, W, H);
+
+    // --- Hair mass (behind everything) + hanging braids -------------------------------
+    ell(cx, cy - R*0.10, R*1.16, R*1.16, hair);
+    px(cx - R*1.16, cy - R*0.10, R*2.32, R*0.95, hair);   // squares off the sides into a bob
+    const braid = 5;
+    for (let i = 0; i < braid; i++){
+      const t = (i - (braid-1)/2) / ((braid-1)/2);        // -1..1
+      const bx = cx + t * R*1.02;
+      const drop = R*1.05 + Math.abs(t) * R*0.30;
+      px(bx - R*0.075, cy + R*0.15, R*0.15, drop, hair);
+      // gold bead cuffs down the braids — Cleopatra flavour, and they catch the rim light
+      for (let b = 0; b < 3; b++){
+        px(bx - R*0.085, cy + R*0.34 + b*(drop*0.26), R*0.17, R*0.055, gold);
+      }
+    }
+
+    // --- Shoulders / neckline ---------------------------------------------------------
+    px(cx - R*1.45, cy + R*1.02, R*2.90, R*0.95, shirt);
+    px(cx - R*0.40, cy + R*0.80, R*0.80, R*0.30, skin);          // neck
+    px(cx - R*0.46, cy + R*0.98, R*0.92, R*0.10, 'rgba(0,0,0,0.22)'); // collar shadow
+    // Broad collar necklace
+    px(cx - R*0.72, cy + R*1.06, R*1.44, R*0.13, gold);
+    px(cx - R*0.56, cy + R*1.21, R*1.12, R*0.09, '#c89b2e');
+
+    // --- Head -------------------------------------------------------------------------
+    ell(cx, cy, R*0.92, R*1.00, skin);
+    // cheek/jaw shading on the far side, one flat tone (no gradients — keeps it pixel-y)
+    px(cx + R*0.55, cy - R*0.30, R*0.38, R*0.95, 'rgba(0,0,0,0.13)');
+
+    // --- Nemes headdress (the Cleopatra silhouette) ------------------------------------
+    px(cx - R*1.00, cy - R*1.06, R*2.00, R*0.42, '#1c3f66');
+    for (let s = 0; s < 7; s++){                             // striped headcloth
+      px(cx - R*1.00 + s*(R*2.00/7), cy - R*1.06, R*(2.00/14), R*0.42, s % 2 ? '#2f66a8' : '#1c3f66');
+    }
+    px(cx - R*1.02, cy - R*0.70, R*2.04, R*0.12, gold);      // browband
+    // Uraeus (rearing cobra) centred on the brow
+    px(cx - R*0.07, cy - R*1.30, R*0.14, R*0.26, gold);
+    px(cx - R*0.15, cy - R*1.40, R*0.30, R*0.13, gold);
+    px(cx - R*0.05, cy - R*1.36, R*0.10, R*0.06, '#7f1d1d');
+
+    // --- Eyes -------------------------------------------------------------------------
+    const eyeY  = cy - R*0.12;
+    const eyeDX = R*0.40;
+    const eyeW  = R*0.30;
+    const eyeH  = gaze ? R*0.17 : R*0.15;
+
+    // Brow + kohl liner + outward wing. The wing has to be drawn from its LEFT edge on both
+    // sides (a rect can't have negative width), so mirror the origin rather than the size.
+    const wing = R*0.26;
+    [-1, 1].forEach(function(s){
+      const ex = cx + s*eyeDX;
+      px(ex - eyeW*0.70, eyeY - eyeH*2.30, eyeW*1.40, R*0.045, '#0d0904');            // brow
+      px(ex - eyeW*0.62, eyeY - eyeH*1.30, eyeW*1.24, R*0.055, '#120c05');            // top liner
+      const wx = ex + s*eyeW*0.62;
+      px(s > 0 ? wx : wx - wing, eyeY - eyeH*0.75, wing, R*0.055, '#120c05');         // wing
+    });
+
+    if (gaze){
+      // THE GAZE — molten gold, no pupil, faintly breathing. Stillness is the point, so the
+      // only motion permitted is a slow luminance pulse.
+      const heat = 0.82 + 0.18*Math.sin(now*2.6);
+      [-1, 1].forEach(function(s){
+        ell(cx + s*eyeDX, eyeY, eyeW, eyeH, '#7a4a06');
+        ell(cx + s*eyeDX, eyeY, eyeW*0.86, eyeH*0.84, gold);
+        ell(cx + s*eyeDX, eyeY, eyeW*0.55, eyeH*0.55, 'rgba(255,245,190,' + heat.toFixed(3) + ')');
+        px(cx + s*eyeDX - eyeW*0.20, eyeY - eyeH*0.30, eyeW*0.24, eyeH*0.30, '#ffffff');
+      });
+      // level, unimpressed mouth
+      px(cx - R*0.24, cy + R*0.50, R*0.48, R*0.06, '#3a1f10');
+    } else {
+      // FACE — one eye wide, the other narrowed mid-flick; a knowing asymmetric smile.
+      ell(cx - eyeDX, eyeY, eyeW, eyeH, '#f6efe2');
+      ell(cx - eyeDX, eyeY, eyeW*0.46, eyeH*0.92, '#1a1206');
+      px(cx - eyeDX - eyeW*0.16, eyeY - eyeH*0.42, eyeW*0.20, eyeH*0.34, '#ffffff');
+      // narrowed eye — a slit plus a heavier lid above it
+      px(cx + eyeDX - eyeW, eyeY - eyeH*0.20, eyeW*2, eyeH*0.52, '#f6efe2');
+      px(cx + eyeDX - eyeW*0.34, eyeY - eyeH*0.16, eyeW*0.62, eyeH*0.46, '#1a1206');
+      px(cx + eyeDX - eyeW, eyeY - eyeH*0.62, eyeW*2, R*0.05, skin);
+      // asymmetric smirk — steps up on one side, staircase style
+      px(cx - R*0.26, cy + R*0.54, R*0.30, R*0.055, '#3a1f10');
+      px(cx + R*0.04, cy + R*0.50, R*0.18, R*0.055, '#3a1f10');
+      px(cx + R*0.22, cy + R*0.44, R*0.10, R*0.055, '#3a1f10');
+    }
+
+    g.restore();
+
+    // Blit the portrait card at the requested opacity.
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    blitDomBuffer(null);
+    ctx.restore();
+  }
+
+  // Letterbox bars (full-res, crisp). Kept OUT of drawAmaraPortrait and drawn as the very last
+  // step of the close-up pass — the halo's second (on-top) pass would otherwise paint its rays
+  // straight over the bars, which broke the framing.
+  function drawAmaraLetterbox(alpha, gaze){
+    const barH = H * 0.115 * amEaseOut(alpha);
+    if (barH <= 0.5) return;
+    ctx.save();
+    ctx.fillStyle = 'rgba(4,3,8,0.96)';
+    ctx.fillRect(0, 0, W, barH);
+    ctx.fillRect(0, H - barH, W, barH);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = gaze ? 'rgba(251,191,36,0.45)' : 'rgba(34,211,238,0.40)';
+    ctx.fillRect(0, barH - 2, W, 2);
+    ctx.fillRect(0, H - barH, W, 2);
+    ctx.restore();
+  }
+
+  // SCREEN-SPACE close-up pass for BOTH of Amara's ultimates. Called from draw() outside the
+  // camera transform, right next to drawJordanFaceCloseup() — these are full-frame cuts, so
+  // they must not inherit the buildup camera's zoom/pan (which is exactly what made the old
+  // close-up render oversized and off-centre).
+  function drawAmaraCloseupOverlay(){
+    // Puppeteer — FACE beat.
+    const fp = (left && (left.amaraFaceCloseup||0) > 0.001) ? left
+             : (right && (right.amaraFaceCloseup||0) > 0.001) ? right : null;
+    if (fp){
+      drawAmaraPortrait(fp, fp.amaraFaceCloseup, 'face', fp.amaraFaceCloseup);
+      drawAmaraLetterbox(fp.amaraFaceCloseup, false);
+      return;
+    }
+    // Solar Judgment — THE GAZE. The halo re-anchors behind the portrait card and is drawn
+    // first so it sits behind her head; the card's vignette is transparent at its centre, so
+    // the corona still reads through. (The ASCENSION halo is world-space — see
+    // drawAmaraSolarCinematic — because it has to track her before the cut.)
+    const sp = (left && left.amaraSolarActive) ? left : ((right && right.amaraSolarActive) ? right : null);
+    if (!sp) return;
+    const blow = sp.amaraSolarBlowout || 0;
+    if ((sp.amaraSolarGaze||0) > 0.001 || blow > 0.001){
+      const gz = sp.amaraSolarGaze || 0;
+      const geo = amaraPortraitGeometry(sp.amaraSolarGazeIn === undefined ? 1 : sp.amaraSolarGazeIn);
+      // The halo has to be much LARGER than the head to read at all: at its natural size the
+      // whole disc (corona ~150px, rays ~120px) landed inside the head silhouette (~146px) and
+      // was completely occluded by her own face.
+      const HALO = 2.7;
+      // Pass 1 — behind the card, so the card's vignette softens it into the backdrop.
+      drawAmaraSolarHalo(gz, geo.cx, geo.cy, HALO);
+      drawAmaraPortrait(sp, gz, 'gaze', sp.amaraSolarGazeIn === undefined ? 1 : sp.amaraSolarGazeIn);
+      // Pass 2 — the same halo re-struck ON TOP, but clipped to everything OUTSIDE her head,
+      // so the corona and rays blaze around the silhouette without washing out her face.
       ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.fillStyle = `rgba(254,240,138,${0.5+0.4*Math.sin(now*12+d.seed)})`;
-      ctx.beginPath(); ctx.arc(d.x, d.y, 2, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, H);
+      ctx.arc(geo.cx, geo.cy, geo.R * 1.16, 0, Math.PI * 2);
+      ctx.clip('evenodd');
+      drawAmaraSolarHalo(gz * 0.6, geo.cx, geo.cy, HALO);
       ctx.restore();
+      // The blowout itself — light floods out from behind her and swallows the frame, which
+      // is what actually carries the hand-off from close-up to open domain.
+      if (blow > 0.001){
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const fg = ctx.createRadialGradient(geo.cx, geo.cy, 0, geo.cx, geo.cy, Math.hypot(W, H) * 0.62);
+        fg.addColorStop(0,   'rgba(255,251,230,' + (0.95*blow).toFixed(3) + ')');
+        fg.addColorStop(0.45,'rgba(255,214,110,' + (0.72*blow).toFixed(3) + ')');
+        fg.addColorStop(1,   'rgba(251,191,36,0)');
+        ctx.fillStyle = fg;
+        ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+      }
+      drawAmaraLetterbox(Math.max(gz, blow), true);
     }
   }
 
-  // A ragged vertical "quantum tear" ripped open along the dust trail at screen-center,
-  // widening with `reveal` (0→1). Used as a clip so Amara's domain shows THROUGH the rip —
-  // like tearing paper open to the scene behind it. At reveal≈1 it covers the whole screen.
+  // Shared "glitter shuttlecock" visual — glowing cyan-white aura + rotating feather lines +
+  // a pulsing gold spark. Used for BOTH the three decoys and the real shuttle once it's
+  // dropped (see drawShuttle), so all four drops look identical while in flight.
+  function drawAmaraGlitterShuttlecock(x, y, angle, seed){
+    const now = performance.now() * 0.001;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.globalCompositeOperation = 'lighter';
+    const aura = ctx.createRadialGradient(0,0,2,0,0,22);
+    aura.addColorStop(0,'rgba(224,247,255,0.55)');
+    aura.addColorStop(0.5,'rgba(34,211,238,0.3)');
+    aura.addColorStop(1,'rgba(34,211,238,0)');
+    ctx.fillStyle = aura;
+    ctx.beginPath(); ctx.arc(0,0,22,0,Math.PI*2); ctx.fill();
+    ctx.rotate(angle);
+    ctx.fillStyle = '#e0f7ff';
+    ctx.beginPath(); ctx.arc(0,7,4,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle = 'rgba(224,247,255,0.85)';
+    ctx.lineWidth = 1.4;
+    for (let f=-2; f<=2; f++){
+      ctx.beginPath(); ctx.moveTo(0,7); ctx.lineTo(f*5, -12); ctx.stroke();
+    }
+    ctx.restore();
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = `rgba(254,240,138,${0.5+0.4*Math.sin(now*12+seed)})`;
+    ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
+  // The falling decoy shuttlecocks — each a glittering cyan fake with a powder aura.
+  function drawAmaraDecoys(){
+    if (!amaraDecoys.length) return;
+    for (let i=0;i<amaraDecoys.length;i++){
+      const d = amaraDecoys[i];
+      if (d.hit) continue;
+      drawAmaraGlitterShuttlecock(d.x, d.y, d.angle, d.seed);
+    }
+  }
+
+  // ---- Shared easing for Amara's cinematics -------------------------------------------
+  // Every beat curve routes through these so nothing moves at a raw linear rate (which is
+  // what made the old transitions read as mechanical rather than "animated").
+  function amClamp01(v){ return v < 0 ? 0 : (v > 1 ? 1 : v); }
+  function amEaseOut(x){ const v = amClamp01(x); return 1 - Math.pow(1 - v, 3); }   // decelerate
+  function amEaseIn(x){ const v = amClamp01(x); return v * v * v; }                  // accelerate
+  function amEaseInOut(x){ const v = amClamp01(x); return v * v * (3 - 2 * v); }     // smoothstep
+
+  // A ragged vertical "quantum tear" ripped open along the dust trail, widening with
+  // `reveal` (0→1). Used as a clip so Amara's domain shows THROUGH the rip — like tearing
+  // paper open to the scene behind it. At reveal≈1 it covers the whole screen.
+  // The per-vertex jitter is deliberately TIME-INDEPENDENT (same trick as Jordan's
+  // tempestFrontPath): a time term here re-randomizes the silhouette every frame, which made
+  // the rip's edge boil/crawl instead of holding a stable torn shape as it widened.
   function amaraTearPath(c, cx, reveal){
     const yTop = -30, yBot = GROUND_Y + 60;
     const steps = 26;
-    const t = performance.now() * 0.001;
+    // Reach is measured against how far the FURTHEST screen edge actually is from the anchor,
+    // so the wipe finishes around reveal≈0.9 no matter where Amara is standing. A fixed reach
+    // (the old code used a flat 1.15 screen-widths) swallowed the whole screen by reveal≈0.43
+    // when she stood near the middle, so most of the beat was spent watching a finished wipe.
+    const reach = (Math.max(cx, W - cx) / W) * 1.12;
+    // Raggedness melts out as the rip completes: without this the jagged points reach the
+    // edge at wildly different times and the last stragglers pop shut at the very end.
+    const smooth = amClamp01(reveal * reveal);
+    const halfAt = function(i, f, phase){
+      const bulge = 0.55 + 0.45*Math.sin(f*Math.PI);              // widest near the vertical middle
+      const base  = (0.60 + 0.55*bulge) / 1.15;                   // → 0.78 … 1.00
+      const jit   = 0.92 + 0.16*Math.sin(i*phase[0] + phase[1])*Math.cos(i*phase[2]);
+      const shape = (base * jit) * (1 - smooth) + smooth;         // ragged → flat as it closes
+      return shape * reach * W * reveal;
+    };
     for (let i=0;i<=steps;i++){               // right edge, top → bottom
       const f = i/steps;
       const y = yTop + (yBot - yTop)*f;
-      const bulge = 0.55 + 0.45*Math.sin(f*Math.PI);       // widest near the vertical middle
-      const jit = 0.85 + 0.30*Math.sin(i*12.9898)*Math.cos(i*4.1414 + t*3);
-      const half = (0.60 + 0.55*bulge) * W * reveal * jit;
-      const x = cx + half;
+      const x = cx + halfAt(i, f, [12.9898, 0, 4.1414]);
       if (i===0) c.moveTo(x, y); else c.lineTo(x, y);
     }
     for (let i=steps;i>=0;i--){                // left edge, bottom → top
       const f = i/steps;
       const y = yTop + (yBot - yTop)*f;
-      const bulge = 0.55 + 0.45*Math.sin(f*Math.PI);
-      const jit = 0.85 + 0.30*Math.sin(i*7.2330 + 2.1)*Math.cos(i*3.7100 + t*3);
-      const half = (0.60 + 0.55*bulge) * W * reveal * jit;
-      c.lineTo(cx - half, y);
+      c.lineTo(cx - halfAt(i, f, [7.2330, 2.1, 3.7100]), y);
     }
     c.closePath();
+  }
+
+  // Solar Judgment's own reveal shape — a radial SUN BLOOM blossoming from Amara, rather
+  // than Puppeteer's jagged vertical rip. Reusing the tear here was a motif mismatch: the rip
+  // is the payoff of Ground's powder→rift setup, and nothing in the Air ultimate tears
+  // anything. This is a soft-lobed corona (petal count stable, no time term) so the domain
+  // floods outward like light rather than being ripped open.
+  function amaraSunBloomPath(c, cx, cy, reveal){
+    // Radius needed to reach the furthest corner FROM HER, not a flat screen-diagonal — same
+    // reason as the tear: a fixed reach makes the bloom finish long before the beat does.
+    const maxR = Math.max(
+      Math.hypot(cx, cy), Math.hypot(W - cx, cy),
+      Math.hypot(cx, H - cy), Math.hypot(W - cx, H - cy)
+    ) * 1.06;
+    const r = amClamp01(reveal) * maxR;
+    const steps = 72;
+    for (let i=0;i<=steps;i++){
+      const a = (i/steps) * Math.PI * 2;
+      // Gentle 12-lobe corona ripple — stable per-angle, so the bloom edge is soft but solid.
+      const lobe = 1 + 0.055*Math.sin(a*12) + 0.03*Math.sin(a*5 + 1.7);
+      const px = cx + Math.cos(a) * r * lobe;
+      const py = cy + Math.sin(a) * r * lobe;
+      if (i===0) c.moveTo(px, py); else c.lineTo(px, py);
+    }
+    c.closePath();
+  }
+
+  // Which reveal shape + anchor a given Amara player's domain should use this frame.
+  // Puppeteer tears; Solar Judgment blooms. Both anchor to HER rather than to screen-center —
+  // the old screen-center anchor made the reveal look detached from the caster (and with the
+  // camera pushed in on her it could open off-frame entirely).
+  function amaraRevealShapeFor(p){
+    const solar = !!(p && (p.amaraSolarActive || p.amaraCleopatraSource === 'solar'));
+    const ax = p ? p.x + PLAYER_W/2 : W/2;
+    const ay = p ? p.y + PLAYER_H*0.4 : GROUND_Y*0.5;
+    return { solar: solar, ax: ax, ay: ay };
+  }
+  // Single place the reveal curve is applied, so the blit mask and the glowing rim traced on
+  // top of it can never disagree about where the front actually is (they were previously free
+  // to ease differently, which showed up as the rim drifting off the edge of the wipe).
+  function amaraRevealPath(c, p, reveal){
+    const s = amaraRevealShapeFor(p);
+    // Smoothstep, not a heavy ease-out: a reveal wipe wants to read as a steady sweep that
+    // starts gently and settles. A strong ease-out front-loads almost all the travel into the
+    // first few frames, which is what made the front look like it teleported open.
+    const e = amEaseInOut(reveal);
+    if (s.solar) amaraSunBloomPath(c, s.ax, s.ay, e);
+    else         amaraTearPath(c, s.ax, e);
+  }
+
+  // ===========================================================================
+  // AMARA — SOLAR JUDGMENT (Air ultimate) — IGNITION → ASCENSION → GAZE → DESCENT
+  // ===========================================================================
+  // Cumulative elapsed cutoffs for the four beats — mirrors amaraPhaseTimes().
+  function amaraSolarPhaseTimes(){
+    const a = AMARA_IGNITION;
+    const b = a + AMARA_ASCENSION;
+    const c = b + AMARA_GAZE;
+    const d = c + AMARA_DESCENT;
+    return { ignitionEnd:a, ascensionEnd:b, gazeEnd:c, descentEnd:d };
+  }
+
+  // Sun-bloom progress at a given point in the buildup. It straddles the GAZE/DESCENT
+  // boundary on purpose — it starts behind the close-up as she dissolves and finishes in
+  // normal framing, so the domain is fully open and settled a beat before the shuttle fires
+  // rather than snapping to "done" the instant the portrait cuts away.
+  const AMARA_SOLAR_BLOOM_START = 0.68; // fraction into THE GAZE
+  const AMARA_SOLAR_BLOOM_END   = 0.80; // fraction into DESCENT
+  function amaraSolarRevealAt(elapsed, T){
+    const from = T.ascensionEnd + AMARA_GAZE * AMARA_SOLAR_BLOOM_START;
+    const to   = T.gazeEnd + AMARA_DESCENT * AMARA_SOLAR_BLOOM_END;
+    if (elapsed <= from) return 0;
+    return amClamp01((elapsed - from) / Math.max(0.0001, to - from));
+  }
+
+  function startAmaraSolarJudgmentCinematic(p){
+    p.amaraSolarActive = true;
+    p.amaraSolarTimer = AMARA_SOLAR_BUILDUP;
+    p.amaraSolarIgnition = 0;
+    p.amaraSolarHaloGrow = 0;
+    p.amaraSolarGaze = 0;
+    p.amaraSolarGazeIn = 0;
+    p.amaraSolarBlowout = 0;
+    p.amaraDomainReveal = 0; // shared with Puppeteer's EXPAND reveal — the two never run at once
+    p._amaraSolarIgnitionImpact = false;
+    p._amaraSolarAscensionImpact = false;
+    p._amaraSolarGazeImpact = false;
+    p._amaraSolarBloomImpact = false;
+    p._amaraSolarDescentImpact = false;
+    p._amaraSolarLaunched = false;
+
+    // She's mid-swing when this fires (like every other Air ult) — the shuttle holds exactly
+    // where racket contact happened for the whole buildup, then launches toward a randomized
+    // spot on the opponent's side the instant DESCENT ends.
+    const targetX = p.side === 'left'
+      ? NET_X + 100 + Math.random() * (COURT_RIGHT - NET_X - 140)
+      : COURT_LEFT + 40 + Math.random() * (NET_X - COURT_LEFT - 140);
+    shuttle.amaraSolarRelease = AMARA_SOLAR_BUILDUP;
+    shuttle.amaraSolarOwner = p.side;
+    shuttle.amaraSolarTargetX = targetX;
+
+    timeScale = 0.15;
+    hitFreezeFrames = 5;
+    playSound('bell');
+    playSound('subbass');
+    triggerShake(10, 0.25);
+    triggerStinger('AMARA', 'SOLAR JUDGMENT', '#fbbf24', 1.3);
+  }
+
+  function tickAmaraSolarJudgment(p, dt){
+    if (!p.amaraSolarActive) return;
+    p.amaraSolarTimer -= dt;
+    const elapsed = AMARA_SOLAR_BUILDUP - Math.max(0, p.amaraSolarTimer);
+    const T = amaraSolarPhaseTimes();
+
+    // Phase-gated slow-mo — snappy, no long tails.
+    if (elapsed < T.ignitionEnd)        timeScale = Math.min(timeScale, 0.15);
+    else if (elapsed < T.ascensionEnd)  timeScale = Math.min(timeScale, 0.22);
+    else if (elapsed < T.gazeEnd)       timeScale = Math.min(timeScale, 0.30);
+    else                                 timeScale = Math.min(timeScale, 0.45);
+
+    // IGNITION — a single flare of gold light kindles at her hand, then hands off to the
+    // armor flash. It used to latch at 1 for the rest of the buildup, so the hand flare sat
+    // there burning underneath the ASCENSION halo and all the way through the close-up.
+    if (elapsed < T.ignitionEnd) {
+      p.amaraSolarIgnition = elapsed / AMARA_IGNITION;
+    } else {
+      // bleeds out over the first third of ASCENSION as the halo takes over
+      const out = (elapsed - T.ignitionEnd) / (AMARA_ASCENSION * 0.33);
+      p.amaraSolarIgnition = Math.max(0, 1 - out);
+    }
+
+    // ASCENSION — Cleopatra armor snaps on in one hard flash (not the slow bottom-up build
+    // Ground uses); golden wind streams off her; the sun-disk halo ignites behind her head.
+    if (elapsed < T.ignitionEnd) {
+      p.amaraSolarHaloGrow = 0;
+    } else if (elapsed < T.ascensionEnd) {
+      const u = (elapsed - T.ignitionEnd) / AMARA_ASCENSION;
+      p.amaraSolarHaloGrow = u;
+      if (!p.transform && u > 0.05) {
+        activateTransform(p, 'CLEOPATRA', performance.now() / 1000);
+        // Tags this window as Solar Judgment's — the constant opponent-strobe in drawCourt is
+        // Puppeteer's mind-game gimmick and must NOT also fire here (see amaraFlashP).
+        p.amaraCleopatraSource = 'solar';
+      }
+      if (!p._amaraSolarAscensionImpact) {
+        p._amaraSolarAscensionImpact = true;
+        hitFreezeFrames = Math.max(hitFreezeFrames, 4);
+        playSound('bell');
+        triggerShake(14, 0.3);
+      }
+      // Golden wind/hair — a burst of rising motes off her, like Puppeteer's transform glow.
+      const hx = p.x + PLAYER_W/2, hy = p.y + PLAYER_H*0.3;
+      for (let k=0;k<2;k++){
+        particles.push({
+          x: hx + (Math.random()*2-1)*16,
+          y: hy + (Math.random()*2-1)*10,
+          vx: (Math.random()*2-1)*40,
+          vy: -260 - Math.random()*140,
+          color: Math.random()<0.5 ? '#fef08a' : '#fbbf24',
+          size: Math.random()*3+1.5,
+          alpha: 1.0,
+          decay: 2.0,
+          gravity: -20
+        });
+      }
+    } else {
+      p.amaraSolarHaloGrow = 1;
+    }
+
+    // THE GAZE — snap to a held, static face close-up, then hand off to the bloom.
+    //
+    // The reveal deliberately does NOT run underneath the opaque portrait. It used to ramp
+    // 0→1 across this whole beat while the card sat at full opacity, so the entire widening
+    // happened behind something you couldn't see through and DESCENT then cut away to an
+    // already-finished domain — a hard snap. Now the card holds still (the point of the beat),
+    // then dissolves while the sun bloom opens behind it, and the bloom finishes in normal
+    // framing during DESCENT. Same grammar as Jordan: face out, THEN a readable expand.
+    const GAZE_IN   = 0.08;  // fraction of the beat spent snapping in (fast — reads as a cut)
+    const GAZE_OUT  = 0.30;  // fraction spent dissolving out
+    const BLOOM_AT  = 0.68;  // fraction at which the domain starts opening behind her
+    if (elapsed < T.ascensionEnd) {
+      p.amaraSolarGaze = 0;
+      p.amaraSolarGazeIn = 0;
+      p.amaraSolarBlowout = 0;
+    } else if (elapsed < T.gazeEnd) {
+      const u = (elapsed - T.ascensionEnd) / AMARA_GAZE;
+      p.amaraSolarGazeIn = amClamp01(u / GAZE_IN);
+      // Exit is a BLOWOUT, not a cross-fade. Fading the card's alpha on its own made her go
+      // translucent — you could see the court straight through her face, which looked like a
+      // rendering fault rather than a transition. Instead the frame floods with solar light
+      // first, and she only actually fades once that flash is bright enough to hide it.
+      const outT = amClamp01((u - (1 - GAZE_OUT)) / GAZE_OUT);
+      p.amaraSolarBlowout = outT <= 0 ? 0
+        : (outT < 0.5 ? outT / 0.5 : amClamp01((1 - outT) / 0.5));
+      p.amaraSolarGaze = u < GAZE_IN ? amEaseOut(u / GAZE_IN)
+                       : (outT > 0.55 ? amEaseIn(amClamp01((1 - outT) / 0.45)) : 1);
+      if (!p._amaraSolarGazeImpact) {
+        p._amaraSolarGazeImpact = true;
+        hitFreezeFrames = Math.max(hitFreezeFrames, 4);
+        playSound('subbass');
+      }
+      // Domain opens only once the hold is over.
+      if (u >= BLOOM_AT) {
+        p.amaraDomainReveal = amaraSolarRevealAt(elapsed, T);
+        if (!p._amaraSolarBloomImpact) {
+          p._amaraSolarBloomImpact = true;
+          // Quiet activation: no screen-shake, no stinger, no float text — this fires while
+          // she is still held on a motionless close-up, and the whole premise of the beat is
+          // stillness. The bloom + the DESCENT launch carry the moment instead.
+          triggerDomainExpansion(p, 'SUN GODDESS OF GIZA', '#fbbf24',
+            AMARA_GAZE + AMARA_DESCENT + AMARA_CLEOPATRA_DUR, { quiet: true });
+          playSound('bell');
+        }
+      }
+    } else {
+      // DESCENT — cut back to normal gameplay framing; the bloom finishes out here, in the
+      // open, where the player can actually read it.
+      p.amaraSolarGaze = 0;
+      p.amaraSolarGazeIn = 0;
+      p.amaraSolarBlowout = 0;
+      p.amaraSolarHaloGrow = 0;
+      p.amaraDomainReveal = amaraSolarRevealAt(elapsed, T);
+      if (!p._amaraSolarDescentImpact) {
+        p._amaraSolarDescentImpact = true;
+        hitFreezeFrames = Math.max(hitFreezeFrames, 3);
+        playSound('bell');
+      }
+    }
+
+    // Both players stay locked (see cinematicLock in the sim loop); Amara herself doesn't drift.
+    p.vx = 0; p.vy = 0;
+
+    if (p.amaraSolarTimer <= 0) {
+      p.amaraSolarActive = false;
+      p.amaraSolarIgnition = 0;
+      p.amaraSolarHaloGrow = 0;
+      p.amaraSolarGaze = 0;
+      p.amaraSolarGazeIn = 0;
+      p.amaraDomainReveal = 1; // bloom already finished during DESCENT; pin it fully open
+      timeScale = 1.0; // snap back to full speed the instant the shuttle launches
+      executeAmaraSolarLaunch(p);
+    }
+  }
+
+  // Fires the moment DESCENT completes — mirrors executeJordanTempestLaunch's dual-timer
+  // guard, since both p.amaraSolarTimer (above) and shuttle.amaraSolarRelease (updateShuttle)
+  // can cross zero on the same frame.
+  function executeAmaraSolarLaunch(p){
+    if (p._amaraSolarLaunched) return;
+    p._amaraSolarLaunched = true;
+    const targetX = shuttle.amaraSolarTargetX;
+    shuttle.amaraSolarRelease = 0;
+    ultLaunchToward(targetX, 100, 1.8); // fast downward arc smash trajectory
+    shuttle.kind = 'smash';
+    shuttle.hitByMaxPower = true;
+    playSound('smash');
+    triggerShake(20, 0.5); // matches Jordan's launch weight
+  }
+
+  // WORLD-SPACE cinematic overlays for Solar Judgment's buildup — only things anchored to
+  // Amara's actual court position belong here (they must ride the camera). The halo and the
+  // held face close-up are screen-space and live in drawAmaraCloseupOverlay() instead.
+  function drawAmaraSolarCinematic(){
+    const p = (left && left.amaraSolarActive) ? left : ((right && right.amaraSolarActive) ? right : null);
+    if (!p) return;
+    const ax = p.x + PLAYER_W/2, hy = p.y + PLAYER_H*0.3;
+
+    // IGNITION — a single flare of gold light kindling at her hand, easing open.
+    if ((p.amaraSolarIgnition||0) > 0){
+      const g = amEaseOut(p.amaraSolarIgnition);
+      const R = 40*g + 6;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const flare = ctx.createRadialGradient(ax, hy, 0, ax, hy, R);
+      flare.addColorStop(0, `rgba(255,255,255,${(0.9*g).toFixed(3)})`);
+      flare.addColorStop(0.4, `rgba(254,240,138,${(0.7*g).toFixed(3)})`);
+      flare.addColorStop(1, 'rgba(251,191,36,0)');
+      ctx.fillStyle = flare;
+      ctx.beginPath(); ctx.arc(ax, hy, R, 0, Math.PI*2); ctx.fill();
+      // A tight white core that pops on the first frames then settles — sells the "ignite".
+      const core = (1 - amClamp01(p.amaraSolarIgnition)) * 0.9 + 0.1;
+      ctx.fillStyle = `rgba(255,255,255,${(core*g).toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(ax, hy, 3 + 5*g, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+
+    // ASCENSION — the sun-disk halo ignites behind her ACTUAL head, in world space, so it
+    // tracks her and rides the camera push-in. (Once THE GAZE cuts to the portrait card the
+    // halo is re-anchored behind that instead — see drawAmaraCloseupOverlay.)
+    const halo = p.amaraSolarHaloGrow || 0;
+    if (halo > 0 && (p.amaraSolarGaze||0) <= 0.001){
+      const e = amEaseOut(halo);
+      drawAmaraSolarHalo(e, ax, p.y + PLAYER_H*0.18, 0.55 + 0.25*e);
+    }
   }
 
   function drawShermanRainShuttles(){
@@ -8102,15 +8701,6 @@
   // ever acts through the same channels a human has: movement keys, tryJump, dash fields,
   // startCharge/releaseHit — never by writing positions or velocities directly.
   function runAI(p, opp, ai, dt, now){
-    // If opponent has active Cleopatra flashing, disrupt AI positioning/reactions!
-    if (opp.transform && opp.transform.type === 'CLEOPATRA' && opp.cleopatraIsFlashing && Math.random() < 0.65) {
-      ai.stateLabel = 'blinded';
-      // keep holding whatever we had, or zero them out to stall
-      const km = AI_KEYMAP[p.side];
-      keys[km.moveLeft] = false;
-      keys[km.moveRight] = false;
-      return;
-    }
     const diff = AI_PROFILES[aiDifficulty];
     const persona = aiPersonaFor(p.character);
     const km = AI_KEYMAP[p.side];
@@ -9134,26 +9724,10 @@
           triggerStinger('KENJI', 'HANG TIME', '#34d399', 1.8);
         }
         else if(id === 'amara'){
-          // Air Ult: "Solar Judgment"
-          triggerDomainExpansion(p, 'SUN GODDESS OF GIZA', '#22d3ee');
-          holdShuttle(0.40); // freeze shuttle mid-air for dramatic windup
-          timeScale = 0.15; // slow down time first for dramatic windup
-          p.solarJudgmentSunTimer = 1.8; // trigger blinding sun animation
-          
-          // Trajectory randomized towards the opponent's side
-          const targetX = p.side === 'left'
-            ? NET_X + 100 + Math.random() * (COURT_RIGHT - NET_X - 140)
-            : COURT_LEFT + 40 + Math.random() * (NET_X - COURT_LEFT - 140);
-          
-          ultLaunchToward(targetX, 100, 1.8); // fast downward arc smash trajectory
-          shuttle.kind = 'smash';
-          shuttle.hitByMaxPower = true;
-          
-          // Activate Cleopatra transform (duration 20s, stats maxed to 5, and turns on Cleopatra dress/armor!)
-          activateTransform(p, 'CLEOPATRA', performance.now() / 1000);
-          
-          triggerShake(16, 0.45);
-          triggerStinger('AMARA', 'SOLAR JUDGMENT', '#fbbf24', 1.8);
+          // Air Ult: "Solar Judgment" — four-beat cinematic buildup (see
+          // startAmaraSolarJudgmentCinematic / tickAmaraSolarJudgment). The shuttle holds
+          // where contact happened and launches once the buildup completes.
+          startAmaraSolarJudgmentCinematic(p);
         }
         else if(id === 'sofia'){
           // Air Ult: "Ghost Step"
@@ -9359,9 +9933,8 @@
     shuttle.cristianoUltScoredBy = null;
     shuttle.cristianoUltKind = null;
     shuttle.sightLineReticle = null;
-    shuttle.puppeteerRealX = undefined;
-    shuttle.puppeteerPauseTimer = 0;
-    shuttle.puppeteerHesitated = false;
+    shuttle.amaraPuppeteerReal = false;
+    shuttle.amaraPuppeteerSeed = 0;
     shuttle.priyaIgnitionTrail = false;
     shuttle.diegoScatter = false;
     shuttle.hideMarkerBeforeCrossNet = false;
@@ -9376,8 +9949,9 @@
     // Amara Puppeteer: rally-scoped state (Cleopatra transform + domain persist across
     // points on their own timers and are intentionally NOT cleared here).
     shuttle.amaraFrozen = false; shuttle.amaraOwner = null; amaraDecoys = [];
-    if (left)  { left.amaraBuildupActive = false;  left.amaraLiveActive = false;  left._amaraLiveStarted = false; }
-    if (right) { right.amaraBuildupActive = false; right.amaraLiveActive = false; right._amaraLiveStarted = false; }
+    if (left)  { left.amaraBuildupActive = false;  left.amaraLiveActive = false;  left._amaraLiveStarted = false;  left.amaraSolarActive = false; }
+    if (right) { right.amaraBuildupActive = false; right.amaraLiveActive = false; right._amaraLiveStarted = false; right.amaraSolarActive = false; }
+    shuttle.amaraSolarRelease = 0; shuttle.amaraSolarOwner = null; shuttle.amaraSolarTargetX = undefined;
     shuttle.isShermanDragonSmash = false;
     shuttle.shermanDragonReleaseTimer = 0; shuttle.shermanDragonTargetX = undefined;
     // Jordan's domain persists across points for its own 30s live window — only wipe the
@@ -9586,9 +10160,10 @@
       shuttle.jordanTempestRelease = 0; shuttle.jordanTempestIsAir = false; shuttle.jordanTempestOwner = null;
       shuttle.jordanPauseHeld = false;
       shuttle.jordanSkip = false; shuttle.noDrag = false;
-      shuttle.puppeteerRealX = undefined; shuttle.puppeteerPauseTimer = 0; shuttle.puppeteerHesitated = false;
+      shuttle.amaraPuppeteerReal = false; shuttle.amaraPuppeteerSeed = 0;
       shuttle.isShermanRain = false; shuttle.rainShuttles = [];
       shuttle.amaraFrozen = false; shuttle.amaraOwner = null; amaraDecoys = [];
+      shuttle.amaraSolarRelease = 0; shuttle.amaraSolarOwner = null; shuttle.amaraSolarTargetX = undefined;
       shuttle.isShermanDragonSmash = false; shuttle.shermanDragonReleaseTimer = 0; shuttle.shermanDragonTargetX = undefined;
       shuttle.sightLineReticle = null; shuttle.ultMarker = null;
       shuttle.hitByMaxPower = false; shuttle.maxPowerDiveApplied = false;
@@ -9630,14 +10205,20 @@
       p.amaraBuildupActive = false; p.amaraBuildupTimer = 0;
       p.amaraLiveActive = false; p.amaraLiveTimer = 0; p._amaraLiveStarted = false;
       p.amaraRealDropped = false; p.amaraSlots = null;
-      p.amaraPowder = 0; p.amaraRift = 0; p.amaraGlow = 0; p.amaraArmor = 0; p.amaraDomainReveal = 0;
-      p.amaraBlindTimer = 0;
-      p._amaraRiftImpact = false; p._amaraTransformImpact = false; p._amaraExpandImpact = false;
+      p.amaraPowder = 0; p.amaraRift = 0; p.amaraGlow = 0; p.amaraArmor = 0; p.amaraFaceCloseup = 0; p.amaraDomainReveal = 0;
+      p._amaraRiftImpact = false; p._amaraTransformImpact = false; p._amaraFaceImpact = false; p._amaraExpandImpact = false;
+      p.amaraCleopatraSource = null;
+      // Amara — Solar Judgment (buildup cinematic: ignition → ascension → gaze → descent)
+      p.amaraSolarActive = false; p.amaraSolarTimer = 0;
+      p.amaraSolarIgnition = 0; p.amaraSolarHaloGrow = 0; p.amaraSolarGaze = 0;
+      p.amaraSolarGazeIn = 0; p.amaraSolarBlowout = 0;
+      p._amaraSolarIgnitionImpact = false; p._amaraSolarAscensionImpact = false;
+      p._amaraSolarGazeImpact = false; p._amaraSolarBloomImpact = false;
+      p._amaraSolarDescentImpact = false; p._amaraSolarLaunched = false;
       // Other character-specific timed states
       p.craterTimer = 0;
       p.deadWeightSwings = 0; p.deadWeightStack = 0; p.deadWeightTimer = 0;
       p.todoGasTimer = 0; p.todoGasStacks = 0;
-      p.solarJudgmentSunTimer = 0;
       p.legendTimer = 0; p.secondGearTimer = 0;
       p.lightFeetTimer = 0;
       p.mayaDinkCount = 0; p.mayaFlowState = false;
@@ -12173,33 +12754,6 @@
       if(p.inTheZoneTimer > 0) p.inTheZoneTimer = Math.max(0, p.inTheZoneTimer - dt);
       if(p.recoveryStanceTimer > 0) p.recoveryStanceTimer = Math.max(0, p.recoveryStanceTimer - dt);
       if(p.groundSlowTimer > 0) p.groundSlowTimer = Math.max(0, p.groundSlowTimer - dt); // Sherman ground-scorch debuff; frozen off-rally
-
-      if(p.solarJudgmentSunTimer > 0) p.solarJudgmentSunTimer = Math.max(0, p.solarJudgmentSunTimer - dt);
-      if(p.amaraBlindTimer > 0) p.amaraBlindTimer = Math.max(0, p.amaraBlindTimer - dt); // Amara decoy blind
-
-      if (p.transform && p.transform.type === 'CLEOPATRA') {
-        if (!p.cleopatraFlashTimer) {
-          p.cleopatraFlashTimer = 0;
-          p.cleopatraNextFlashAt = Math.random() * 2.5 + 1.5; // flash every 1.5 - 4 seconds
-          p.cleopatraFlashDuration = 0.35 + Math.random() * 0.25; // lasts 0.35 - 0.6 seconds
-        }
-        p.cleopatraFlashTimer += dt;
-        if (p.cleopatraFlashTimer >= p.cleopatraNextFlashAt) {
-          p.cleopatraIsFlashing = true;
-          p.cleopatraFlashActiveTimer = p.cleopatraFlashDuration;
-          p.cleopatraFlashTimer = 0;
-          p.cleopatraNextFlashAt = Math.random() * 2.5 + 1.5;
-          p.cleopatraFlashDuration = 0.35 + Math.random() * 0.25;
-        }
-        if (p.cleopatraIsFlashing) {
-          p.cleopatraFlashActiveTimer -= dt;
-          if (p.cleopatraFlashActiveTimer <= 0) {
-            p.cleopatraIsFlashing = false;
-          }
-        }
-      }
-    } else {
-      p.cleopatraIsFlashing = false;
     }
   }
 
@@ -12369,33 +12923,18 @@
     // drops it with the DOWN key (amaraTryDrop clears the flag). No physics, no scoring.
     if (shuttle.amaraFrozen) { shuttle.vx = 0; shuttle.vy = 0; return; }
 
-    // Amara Puppeteer timing hold and re-launch
-    if (shuttle.puppeteerRealX !== undefined && shuttle.puppeteerPauseTimer > 0) {
-      shuttle.puppeteerPauseTimer -= dt;
+    // Amara Solar Judgment cinematic hold — the shuttle stays exactly where racket contact
+    // happened for the whole 4-beat buildup, then launches (see executeAmaraSolarLaunch).
+    if (shuttle.amaraSolarRelease > 0) {
+      shuttle.amaraSolarRelease -= dt;
       shuttle.vx = 0;
       shuttle.vy = 0;
-      if (shuttle.puppeteerPauseTimer <= 0) {
-        shuttle.puppeteerPauseTimer = 0;
-        shuttle.puppeteerHesitated = true;
-        const targetX = shuttle.puppeteerRealX;
-        ultLaunchToward(targetX, 420, 2.0); // drop into forecourt
-        playSound('smash');
-        triggerShake(12, 0.35);
-        for (let k = 0; k < 12; k++) {
-          particles.push({
-            x: shuttle.x,
-            y: shuttle.y,
-            vx: (Math.random() - 0.5) * 200,
-            vy: (Math.random() - 0.5) * 200,
-            color: '#22d3ee',
-            size: Math.random() * 4 + 1.5,
-            alpha: 1.0,
-            decay: 2.0,
-            gravity: 20
-          });
-        }
+      if (shuttle.amaraSolarRelease <= 0) {
+        shuttle.amaraSolarRelease = 0;
+        const ap = shuttle.amaraSolarOwner === 'left' ? left : right;
+        if (ap) executeAmaraSolarLaunch(ap);
       }
-      return; // Freeze flight update while paused
+      return;
     }
 
     // Sherman Imperial Dragon Descent: the dragon eats the shuttle and carries it off; once
@@ -12614,9 +13153,13 @@
       }
     }
 
-    trail.push({x: shuttle.x, y: shuttle.y, kind: shuttle.kind});
-    const maxLen = shuttle.kind === 'smash' ? TRAIL_LENGTH_SMASH : TRAIL_LENGTH;
-    while(trail.length > maxLen) trail.shift();
+    // Amara Puppeteer: skip the normal ribbon trail on the real dropped shuttle — the decoys
+    // don't have one, so leaving it on would be a giveaway over the course of the flight.
+    if (!shuttle.amaraPuppeteerReal) {
+      trail.push({x: shuttle.x, y: shuttle.y, kind: shuttle.kind});
+      const maxLen = shuttle.kind === 'smash' ? TRAIL_LENGTH_SMASH : TRAIL_LENGTH;
+      while(trail.length > maxLen) trail.shift();
+    }
 
     // Net collision: a shuttle that clips the thin top TAPE plays a real "net cord" shot.
     // The net absorbs significant energy (70%), but remaining momentum (30%) varies with
@@ -12818,7 +13361,10 @@
           // Amara's Puppeteer buildup locks everyone the same way while the powder → rift →
           // transform → expand cinematic plays out; control returns when the domain forms.
           const amaraBuildup = !!(left.amaraBuildupActive || right.amaraBuildupActive);
-          const cinematicLock = tempestActive || amaraBuildup;
+          // Amara's Solar Judgment buildup locks everyone for its ignition → ascension → gaze
+          // → descent cinematic too; control returns the instant the shuttle launches.
+          const amaraSolar = !!(left.amaraSolarActive || right.amaraSolarActive);
+          const cinematicLock = tempestActive || amaraBuildup || amaraSolar;
 
           if(!jordanPaused && !cinematicLock) updateAI(simDt, nowSec);
           updateAttractMode(nowSec, simDt); // main-menu living background — no-ops unless state === 'start'
@@ -12885,6 +13431,8 @@
           tickAmaraLive(left, simDt);        // held-phase timer / auto-drop
           tickAmaraLive(right, simDt);
           tickAmaraDecoys(simDt);            // falling decoy shuttlecocks
+          tickAmaraSolarJudgment(left, simDt);  // Amara buildup cinematic (Solar Judgment)
+          tickAmaraSolarJudgment(right, simDt);
           applyPassiveMomentumTrickle(left, simDt);  // Cristiano Spotlight (Part 3)
           applyPassiveMomentumTrickle(right, simDt);
           regenStamina(left, simDt);  // Stamina regen while grounded & idle (Part 5.1)
@@ -14404,7 +14952,10 @@
   // ===========================================================================
   let activeDomain = null; // { ownerSide: 'left'|'right', charId: string, name: string, color: string, timer: number, maxTimer: number }
 
-  function triggerDomainExpansion(p, name, color, duration = 15.0) {
+  // `opts.quiet` registers the domain without the usual announcement package (shake, float
+  // text, stinger). Used when the domain opens during a beat whose whole point is stillness —
+  // firing a 20-magnitude shake and a banner over a held, motionless close-up fought the shot.
+  function triggerDomainExpansion(p, name, color, duration = 15.0, opts) {
     if (!p) return;
     const charId = p.character ? p.character.id : 'sherman';
     activeDomain = {
@@ -14417,6 +14968,7 @@
     };
     p.domainExpansionActive = true;
     p.domainExpansionTimer = duration;
+    if (opts && opts.quiet) return;
     playSound('subbass');
     triggerShake(20, 0.5);
     spawnFloatText(p.x + PLAYER_W/2, p.y - 40, 'DOMAIN EXPANSION: ' + name.toUpperCase() + ' 🔮', color);
@@ -14864,12 +15416,15 @@
   // quantum-tear mask during the reveal. Tuned to flex: giant pulsing Ra sun, rotating
   // god-rays, a colossal Eye of Ra, an ankh halo, layered dunes, chunky Giza pyramids, the
   // Sphinx, glyph obelisks, oases and drifting golden glyph-dust.
-  function drawEgyptianDomainPixel(p){
+  function drawEgyptianDomainPixel(p, opts){
     const now = performance.now() * 0.001;
     const U = COURT_PIXEL_UNIT;
     const q = function(v){ return Math.round(v / U) * U; };
     const g = domPixelCtx();
     g.save();
+    // Solar Judgment biases the whole sanctum toward amber/gold; Puppeteer keeps the
+    // cyan-dominant dusk. One palette switch rather than a duplicated draw function.
+    const solarBias = !!(opts && opts.solar);
 
     // ---- pixel primitives (hard edges, grid-snapped) ----
     const rect = function(x, y, w, h, c){ g.fillStyle = c; g.fillRect(q(x), q(y), q(w) + U, q(h) + U); };
@@ -14902,8 +15457,14 @@
       if (capstone){ rect(cx - w*0.06, baseY - h, w*0.12, h*0.10, '#fffbe0'); }
     };
 
-    // 1) Posterized dusk sky — hard bands (cosmic midnight → glowing sand)
-    const bands = [
+    // 1) Posterized dusk sky — hard bands (cosmic midnight → glowing sand).
+    // Solar Judgment swaps to a noon-blaze ramp: the indigo/violet stops become deep bronze
+    // and copper so her Air domain reads as scorching gold rather than Ground's cool dusk.
+    const bands = solarBias ? [
+      ['#1a0b04', 0.16], ['#3d1505', 0.32], ['#6b2408', 0.47],
+      ['#9c3d0a', 0.60], ['#c8600f', 0.72], ['#e8901c', 0.83],
+      ['#f7b733', 0.93], ['#ffe08a', 1.00]
+    ] : [
       ['#0b0f19', 0.16], ['#181551', 0.32], ['#3d1275', 0.47],
       ['#7a1f6e', 0.60], ['#b6355a', 0.72], ['#e0652b', 0.83],
       ['#f5a623', 0.93], ['#f7cf67', 1.00]
@@ -14916,7 +15477,9 @@
     }
 
     // 2) Aurora nebula ribbons drifting high in the sky (translucent aura sheets)
-    const aur = ['rgba(120,60,190,0.16)', 'rgba(34,211,238,0.12)', 'rgba(236,120,180,0.10)'];
+    const aur = solarBias
+      ? ['rgba(255,170,60,0.16)', 'rgba(254,240,138,0.12)', 'rgba(220,120,40,0.10)']
+      : ['rgba(120,60,190,0.16)', 'rgba(34,211,238,0.12)', 'rgba(236,120,180,0.10)'];
     for (let a = 0; a < 3; a++){
       g.fillStyle = aur[a];
       const yBase = 70 + a * 34;
@@ -15018,32 +15581,88 @@
     rect(0, GROUND_Y - 20, W, 20, '#e0842b');
     rect(0, GROUND_Y, W, H - GROUND_Y, '#c96f22');
 
-    // 12) Twin oases (turquoise pools + pixel palms)
+    // 12) Twin oases (pools + pixel palms) — sun-scorched copper under Solar Judgment
     [q(COURT_LEFT + 120), q(COURT_RIGHT - 120)].forEach(function(oxp, i){
-      disc(oxp, GROUND_Y - 2, q(30), '#0e7490');
-      disc(oxp, GROUND_Y - 4, q(20), '#22d3ee');
+      disc(oxp, GROUND_Y - 2, q(30), solarBias ? '#8a4a12' : '#0e7490');
+      disc(oxp, GROUND_Y - 4, q(20), solarBias ? '#f7b733' : '#22d3ee');
       rect(oxp + (i? -34 : 24), GROUND_Y - 44, U*2, 44, '#4d2a12');     // palm trunk
       for (let fr = 0; fr < 5; fr++){ const a = (fr/5)*Math.PI - Math.PI*0.1; rect(oxp + (i? -34 : 24) + Math.cos(a)*18, GROUND_Y - 46 + Math.sin(a)*10 - 8, U*3, U*2, '#15803d'); }
     });
 
     // 13) Drifting golden glyph-dust motes (aura)
+    const moteAlt = solarBias ? 'rgba(255,170,60,' : 'rgba(34,211,238,';
     for (let i = 0; i < 30; i++){
       const bx = q(((i * 191.7) + now * (12 + (i % 5) * 7)) % W);
       const by = q(GROUND_Y - (((i * 141.3) + now * (16 + (i % 4) * 9)) % (GROUND_Y * 0.9)));
       const ba = 0.25 + 0.3 * Math.abs(Math.sin(now * 1.2 + i));
-      rect(bx, by, (i % 4 === 0) ? U*2 : U, (i % 4 === 0) ? U*2 : U, (i % 3 === 0 ? 'rgba(34,211,238,' : 'rgba(254,240,138,') + ba + ')');
+      rect(bx, by, (i % 4 === 0) ? U*2 : U, (i % 4 === 0) ? U*2 : U, (i % 3 === 0 ? moteAlt : 'rgba(254,240,138,') + ba + ')');
     }
 
     g.restore();
 
-    // Blit — through the widening quantum-tear mask while the reveal is mid-animation,
-    // otherwise the whole screen (fully-formed domain).
+    // Blit — nothing until the reveal actually starts (still 0), through the widening mask
+    // while it's mid-animation, otherwise the whole screen (fully-formed domain).
+    // `fade` (0..1) lets the caller dissolve the whole sanctum out at the end of its window
+    // instead of letting it vanish between one frame and the next.
     const rev = p ? p.amaraDomainReveal : undefined;
-    if (rev !== undefined && rev > 0.001 && rev < 0.999){
-      blitDomBuffer(function(c){ amaraTearPath(c, W/2, rev); });
+    const fade = (opts && typeof opts.fade === 'number') ? opts.fade : 1;
+    if (fade <= 0.001) { return; }
+    if (rev !== undefined && rev <= 0.001){
+      return; // not revealed yet — let the normal court show through
+    }
+    ctx.save();
+    if (fade < 0.999) ctx.globalAlpha = fade;
+    if (rev !== undefined && rev < 0.999){
+      blitDomBuffer(function(c){ amaraRevealPath(c, p, rev); });
     } else {
       blitDomBuffer(null);
     }
+    ctx.restore();
+  }
+
+  // How opaque Amara's sanctum should be this frame. The domain used to vanish between one
+  // frame and the next the instant its timer hit zero (or her Cleopatra transform lapsed),
+  // which read as a glitch. This dissolves it over the final AMARA_DOMAIN_FADE seconds of
+  // whichever clock is actually keeping it alive.
+  const AMARA_DOMAIN_FADE = 1.4;
+  function amaraDomainFade(p){
+    if (!p) return 0;
+    if (activeDomain && activeDomain.charId === 'amara' && activeDomain.ownerSide === p.side && activeDomain.timer > 0){
+      return amClamp01(activeDomain.timer / AMARA_DOMAIN_FADE);
+    }
+    if (p.transform && p.transform.type === 'CLEOPATRA'){
+      return amClamp01(p.transform.remain / AMARA_DOMAIN_FADE);
+    }
+    return 0;
+  }
+
+  // The sanctum plus the glowing rim traced along whichever reveal front is currently opening
+  // (Puppeteer's torn rip / Solar Judgment's sun bloom), so the edge always matches the shape
+  // actually being used as the blit mask.
+  function drawAmaraDomainWithEdge(p, rev, fade){
+    if (fade <= 0.001) return;
+    const shape = amaraRevealShapeFor(p);
+    drawEgyptianDomainPixel(p, { solar: shape.solar, fade: fade });
+    if (!(rev > 0.001 && rev < 0.999)) return;
+    // Rim brightens as the front accelerates then fades as it settles — so the wipe has a
+    // visible leading edge instead of a constant-width outline.
+    const heat = Math.sin(amClamp01(rev) * Math.PI);
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.beginPath(); amaraRevealPath(ctx, p, rev);
+    if (shape.solar){
+      ctx.strokeStyle = 'rgba(255,214,110,' + (0.85*heat).toFixed(3) + ')'; ctx.lineWidth = 7;
+      ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 30; ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,' + (0.9*heat).toFixed(3) + ')'; ctx.lineWidth = 2.0;
+      ctx.shadowBlur = 8; ctx.stroke();
+    } else {
+      ctx.strokeStyle = 'rgba(34,211,238,' + (0.85*heat).toFixed(3) + ')'; ctx.lineWidth = 5;
+      ctx.shadowColor = '#22d3ee'; ctx.shadowBlur = 22; ctx.stroke();
+      ctx.strokeStyle = 'rgba(254,240,138,' + (0.9*heat).toFixed(3) + ')'; ctx.lineWidth = 1.8;
+      ctx.shadowBlur = 6; ctx.stroke();
+    }
+    ctx.restore();
   }
 
   function drawEgyptianCourtFull(p) {
@@ -15659,220 +16278,74 @@
     ctx.restore();
   }
 
-  function drawSolarJudgmentSun(p) {
-    const minX = p.side === 'left' ? COURT_LEFT : NET_X;
-    const maxX = p.side === 'left' ? NET_X : COURT_RIGHT;
-    const width = maxX - minX;
-    const cx = (minX + maxX) / 2;
-    const cy = 100; // High up in the sky
-
-    const progress = p.solarJudgmentSunTimer / 1.8; // Fades out from 1.0 down to 0
-    if (progress <= 0) return;
-
-    ctx.save();
-
-    // ==========================================
-    // 1. AMAZING WINGED SOLAR DISC (EGYPTIAN DEITY DECORATION)
-    // ==========================================
+  // Sun-disk halo that ignites behind Amara's head during Solar Judgment's ASCENSION beat and
+  // holds through THE GAZE — a winged solar disc + corona + Aten-style rays.
+  // Position is passed in because the two beats live in different coordinate spaces:
+  // ASCENSION anchors it to her actual head in world space (it has to ride the camera as it
+  // pushes in), THE GAZE anchors it behind the screen-space portrait card. Hard-coding screen
+  // centre made it detach from her during ASCENSION.
+  function drawAmaraSolarHalo(alpha, atX, atY, scale){
+    if (alpha <= 0.001) return;
+    const cx = (atX === undefined) ? W/2 : atX;
+    const cy = (atY === undefined) ? (H*0.42 - Math.min(W,H)*0.02) : atY;
+    const k  = (scale === undefined) ? 1 : scale;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = progress;
+    ctx.globalAlpha = alpha;
+    ctx.translate(cx, cy);
+    ctx.scale(k, k);
+    ctx.translate(-cx, -cy);
 
-    // Wing gradient
+    // Winged solar disc
     const wingGrad = ctx.createLinearGradient(cx - 160, cy, cx + 160, cy);
-    wingGrad.addColorStop(0, 'rgba(217, 119, 6, 0.05)');  // copper orange
-    wingGrad.addColorStop(0.3, '#d97706');               // golden amber
-    wingGrad.addColorStop(0.5, '#fef08a');               // bright gold
+    wingGrad.addColorStop(0, 'rgba(217, 119, 6, 0.05)');
+    wingGrad.addColorStop(0.3, '#d97706');
+    wingGrad.addColorStop(0.5, '#fef08a');
     wingGrad.addColorStop(0.7, '#d97706');
     wingGrad.addColorStop(1, 'rgba(217, 119, 6, 0.05)');
-    
-    // Draw left wing
     ctx.fillStyle = wingGrad;
     ctx.beginPath();
     ctx.moveTo(cx, cy);
-    ctx.bezierCurveTo(cx - 50, cy - 35, cx - 110, cy - 25, cx - 160, cy - 5); // top curve
-    ctx.bezierCurveTo(cx - 120, cy + 25, cx - 70, cy + 30, cx, cy + 5);      // bottom curve
-    ctx.closePath();
-    ctx.fill();
-
-    // Draw right wing
+    ctx.bezierCurveTo(cx - 50, cy - 35, cx - 110, cy - 25, cx - 160, cy - 5);
+    ctx.bezierCurveTo(cx - 120, cy + 25, cx - 70, cy + 30, cx, cy + 5);
+    ctx.closePath(); ctx.fill();
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.bezierCurveTo(cx + 50, cy - 35, cx + 110, cy - 25, cx + 160, cy - 5);
     ctx.bezierCurveTo(cx + 120, cy + 25, cx + 70, cy + 30, cx, cy + 5);
-    ctx.closePath();
-    ctx.fill();
-
-    // Add gold feather details
-    ctx.strokeStyle = '#fef08a';
-    ctx.lineWidth = 1.5;
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#fef08a'; ctx.lineWidth = 1.5;
     for (let f = 1; f <= 5; f++) {
       const spread = f * 30;
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.quadraticCurveTo(cx - spread/2, cy + 15, cx - spread, cy + 5 - f*2);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.quadraticCurveTo(cx + spread/2, cy + 15, cx + spread, cy + 5 - f*2);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.quadraticCurveTo(cx - spread/2, cy + 15, cx - spread, cy + 5 - f*2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.quadraticCurveTo(cx + spread/2, cy + 15, cx + spread, cy + 5 - f*2); ctx.stroke();
     }
-    ctx.restore();
 
-    // ==========================================
-    // 2. HIGH-INTENSITY GEOMETRIC SUN AND SOLAR RAYS
-    // ==========================================
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-
-    // Massive corona glow
-    const corona = ctx.createRadialGradient(cx, cy, 5, cx, cy, 140);
-    corona.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
-    corona.addColorStop(0.2, `rgba(254, 240, 138, ${progress})`); // white-gold
-    corona.addColorStop(0.6, `rgba(249, 115, 22, ${progress * 0.75})`); // radiant orange
-    corona.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    // Corona + Aten-style rays directly behind her head
+    const corona = ctx.createRadialGradient(cx, cy, 5, cx, cy, 150);
+    corona.addColorStop(0, 'rgba(255,255,255,1.0)');
+    corona.addColorStop(0.2, `rgba(254,240,138,${alpha})`);
+    corona.addColorStop(0.6, `rgba(249,115,22,${alpha*0.75})`);
+    corona.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = corona;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 140, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, cy, 150, 0, Math.PI*2); ctx.fill();
 
-    // Center Sun core (White-hot yellow)
-    ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = '#fbbf24';
-    ctx.shadowBlur = 30;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 32, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0; // reset
-
-    // Draw Aten-style sunrays ending in tiny hands pointing down/out!
     const rayCount = 18;
-    ctx.strokeStyle = `rgba(254, 240, 138, ${progress * 0.85})`;
+    ctx.strokeStyle = `rgba(254,240,138,${alpha*0.85})`;
     for (let i = 0; i < rayCount; i++) {
-      // we only care about rays pointing generally downward/outward (from 0 to PI)
-      const angle = (i * Math.PI * 2 / rayCount) + (performance.now() * 0.0006);
-      const isDownward = Math.sin(angle) > -0.2; // mostly pointing down
-      const length = isDownward ? (130 + Math.sin(performance.now() * 0.008 + i) * 15) : 80;
-      
-      const rx1 = cx + Math.cos(angle) * 32;
-      const ry1 = cy + Math.sin(angle) * 32;
-      const rx2 = cx + Math.cos(angle) * length;
-      const ry2 = cy + Math.sin(angle) * length;
-      
-      // Draw geometric tapered rays (narrow triangle)
-      ctx.fillStyle = `rgba(254, 240, 138, ${progress * 0.18})`;
+      const angle = (i * Math.PI*2 / rayCount) + performance.now()*0.0006;
+      const length = 120 + Math.sin(performance.now()*0.008 + i) * 14;
+      const rx1 = cx + Math.cos(angle)*34, ry1 = cy + Math.sin(angle)*34;
+      const rx2 = cx + Math.cos(angle)*length, ry2 = cy + Math.sin(angle)*length;
+      ctx.fillStyle = `rgba(254,240,138,${alpha*0.18})`;
       ctx.beginPath();
       ctx.moveTo(rx1 - Math.sin(angle)*3, ry1 + Math.cos(angle)*3);
       ctx.lineTo(rx1 + Math.sin(angle)*3, ry1 - Math.cos(angle)*3);
       ctx.lineTo(rx2, ry2);
-      ctx.closePath();
-      ctx.fill();
-
-      // Ray outline line
+      ctx.closePath(); ctx.fill();
       ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(rx1, ry1);
-      ctx.lineTo(rx2, ry2);
-      ctx.stroke();
-
-      // Aten's little solar hand!
-      if (isDownward) {
-        ctx.fillStyle = `rgba(254, 240, 138, ${progress * 0.9})`;
-        ctx.beginPath();
-        ctx.arc(rx2, ry2, 3.5, 0, Math.PI * 2);
-        ctx.fill();
-        // Tiny little ray finger lines
-        ctx.lineWidth = 1;
-        for (let f = -1; f <= 1; f++) {
-          const fa = angle + f * 0.25;
-          ctx.beginPath();
-          ctx.moveTo(rx2, ry2);
-          ctx.lineTo(rx2 + Math.cos(fa) * 5, ry2 + Math.sin(fa) * 5);
-          ctx.stroke();
-        }
-      }
+      ctx.beginPath(); ctx.moveTo(rx1, ry1); ctx.lineTo(rx2, ry2); ctx.stroke();
     }
-    ctx.restore();
-
-    // ==========================================
-    // 3. ULTRA BLINDING SOLAR GLARE ON AMARA'S COURT SIDE
-    // ==========================================
-    // "like almost blind Amara's side, making the opponent truly guess the shuttlecock projection"
-    // We draw an extremely thick, saturated golden white glare overlay over Amara's half of the court
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(minX, 0, width, GROUND_Y);
-    ctx.clip();
-
-    const blindingAlpha = progress * 0.94; // Extremely intense blinding light!
-    
-    // Multi-stage radial glare originating from the sun and wash out the entire half-court
-    const glare = ctx.createRadialGradient(cx, cy, 20, cx, GROUND_Y * 0.6, GROUND_Y * 0.9);
-    glare.addColorStop(0, `rgba(255, 255, 255, ${blindingAlpha})`);
-    glare.addColorStop(0.2, `rgba(254, 240, 138, ${blindingAlpha})`);
-    glare.addColorStop(0.5, `rgba(245, 158, 11, ${blindingAlpha * 0.65})`);
-    glare.addColorStop(0.9, `rgba(254, 240, 138, ${blindingAlpha * 0.15})`);
-    glare.addColorStop(1.0, 'rgba(0, 0, 0, 0)');
-    
-    ctx.fillStyle = glare;
-    ctx.fillRect(minX, 0, width, GROUND_Y);
-
-    // Add extra pure-white overlay band over the racket impact zone to absolutely blind the swing
-    const washGrad = ctx.createLinearGradient(minX, cy, maxX, cy + 200);
-    washGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
-    washGrad.addColorStop(0.5, `rgba(255, 255, 255, ${blindingAlpha * 0.55})`);
-    washGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-    ctx.fillStyle = washGrad;
-    ctx.fillRect(minX, 0, width, GROUND_Y);
-
-    ctx.restore();
-
-    ctx.restore();
-  }
-
-  // Solar Judgment glare chase — drawn AFTER the shuttle/trail each frame (see draw()) so it
-  // actually sits on top of the ball instead of underneath it. Paints the real shuttle position
-  // plus two wobbling "mirage" blooms of identical size/brightness nearby; because all three
-  // look the same, the opponent can't tell the real one apart from the decoys by eye, which is
-  // what actually makes the trajectory hard to read (the ground-level glare alone never touched
-  // the shuttle itself, since drawCourt() runs before the shuttle is drawn).
-  function drawSolarJudgmentGlareChase(){
-    const amaraP = (left && left.solarJudgmentSunTimer > 0) ? left : ((right && right.solarJudgmentSunTimer > 0) ? right : null);
-    if(!amaraP || !shuttle.active) return;
-    const progress = amaraP.solarJudgmentSunTimer / 1.8;
-    if(progress <= 0) return;
-    const t = performance.now() * 0.001;
-
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-
-    const spots = [
-      { x: shuttle.x, y: shuttle.y },
-      { x: shuttle.x + Math.sin(t*9.0)*34,        y: shuttle.y + Math.cos(t*7.0)*22 },
-      { x: shuttle.x + Math.sin(t*6.4 + 2.1)*46,  y: shuttle.y + Math.cos(t*8.3 + 1.4)*28 }
-    ];
-    for(let i = 0; i < spots.length; i++){
-      const s = spots[i];
-      const flicker = 0.75 + Math.sin(t*30 + i*7) * 0.2;
-      const r = 30 * progress * flicker;
-      const glow = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r);
-      glow.addColorStop(0, `rgba(255,255,255,${0.95*progress})`);
-      glow.addColorStop(0.45, `rgba(254,240,138,${0.7*progress})`);
-      glow.addColorStop(1, 'rgba(254,240,138,0)');
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, r, 0, Math.PI*2);
-      ctx.fill();
-    }
-
-    // A horizontal band of glare at the ball's current height, so even the altitude is fuzzy
-    const bandAlpha = 0.26 * progress;
-    const bandGrad = ctx.createLinearGradient(0, shuttle.y - 26, 0, shuttle.y + 26);
-    bandGrad.addColorStop(0, 'rgba(254,240,138,0)');
-    bandGrad.addColorStop(0.5, `rgba(255,255,255,${bandAlpha})`);
-    bandGrad.addColorStop(1, 'rgba(254,240,138,0)');
-    ctx.fillStyle = bandGrad;
-    ctx.fillRect(0, shuttle.y - 26, W, 52);
 
     ctx.restore();
   }
@@ -15964,19 +16437,12 @@
       switch (dId) {
         case 'sherman': drawShermanMandateDomainFull(domainPlayer); break;
         case 'amara': {
-          // Pixel-native domain; the tear reveal is handled by the blit mask inside.
-          drawEgyptianDomainPixel(domainPlayer);
+          // Skip the whole domain draw entirely until the reveal actually begins — the earlier
+          // beats (powder/rift/transform for Puppeteer, ignition/ascension for Solar Judgment)
+          // show the untouched court, same idea as Jordan's circR gate below.
           const rev = domainPlayer.amaraDomainReveal;
-          if (rev !== undefined && rev > 0.001 && rev < 0.999) {
-            // glowing torn edges of the widening quantum rip (full-res accent on top)
-            ctx.save();
-            ctx.globalCompositeOperation = 'lighter';
-            ctx.beginPath(); amaraTearPath(ctx, W/2, rev);
-            ctx.strokeStyle = 'rgba(34,211,238,0.85)'; ctx.lineWidth = 5;
-            ctx.shadowColor = '#22d3ee'; ctx.shadowBlur = 22; ctx.stroke();
-            ctx.strokeStyle = 'rgba(254,240,138,0.9)'; ctx.lineWidth = 1.8; ctx.shadowBlur = 6; ctx.stroke();
-            ctx.restore();
-          }
+          if (!(rev > 0)) break;
+          drawAmaraDomainWithEdge(domainPlayer, rev, amaraDomainFade(domainPlayer));
           break;
         }
         case 'benjamin':
@@ -16029,27 +16495,24 @@
     }
 
     const cleopatraPlayer = (left && left.transform && left.transform.type === 'CLEOPATRA') ? left : ((right && right.transform && right.transform.type === 'CLEOPATRA') ? right : null);
-    if (!domainPlayer && cleopatraPlayer) {
-      drawEgyptianDomainPixel(cleopatraPlayer);
-      if (cleopatraPlayer.cleopatraIsFlashing) {
-        const oppSide = cleopatraPlayer.side === 'left' ? 'right' : 'left';
-        drawOpponentBlindingFlash(oppSide);
-      }
-      if (cleopatraPlayer.solarJudgmentSunTimer > 0) {
-        drawSolarJudgmentSun(cleopatraPlayer);
-      }
+    // Same reveal gate as the 'amara' domain case above — Cleopatra activates mid-buildup
+    // (TRANSFORM for Puppeteer, ASCENSION for Solar Judgment), well before the reveal front
+    // starts, so without this the domain would snap in instantly instead of waiting for it.
+    // Routed through the same helper so the fallback window keeps the palette, the reveal
+    // edge and the end-of-window dissolve rather than being a second, subtly different draw.
+    if (!domainPlayer && cleopatraPlayer && (cleopatraPlayer.amaraDomainReveal||0) > 0) {
+      drawAmaraDomainWithEdge(cleopatraPlayer, cleopatraPlayer.amaraDomainReveal, amaraDomainFade(cleopatraPlayer));
     }
 
-    // Amara Puppeteer — the opponent's half strobes at full intensity for the whole
-    // ultimate (while her Cleopatra form is up) so the real drop is a pure guess, and a
-    // decoy the opponent touches blinds their half harder for a second on top of that.
-    const amaraFlashP = (left && left.transform && left.transform.type === 'CLEOPATRA' && left.character && left.character.id === 'amara') ? left
-                      : (right && right.transform && right.transform.type === 'CLEOPATRA' && right.character && right.character.id === 'amara') ? right : null;
+    // Amara Puppeteer — the opponent's half strobes at full intensity for the whole ultimate
+    // (while her Cleopatra form is up) so the real drop is a pure guess. Gated to Puppeteer's
+    // own Cleopatra window (amaraCleopatraSource) — Solar Judgment applies the same transform
+    // but is meant to be fully telegraphed, so it must NOT trigger this strobe.
+    const amaraFlashP = (left && left.transform && left.transform.type === 'CLEOPATRA' && left.character && left.character.id === 'amara' && left.amaraCleopatraSource === 'puppeteer') ? left
+                      : (right && right.transform && right.transform.type === 'CLEOPATRA' && right.character && right.character.id === 'amara' && right.amaraCleopatraSource === 'puppeteer') ? right : null;
     if (amaraFlashP) {
       drawOpponentBlindingFlash(amaraFlashP.side === 'left' ? 'right' : 'left');
     }
-    if (left  && (left.amaraBlindTimer||0)  > 0) drawOpponentBlindingFlash('left');
-    if (right && (right.amaraBlindTimer||0) > 0) drawOpponentBlindingFlash('right');
 
     const amenPlayer = (left && left.transform && left.transform.type === 'AMEN') ? left : ((right && right.transform && right.transform.type === 'AMEN') ? right : null);
     const amenOppSide = amenPlayer ? (amenPlayer.side === 'left' ? 'right' : 'left') : null;
@@ -16261,7 +16724,7 @@
         maya: '#d8b4fe',      // Air: purple-magenta / Sight Line
         jordan: '#e5e7eb',     // Air: near-white / Thunder Break Descent (void aesthetic)
         kenji: '#059669',      // Air: deep emerald / Hang Time
-        amara: '#06b6d4',      // Air: neon cyan / Crosshairs
+        amara: '#fbbf24',      // Air: gold / Solar Judgment
         sofia: '#ec4899',      // Air: hot pink / Ghost Step
         diego: '#dc2626',      // Air: dark crimson / El Mazo
         priya: '#ff2d6b',      // Air: neon fuchsia / Afterburner
@@ -17373,13 +17836,21 @@
       ctx.restore();
     }
 
-    ctx.save();
-    ctx.translate(shuttle.x, shuttle.y);
     // Orient by actual trajectory: cork leads, feathers trail opposite the velocity vector.
     const speedSq = shuttle.vx*shuttle.vx + shuttle.vy*shuttle.vy;
     if(speedSq > SHUTTLE_ROTATION_MIN_SPEED_SQ){
       shuttle.angle = Math.atan2(shuttle.vy, shuttle.vx) - Math.PI/2;
     }
+
+    // Amara Puppeteer: the real shuttle, once dropped, renders through the same
+    // glitter-shuttlecock path as the decoys so it can't be picked out mid-flight.
+    if (shuttle.amaraPuppeteerReal) {
+      drawAmaraGlitterShuttlecock(shuttle.x, shuttle.y, shuttle.angle, shuttle.amaraPuppeteerSeed || 0);
+      return;
+    }
+
+    ctx.save();
+    ctx.translate(shuttle.x, shuttle.y);
     ctx.rotate(shuttle.angle);
     ctx.shadowColor = 'rgba(0,0,0,0.5)';
     ctx.shadowBlur = 4;
@@ -17726,19 +18197,6 @@
       ctx.arc(ret.targetX, GROUND_Y, 8, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(216,180,254, 0.5)';
       ctx.fill();
-      ctx.restore();
-    }
-
-    if (shuttle.puppeteerRealX !== undefined && shuttle.active) {
-      ctx.save();
-      ctx.strokeStyle = 'rgba(34,211,238, 0.35)';
-      ctx.lineWidth = 1.0;
-      ctx.setLineDash([2, 3]);
-      // Draw a string from shuttle upwards to the ceiling, indicating strings
-      ctx.beginPath();
-      ctx.moveTo(shuttle.x, shuttle.y);
-      ctx.lineTo(shuttle.x, 0);
-      ctx.stroke();
       ctx.restore();
     }
 
@@ -18845,6 +19303,7 @@
     //   EXPAND   : pull back out to a normal wide framing so the domain reveal reads
     const jordanCinP = (left && left.jordanTempestActive) ? left : ((right && right.jordanTempestActive) ? right : null);
     const amaraCinP = (left && left.amaraBuildupActive) ? left : ((right && right.amaraBuildupActive) ? right : null);
+    const amaraSolarCinP = (left && left.amaraSolarActive) ? left : ((right && right.amaraSolarActive) ? right : null);
     const amaraCenterP = (left && (left.amaraLiveActive || (left.transform && left.transform.type === 'CLEOPATRA' && left.character && left.character.id === 'amara'))) ? left
                        : (right && (right.amaraLiveActive || (right.transform && right.transform.type === 'CLEOPATRA' && right.character && right.character.id === 'amara'))) ? right : null;
     if (jordanCinP && dynamicCameraEnabled) {
@@ -18891,12 +19350,45 @@
         targetCamX = (ax - W/2) * (0.25 + easeIn*0.6);
         targetCamY = (ay - H/2) * (0.2 + easeIn*0.55) - 40*(1-easeIn);
         targetCamZoom = 1.10 + easeIn*1.25;
+      } else if (elapsed < T.faceEnd) {
+        // FACE — held tight at the transform's push-in; the full-screen portrait overlay
+        // (drawAmaraPortrait) covers everything anyway, same idea as Jordan's FACE hold.
+        targetCamX = (ax - W/2) * 0.85;
+        targetCamY = (ay - H/2) * 0.75;
+        targetCamZoom = 2.35;
       } else {
-        const u = Math.min(1,(elapsed - T.transformEnd)/AMARA_EXPAND);
+        const u = Math.min(1,(elapsed - T.faceEnd)/AMARA_EXPAND);
         const easeOut = 1 - Math.pow(1-u,3);
         targetCamX = (ax - W/2) * (0.85*(1-easeOut));
         targetCamY = ((ay - H/2)*0.75)*(1-easeOut);
         targetCamZoom = 2.35 - easeOut*1.35;
+      }
+    } else
+    // Amara Solar Judgment buildup — one continuous slow push-in through IGNITION/ASCENSION,
+    // a held static framing for THE GAZE, then a pull-back that begins UNDER the dissolving
+    // close-up so the sun bloom opens into an already-widening frame (rather than the camera
+    // only starting to move once DESCENT begins, which left the bloom cramped at 1.9x).
+    if (amaraSolarCinP && dynamicCameraEnabled) {
+      const T = amaraSolarPhaseTimes();
+      const elapsed = AMARA_SOLAR_BUILDUP - Math.max(0, amaraSolarCinP.amaraSolarTimer);
+      const ax = amaraSolarCinP.x + PLAYER_W/2;
+      const ay = amaraSolarCinP.y + PLAYER_H*0.4;
+      if (elapsed < T.ascensionEnd) {
+        const u = amEaseInOut(elapsed / Math.max(0.0001, T.ascensionEnd));
+        targetCamX = (ax - W/2) * (u*0.7);
+        targetCamY = (ay - H/2) * (u*0.6);
+        targetCamZoom = 1.0 + u*0.9;
+      } else if (elapsed < T.gazeEnd) {
+        const u = (elapsed - T.ascensionEnd) / AMARA_GAZE;
+        // Held dead still for the first ~68% — the stillness IS the beat. Then ease back out
+        // in lockstep with the bloom starting behind her.
+        const back = amEaseInOut(amClamp01((u - AMARA_SOLAR_BLOOM_START) / (1 - AMARA_SOLAR_BLOOM_START)));
+        targetCamX = (ax - W/2) * 0.7 * (1 - back);
+        targetCamY = (ay - H/2) * 0.6 * (1 - back);
+        targetCamZoom = 1.9 - back*0.9;
+      } else {
+        // DESCENT — settled at normal gameplay framing for the launch.
+        targetCamX = 0; targetCamY = 0; targetCamZoom = 1.0;
       }
     } else if (amaraCenterP && dynamicCameraEnabled) {
       // Puppeteer live / Cleopatra window — the camera stays dead-center (no shuttle follow)
@@ -19029,6 +19521,7 @@
     drawPlayer(left);
     drawPlayer(right);
     drawAmaraCinematic(); // Puppeteer buildup overlays (powder, rift, transform glow, reveal)
+    drawAmaraSolarCinematic(); // Solar Judgment buildup overlays (ignition, ascension, gaze)
     if (left && left.shermanDragonAirTimer > 0) drawShermanCoiledDragon(left);
     if (right && right.shermanDragonAirTimer > 0) drawShermanCoiledDragon(right);
     if (left && left.shermanMandateActive) drawShermanMandateDragonStrike(left);
@@ -19044,7 +19537,6 @@
       drawShermanRainShuttles();
     }
     drawAmaraDecoys(); // Puppeteer decoy shuttlecocks (independent of the main shuttle)
-    drawSolarJudgmentGlareChase(); // must run AFTER the shuttle so the glare actually sits on top of it
 
     // Draw particles inside world space
     drawParticles();
@@ -19066,6 +19558,7 @@
 
     drawUltBurst();     // full-screen ult-activation cutscene (freeze → flood → pose → name slam)
     drawJordanFaceCloseup();     // full-screen face overlay during his tempest FACE beat
+    drawAmaraCloseupOverlay();   // full-screen close-up: Puppeteer FACE / Solar Judgment GAZE
     drawUltCinematic(); // full-screen, untranslated (Part 7)
     drawRetroOverlay(); // PIXEL_REVAMP Phase 2 — subtle CRT scanlines + vignette over the whole frame
     updateServeTag();
