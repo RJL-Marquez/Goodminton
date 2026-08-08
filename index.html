@@ -5735,7 +5735,7 @@
   const AMARA_POWDER    = 0.5;   // dust rockets up fast, leaving a trail
   const AMARA_RIFT      = 0.55;  // the trail tears into a quantum rip
   const AMARA_TRANSFORM = 1.0;
-  const AMARA_FACE      = 0.5;   // quick, sharp cut to a knowing half-smile — fast and sly
+  const AMARA_FACE      = 0.65;  // hard cut to a composed, cyan-lit close-up (control ring + shuttlecocks)
   const AMARA_EXPAND    = 1.15;  // the rip widens open to reveal the domain behind it
   const AMARA_BUILDUP   = AMARA_POWDER + AMARA_RIFT + AMARA_TRANSFORM + AMARA_FACE + AMARA_EXPAND;
   const AMARA_LIVE_MAXHOLD  = 7.0;   // if she never commits, the real shuttle auto-drops
@@ -5861,10 +5861,11 @@
       p.amaraArmor = 1;
       const u = (elapsed - T.transformEnd) / AMARA_FACE;
       p.amaraGlow = Math.max(0, 1 - u * 2.5); // the transform flash finishes fading out fast
-      // FACE — quick, sharp cut to a close-up: a knowing half-smile, a single eye-flick.
-      // Fast and sly on purpose (contrast with Solar Judgment's held gaze) — in fast, brief
-      // hold, out fast, so it never lingers (see drawAmaraPortrait, mode 'face').
-      p.amaraFaceCloseup = u < 0.18 ? (u / 0.18) : (u > 0.75 ? Math.max(0, 1 - (u - 0.75) / 0.25) : 1);
+      // FACE — a hard cut to a composed, cyan-lit close-up: her control ring turning behind
+      // her head with the four shuttlecocks hung around it. Snaps in, holds most of the beat
+      // so the emblem actually reads, then leaves cleanly (see drawAmaraPortrait, mode 'face').
+      p.amaraFaceCloseup = u < 0.10 ? amEaseOut(u / 0.10)
+                         : (u > 0.82 ? amEaseIn(amClamp01((1 - u) / 0.18)) : 1);
       if (!p._amaraFaceImpact) {
         p._amaraFaceImpact = true;
         hitFreezeFrames = Math.max(hitFreezeFrames, 3);
@@ -6289,7 +6290,7 @@
     const eyeY  = cy - R*0.12;
     const eyeDX = R*0.40;
     const eyeW  = R*0.30;
-    const eyeH  = gaze ? R*0.17 : R*0.15;
+    const eyeH  = R*0.17;
 
     // Brow + kohl liner + outward wing. The wing has to be drawn from its LEFT edge on both
     // sides (a rect can't have negative width), so mirror the origin rather than the size.
@@ -6302,31 +6303,23 @@
       px(s > 0 ? wx : wx - wing, eyeY - eyeH*0.75, wing, R*0.055, '#120c05');         // wing
     });
 
-    if (gaze){
-      // THE GAZE — molten gold, no pupil, faintly breathing. Stillness is the point, so the
-      // only motion permitted is a slow luminance pulse.
-      const heat = 0.82 + 0.18*Math.sin(now*2.6);
+    {
+      // Both beats share the same composed, glowing-eyed treatment — only the colour of the
+      // light changes (Solar Judgment burns gold, Puppeteer burns her cyan). The Puppeteer
+      // beat used to be a wink-and-smirk, which read as goofy next to the Gaze; the still,
+      // lit-from-within look is the one that lands, so both use it now.
+      const glowRim  = gaze ? '#7a4a06' : '#0b4f5e';
+      const glowMain = gaze ? gold      : '#22d3ee';
+      const glowCore = gaze ? 'rgba(255,245,190,' : 'rgba(224,247,255,';
+      const heat = 0.82 + 0.18*Math.sin(now * (gaze ? 2.6 : 3.6));
       [-1, 1].forEach(function(s){
-        ell(cx + s*eyeDX, eyeY, eyeW, eyeH, '#7a4a06');
-        ell(cx + s*eyeDX, eyeY, eyeW*0.86, eyeH*0.84, gold);
-        ell(cx + s*eyeDX, eyeY, eyeW*0.55, eyeH*0.55, 'rgba(255,245,190,' + heat.toFixed(3) + ')');
+        ell(cx + s*eyeDX, eyeY, eyeW, eyeH, glowRim);
+        ell(cx + s*eyeDX, eyeY, eyeW*0.86, eyeH*0.84, glowMain);
+        ell(cx + s*eyeDX, eyeY, eyeW*0.55, eyeH*0.55, glowCore + heat.toFixed(3) + ')');
         px(cx + s*eyeDX - eyeW*0.20, eyeY - eyeH*0.30, eyeW*0.24, eyeH*0.30, '#ffffff');
       });
       // level, unimpressed mouth
       px(cx - R*0.24, cy + R*0.50, R*0.48, R*0.06, '#3a1f10');
-    } else {
-      // FACE — one eye wide, the other narrowed mid-flick; a knowing asymmetric smile.
-      ell(cx - eyeDX, eyeY, eyeW, eyeH, '#f6efe2');
-      ell(cx - eyeDX, eyeY, eyeW*0.46, eyeH*0.92, '#1a1206');
-      px(cx - eyeDX - eyeW*0.16, eyeY - eyeH*0.42, eyeW*0.20, eyeH*0.34, '#ffffff');
-      // narrowed eye — a slit plus a heavier lid above it
-      px(cx + eyeDX - eyeW, eyeY - eyeH*0.20, eyeW*2, eyeH*0.52, '#f6efe2');
-      px(cx + eyeDX - eyeW*0.34, eyeY - eyeH*0.16, eyeW*0.62, eyeH*0.46, '#1a1206');
-      px(cx + eyeDX - eyeW, eyeY - eyeH*0.62, eyeW*2, R*0.05, skin);
-      // asymmetric smirk — steps up on one side, staircase style
-      px(cx - R*0.26, cy + R*0.54, R*0.30, R*0.055, '#3a1f10');
-      px(cx + R*0.04, cy + R*0.50, R*0.18, R*0.055, '#3a1f10');
-      px(cx + R*0.22, cy + R*0.44, R*0.10, R*0.055, '#3a1f10');
     }
 
     g.restore();
@@ -6364,8 +6357,21 @@
     const fp = (left && (left.amaraFaceCloseup||0) > 0.001) ? left
              : (right && (right.amaraFaceCloseup||0) > 0.001) ? right : null;
     if (fp){
-      drawAmaraPortrait(fp, fp.amaraFaceCloseup, 'face', fp.amaraFaceCloseup);
-      drawAmaraLetterbox(fp.amaraFaceCloseup, false);
+      const fz = fp.amaraFaceCloseup;
+      const fgeo = amaraPortraitGeometry(fz);
+      const FHALO = 2.7;
+      // Same two-pass emblem treatment as THE GAZE — behind the card, then re-struck on top
+      // clipped outside her head so it blazes around the silhouette instead of washing her out.
+      drawAmaraAureole(fz, fgeo.cx, fgeo.cy, FHALO, 'puppeteer');
+      drawAmaraPortrait(fp, fz, 'face', fz);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, H);
+      ctx.arc(fgeo.cx, fgeo.cy, fgeo.R * 1.16, 0, Math.PI * 2);
+      ctx.clip('evenodd');
+      drawAmaraAureole(fz * 0.6, fgeo.cx, fgeo.cy, FHALO, 'puppeteer');
+      ctx.restore();
+      drawAmaraLetterbox(fz, false);
       return;
     }
     // Solar Judgment — THE GAZE. The halo re-anchors behind the portrait card and is drawn
@@ -6383,7 +6389,7 @@
       // was completely occluded by her own face.
       const HALO = 2.7;
       // Pass 1 — behind the card, so the card's vignette softens it into the backdrop.
-      drawAmaraSolarHalo(gz, geo.cx, geo.cy, HALO);
+      drawAmaraAureole(gz, geo.cx, geo.cy, HALO, 'solar');
       drawAmaraPortrait(sp, gz, 'gaze', sp.amaraSolarGazeIn === undefined ? 1 : sp.amaraSolarGazeIn);
       // Pass 2 — the same halo re-struck ON TOP, but clipped to everything OUTSIDE her head,
       // so the corona and rays blaze around the silhouette without washing out her face.
@@ -6392,7 +6398,7 @@
       ctx.rect(0, 0, W, H);
       ctx.arc(geo.cx, geo.cy, geo.R * 1.16, 0, Math.PI * 2);
       ctx.clip('evenodd');
-      drawAmaraSolarHalo(gz * 0.6, geo.cx, geo.cy, HALO);
+      drawAmaraAureole(gz * 0.6, geo.cx, geo.cy, HALO, 'solar');
       ctx.restore();
       // The blowout itself — light floods out from behind her and swallows the frame, which
       // is what actually carries the hand-off from close-up to open domain.
@@ -6788,7 +6794,7 @@
     const halo = p.amaraSolarHaloGrow || 0;
     if (halo > 0 && (p.amaraSolarGaze||0) <= 0.001){
       const e = amEaseOut(halo);
-      drawAmaraSolarHalo(e, ax, p.y + PLAYER_H*0.18, 0.55 + 0.25*e);
+      drawAmaraAureole(e, ax, p.y + PLAYER_H*0.18, 0.55 + 0.25*e, 'solar');
     }
   }
 
@@ -16278,23 +16284,94 @@
     ctx.restore();
   }
 
-  // Sun-disk halo that ignites behind Amara's head during Solar Judgment's ASCENSION beat and
-  // holds through THE GAZE — a winged solar disc + corona + Aten-style rays.
-  // Position is passed in because the two beats live in different coordinate spaces:
-  // ASCENSION anchors it to her actual head in world space (it has to ride the camera as it
-  // pushes in), THE GAZE anchors it behind the screen-space portrait card. Hard-coding screen
-  // centre made it detach from her during ASCENSION.
-  function drawAmaraSolarHalo(alpha, atX, atY, scale){
+  // The emblem that blazes behind Amara's head during her close-ups. Two variants:
+  //   'solar'     — Solar Judgment: winged solar disc + gold corona + Aten-style rays.
+  //   'puppeteer' — Puppeteer: cyan corona + a slowly turning control ring, marionette
+  //                 strings, and the four shuttlecocks of her mind-game hanging around her.
+  // Position is passed in because the beats live in different coordinate spaces: ASCENSION
+  // anchors to her actual head in world space (it has to ride the camera as it pushes in),
+  // the close-ups anchor behind the screen-space portrait card.
+  function drawAmaraAureole(alpha, atX, atY, scale, variant){
     if (alpha <= 0.001) return;
     const cx = (atX === undefined) ? W/2 : atX;
     const cy = (atY === undefined) ? (H*0.42 - Math.min(W,H)*0.02) : atY;
     const k  = (scale === undefined) ? 1 : scale;
+    const t  = performance.now();
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = alpha;
     ctx.translate(cx, cy);
     ctx.scale(k, k);
     ctx.translate(-cx, -cy);
+
+    if (variant === 'puppeteer'){
+      // Corona — cold cyan rather than solar gold. Kept tighter and with more tonal steps than
+      // the solar version: neon cyan at full spread reads as one flat glowing blob.
+      const cor = ctx.createRadialGradient(cx, cy, 4, cx, cy, 125);
+      cor.addColorStop(0,    'rgba(255,255,255,1.0)');
+      cor.addColorStop(0.14, `rgba(224,247,255,${(alpha*0.92).toFixed(3)})`);
+      cor.addColorStop(0.42, `rgba(34,211,238,${(alpha*0.55).toFixed(3)})`);
+      cor.addColorStop(0.74, `rgba(14,116,144,${(alpha*0.26).toFixed(3)})`);
+      cor.addColorStop(1,    'rgba(14,116,144,0)');
+      ctx.fillStyle = cor;
+      ctx.beginPath(); ctx.arc(cx, cy, 125, 0, Math.PI*2); ctx.fill();
+
+      // Marionette strings — taut, fine, radiating out past the frame.
+      const strings = 16;
+      ctx.lineWidth = 1;
+      for (let i = 0; i < strings; i++){
+        const a = (i * Math.PI*2 / strings) + t*0.00018;
+        const len = 132 + Math.sin(t*0.004 + i*1.7) * 10;
+        ctx.strokeStyle = `rgba(224,247,255,${(alpha*0.5).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a)*30, cy + Math.sin(a)*30);
+        ctx.lineTo(cx + Math.cos(a)*len, cy + Math.sin(a)*len);
+        ctx.stroke();
+      }
+
+      // Control ring — a segmented band turning slowly, like a puppeteer's control bar.
+      // Radius is deliberately tight: the four shuttlecocks ride this ring, and any wider
+      // puts the top and bottom two out under the letterbox bars where they get clipped.
+      const ringR = 86;
+      const segs = 12;
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = `rgba(34,211,238,${(alpha*0.85).toFixed(3)})`;
+      for (let i = 0; i < segs; i++){
+        const a0 = (i * Math.PI*2 / segs) + t*0.00042;
+        ctx.beginPath();
+        ctx.arc(cx, cy, ringR, a0, a0 + (Math.PI*2/segs)*0.55);
+        ctx.stroke();
+      }
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = `rgba(254,240,138,${(alpha*0.6).toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(cx, cy, ringR*0.86, 0, Math.PI*2); ctx.stroke();
+
+      // Her four shuttlecocks, hung at the cardinal points. Foreshadows the choice she is
+      // about to offer without hinting which one is live — they are deliberately identical.
+      for (let i = 0; i < 4; i++){
+        const a = (i * Math.PI/2) - Math.PI/2 + t*0.00042;
+        const sx = cx + Math.cos(a)*ringR, sy = cy + Math.sin(a)*ringR;
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate(a + Math.PI/2);
+        const gl = ctx.createRadialGradient(0,0,1,0,0,21);
+        gl.addColorStop(0, `rgba(224,247,255,${(alpha*0.85).toFixed(3)})`);
+        gl.addColorStop(1, 'rgba(34,211,238,0)');
+        ctx.fillStyle = gl;
+        ctx.beginPath(); ctx.arc(0,0,21,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle = `rgba(255,255,255,${alpha.toFixed(3)})`;
+        ctx.beginPath(); ctx.arc(0, 6, 4.2, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = `rgba(224,247,255,${(alpha*0.9).toFixed(3)})`;
+        ctx.lineWidth = 1.5;
+        for (let f = -2; f <= 2; f++){
+          ctx.beginPath(); ctx.moveTo(0,6); ctx.lineTo(f*4.4, -12); ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      ctx.restore();
+      return;
+    }
 
     // Winged solar disc
     const wingGrad = ctx.createLinearGradient(cx - 160, cy, cx + 160, cy);
