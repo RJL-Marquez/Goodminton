@@ -14236,20 +14236,30 @@
   }
   // --- head skin base (8 wide) + per-style hair overlays ---
   const HEAD_SKIN=['_KKKKKK_','KKKKKKKK','KKKKKKKK','KKKKKKKK','KKKKKKKK','KKKKKKKK','KKKKKKKk','_KKKKKk_','__KKKk__'];
+  // Hair crowns. These used to be a 2-row skullcap (an indented top row, one
+  // full row, then straight to 'H      H' sideburns) which left bare forehead
+  // starting one pixel below the crown — at gameplay scale every character read
+  // as balding, worst on the dark-haired ones where the hairline has the most
+  // contrast. Each style now carries a real 3-row mass drawn one row higher, so
+  // there is volume above the skull and the hairline sits where a hairline goes.
+  // Row 3 stays the sideburn/fringe row; the face's eyes are at hy+3, so the
+  // hair still never runs into the brows.
   const HAIR_TOP={
-    short:[' HHHHHH ','HHHHHHHH','H      H'],
-    slick:[' HHHHHHH','HHHHHHHH','      HH'],
-    spiky:['H H HH H',' HHHHHH ','HHHHHHHH'],
-    bun:[' HHHHHH ','HHHHHHHH','H      H'],
-    ponytail:[' HHHHHH ','HHHHHHHH','HH     H'],
-    braids:[' HHHHHH ','HHHHHHHH','H      H'],
-    long:[' HHHHHH ','HHHHHHHH','H      H'],
-    curtain:[' HHHHHH ','HHHHHHHH','HH    HH']
+    short:[' HHHHHH ','HHHHHHHH','HHHHHHHH','H      H'],
+    slick:[' HHHHHHH','HHHHHHHH','HHHHHHHH','      HH'],
+    spiky:['H H HH H',' HHHHHH ','HHHHHHHH','H      H'],
+    bun:[' HHHHHH ','HHHHHHHH','HHHHHHHH','H      H'],
+    ponytail:[' HHHHHH ','HHHHHHHH','HHHHHHHH','HH     H'],
+    braids:[' HHHHHH ','HHHHHHHH','HHHHHHHH','H      H'],
+    long:[' HHHHHH ','HHHHHHHH','HHHHHHHH','H      H'],
+    curtain:[' HHHHHH ','HHHHHHHH','HHHHHHHH','HH    HH']
   };
   function drawPixHair(px,hx,hy,ch,hairSway){
     var hxS = hx;
     var st=ch.hairStyle||'short';
-    _pxmap(px,hxS,hy,HAIR_TOP[st]||HAIR_TOP.short,{H:'H'});
+    // drawn from hy-1: the extra row sits above the skull as hair volume, the
+    // same trick drawPixCap already uses for the peaked cap's crown
+    _pxmap(px,hxS,hy-1,HAIR_TOP[st]||HAIR_TOP.short,{H:'H'});
     if(st==='bun'){ _pxrect(px,hxS+3,hy-2,2,2,'H'); _pxrect(px,hxS+3,hy-1,2,1,'h'); }
     else if(st==='ponytail'){ _pxrect(px,hxS-2,hy+1,2,5,'H'); px(hxS-2,hy+5,'h'); }   // tail off the back (-x)
     else if(st==='braids'){ _pxrect(px,hxS-1,hy+2,2,5,'H'); _pxrect(px,hxS+7,hy+2,2,5,'H'); }
