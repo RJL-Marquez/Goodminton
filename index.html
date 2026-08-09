@@ -1714,121 +1714,245 @@
   .backLink:hover { opacity: 1; transform: translateX(-3px); color: var(--accent); background: rgba(255,255,255,0.06); }
 
   /* ================================================================
-     AI Difficulty select — four large square tiles, splash art filling
-     each one, dot+underline-family label at the bottom. Expert gets its
-     own danger-red accent + a slow ambient pulse, even at rest.
+     AI Difficulty select — four FULL-HEIGHT columns that fill the space
+     between the title and the bottom margin. Each card is a heat-coded
+     slab: accent bar on top, a big swappable portrait slot as the hero,
+     then a body carrying the FAULT dot + fill-underline motif and a
+     one-line read on what that difficulty actually plays like.
+
+     --heat is set per card inline and is the ONLY thing that varies
+     between the four (top bar, dot, underline fill, portrait tint,
+     hover glow). Everything else stays on the neutral tokens so all
+     four still read as one system.
      ================================================================ */
+  #difficultyOverlay .panel.difficultyPanel {
+    justify-content: flex-start !important;
+    gap: 0 !important;
+    padding: 18px 44px 26px !important;
+  }
+
+  .diffTitleBlock {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 9px;
+    margin: 2px 0 18px;
+  }
+  #difficultyOverlay h2.diffTitle {
+    font-family: 'Archivo Black', 'Space Grotesk', sans-serif !important;
+    font-size: 29px !important;
+    font-weight: 400 !important;
+    letter-spacing: 6px !important;
+    margin: 0 !important;
+    color: var(--ink);
+  }
+  .diffTitleRule {
+    width: 64px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+
   .difficultyGrid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 22px;
+    gap: 20px;
     width: 100%;
-    max-width: 1080px;
-    flex-shrink: 0; /* was being flex-shrunk well below its natural size inside .panel's
-                        column flex despite plenty of spare height — this pins it at full size */
-    align-self: stretch; /* .panel's align-items:center (for centering the heading/back-link)
-                             was also quietly capping this at a fit-content width instead of
-                             the full 100% it asks for — override just for this one child */
-    margin-top: 6px;
+    max-width: 1150px;
+    /* fill everything left between the title and the bottom padding */
+    flex: 1 1 auto;
+    min-height: 0;
+    /* .panel's align-items:center would otherwise cap this at fit-content
+       instead of the full width it asks for; auto margins re-centre it. */
+    align-self: stretch;
+    margin-left: auto;
+    margin-right: auto;
   }
 
   .diffCard {
     -webkit-appearance: none;
     appearance: none;
-    display: block;
+    display: flex;
+    flex-direction: column;
     width: 100%;
+    height: 100%;
     min-width: 0;
+    min-height: 0;
     position: relative;
-    aspect-ratio: 3 / 4;
+    text-align: left;
     border: 1.5px solid var(--border);
-    border-radius: 18px;
+    border-radius: 16px;
     background: var(--bg-2);
     overflow: hidden;
     padding: 0;
     cursor: pointer;
     outline: none;
-    box-shadow: 0 10px 26px rgba(0,0,0,0.4);
-    transition: transform 0.22s cubic-bezier(0.16,1,0.3,1), border-color 0.22s ease, box-shadow 0.22s ease;
+    box-shadow: 0 10px 26px rgba(0,0,0,0.38);
+    transition: transform 0.18s ease, border-color 0.18s ease,
+                box-shadow 0.18s ease, background-color 0.18s ease;
   }
+  /* Dramatic hover/focus — clicking starts the match immediately, so this
+     IS the "chosen" state and it should land hard. */
   .diffCard:hover, .diffCard:focus-visible {
-    transform: translateY(-10px) scale(1.045);
-    border-color: var(--accent);
-    box-shadow: 0 24px 50px rgba(0,0,0,0.55), 0 0 0 1.5px var(--accent), 0 0 36px var(--glow-color);
+    transform: translateY(-14px);
+    border-color: var(--heat);
+    background: color-mix(in srgb, var(--heat) 8%, var(--bg-2));
+    box-shadow:
+      0 30px 58px rgba(0,0,0,0.6),
+      0 0 0 2px var(--heat),
+      0 0 46px -8px var(--heat);
   }
-  .diffCard:active { transform: translateY(-4px) scale(1.015); }
+  .diffCard:active { transform: translateY(-7px); }
 
-  .diffCardArt {
+  .diffHeatBar {
+    flex: 0 0 auto;
+    height: 6px;
+    width: 100%;
+    border-radius: 3px;
+    background: var(--heat);
+  }
+
+  /* ---- portrait: a swappable IMAGE SLOT ----------------------------
+     .diffPortrait is the drop-in point — give it a real src and it wins.
+     While it's empty it stays hidden and the canvas underneath acts as
+     the placeholder (rendered from the game's own character art, so the
+     slot is never blank). No specific art is baked into the CSS. */
+  .diffPortraitWrap {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--bg-3);
+  }
+  .diffPortraitWrap::before { /* faint heat tint over the portrait */
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: var(--heat);
+    opacity: 0.10;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
+  }
+  .diffCard:hover .diffPortraitWrap::before,
+  .diffCard:focus-visible .diffPortraitWrap::before { opacity: 0.2; }
+  .diffPortraitWrap::after { /* fade the art into the body, no hard seam */
+    content: '';
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 42%;
+    z-index: 2;
+    pointer-events: none;
+    background: linear-gradient(to top, var(--bg-2) 0%, rgba(18,24,38,0) 100%);
+  }
+  .diffPortrait, .diffPortraitPlaceholder {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
     display: block;
     object-fit: cover;
-    object-position: center 20%;
-    filter: saturate(0.95) brightness(0.92);
-    transition: transform 0.4s cubic-bezier(0.16,1,0.3,1), filter 0.3s ease;
+    object-position: center 16%;
+    filter: saturate(0.95) brightness(0.9);
+    transition: transform 0.35s cubic-bezier(0.16,1,0.3,1), filter 0.25s ease;
   }
-  .diffCard:hover .diffCardArt, .diffCard:focus-visible .diffCardArt {
-    transform: scale(1.08);
-    filter: saturate(1.15) brightness(1.02);
+  .diffCard:hover .diffPortrait,
+  .diffCard:hover .diffPortraitPlaceholder,
+  .diffCard:focus-visible .diffPortrait,
+  .diffCard:focus-visible .diffPortraitPlaceholder {
+    transform: scale(1.06);
+    filter: saturate(1.12) brightness(1);
   }
+  /* empty slot -> get out of the way and let the placeholder show */
+  .diffPortrait:not([src]), .diffPortrait[src=""] { display: none; }
 
-  .diffCardScrim {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(to top, rgba(16,19,29,0.92) 0%, rgba(16,19,29,0.32) 42%, rgba(16,19,29,0) 68%);
-    pointer-events: none;
+  /* ---- body ---- */
+  .diffCardBody {
+    flex: 0 0 auto;
+    position: relative;
+    z-index: 3;
+    background: var(--bg-2);
+    padding: 12px 16px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
-
   .diffCardLabel {
-    position: absolute;
-    left: 20px;
-    bottom: 18px;
-    right: 20px;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
   }
   .diffCardDot {
     flex: 0 0 auto;
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     background: var(--border);
-    transition: background-color 0.22s ease, box-shadow 0.22s ease;
+    transition: background-color 0.18s ease, box-shadow 0.18s ease;
   }
   .diffCard:hover .diffCardDot, .diffCard:focus-visible .diffCardDot {
-    background: var(--accent);
-    box-shadow: 0 0 12px var(--glow-color);
+    background: var(--heat);
+    box-shadow: 0 0 12px var(--heat);
   }
   .diffCardName {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 23px;
+    font-size: 19px;
     font-weight: 700;
     letter-spacing: 2px;
     text-transform: uppercase;
     color: var(--ink);
+    transition: color 0.18s ease;
+  }
+  .diffCard:hover .diffCardName, .diffCard:focus-visible .diffCardName { color: #fff; }
+
+  .diffCardUnderline {
+    position: relative;
+    display: block;
+    width: 100%;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--border);
+    overflow: hidden;
+  }
+  .diffCardUnderline::after {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 0;
+    border-radius: 2px;
+    background: var(--heat);
+    transition: width 0.18s cubic-bezier(0.16,1,0.3,1);
+  }
+  .diffCard:hover .diffCardUnderline::after,
+  .diffCard:focus-visible .diffCardUnderline::after { width: 100%; }
+
+  .diffCardDesc {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.45;
+    color: var(--ink-dim);
+    margin: 0;
   }
 
-  /* Expert — danger-red accent that glows even at rest, plus a slow
-     ambient pulse so it visibly stands apart from the other three. */
+  /* Expert leans hardest: its heat already glows at rest and breathes,
+     so it reads as the dangerous one before you ever touch it. */
   .diffCard--expert {
-    border-color: #ef4444;
-    box-shadow: 0 0 0 1px rgba(239,68,68,0.5), 0 0 22px rgba(239,68,68,0.3);
-    animation: diffExpertPulse 2.6s ease-in-out infinite;
+    box-shadow:
+      0 10px 26px rgba(0,0,0,0.38),
+      0 0 0 1px rgba(232,99,125,0.4),
+      0 0 22px -4px rgba(232,99,125,0.55);
+    animation: diffExpertPulse 2.8s ease-in-out infinite;
   }
   .diffCard--expert .diffCardDot {
-    background: #ef4444;
-    box-shadow: 0 0 10px rgba(239,68,68,0.7);
+    background: var(--heat);
+    box-shadow: 0 0 10px var(--heat);
   }
-  .diffCard--expert:hover, .diffCard--expert:focus-visible {
-    border-color: #ff6b6b;
-    box-shadow: 0 18px 40px rgba(0,0,0,0.5), 0 0 0 1px #ff6b6b, 0 0 42px rgba(239,68,68,0.6);
-    animation-play-state: paused;
-  }
+  .diffCard--expert:hover, .diffCard--expert:focus-visible { animation-play-state: paused; }
   @keyframes diffExpertPulse {
-    0%, 100% { box-shadow: 0 0 0 1px rgba(239,68,68,0.5), 0 0 22px rgba(239,68,68,0.3); }
-    50%      { box-shadow: 0 0 0 1px rgba(239,68,68,0.8), 0 0 38px rgba(239,68,68,0.55); }
+    0%, 100% { box-shadow: 0 10px 26px rgba(0,0,0,0.38), 0 0 0 1px rgba(232,99,125,0.4), 0 0 22px -4px rgba(232,99,125,0.55); }
+    50%      { box-shadow: 0 10px 26px rgba(0,0,0,0.38), 0 0 0 1px rgba(232,99,125,0.75), 0 0 34px -4px rgba(232,99,125,0.8); }
   }
 
   .cardGrid {
@@ -3114,45 +3238,77 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg>
           Back
         </div>
-        <h2>SELECT DIFFICULTY</h2>
+        <div class="diffTitleBlock">
+          <h2 class="diffTitle">SELECT DIFFICULTY</h2>
+          <span class="diffTitleRule"></span>
+        </div>
 
+        <!-- Portrait slots: give any .diffPortrait a real src and it takes over;
+             while empty it stays hidden and the canvas beside it is the
+             placeholder (drawn from the game's own character art at runtime). -->
         <div class="difficultyGrid">
-          <button class="diffCard" data-diff="easy" id="diffCardEasy">
-            <canvas class="diffCardArt" id="diffCardEasyCanvas" width="380" height="380"></canvas>
-            <div class="diffCardScrim"></div>
-            <div class="diffCardLabel">
-              <span class="diffCardDot"></span>
-              <span class="diffCardName">Easy</span>
-            </div>
+          <button class="diffCard" data-diff="easy" id="diffCardEasy" style="--heat:#9ce8c9">
+            <span class="diffHeatBar"></span>
+            <span class="diffPortraitWrap">
+              <img class="diffPortrait" data-portrait="easy" src="" alt="">
+              <canvas class="diffPortraitPlaceholder" id="diffCardEasyCanvas" width="380" height="470"></canvas>
+            </span>
+            <span class="diffCardBody">
+              <span class="diffCardLabel">
+                <span class="diffCardDot"></span>
+                <span class="diffCardName">Easy</span>
+              </span>
+              <span class="diffCardUnderline"></span>
+              <span class="diffCardDesc">Just here to rally. Won't punish your mistakes.</span>
+            </span>
           </button>
 
-          <button class="diffCard" data-diff="medium" id="diffCardMedium">
-            <canvas class="diffCardArt" id="diffCardMediumCanvas" width="380" height="380"></canvas>
-            <div class="diffCardScrim"></div>
-            <div class="diffCardLabel">
-              <span class="diffCardDot"></span>
-              <span class="diffCardName">Medium</span>
-            </div>
+          <button class="diffCard" data-diff="medium" id="diffCardMedium" style="--heat:#7d9bc4">
+            <span class="diffHeatBar"></span>
+            <span class="diffPortraitWrap">
+              <img class="diffPortrait" data-portrait="medium" src="" alt="">
+              <canvas class="diffPortraitPlaceholder" id="diffCardMediumCanvas" width="380" height="470"></canvas>
+            </span>
+            <span class="diffCardBody">
+              <span class="diffCardLabel">
+                <span class="diffCardDot"></span>
+                <span class="diffCardName">Medium</span>
+              </span>
+              <span class="diffCardUnderline"></span>
+              <span class="diffCardDesc">Keeps you honest. A fair fight.</span>
+            </span>
           </button>
 
-          <button class="diffCard" data-diff="hard" id="diffCardHard">
-            <canvas class="diffCardArt" id="diffCardHardCanvas" width="380" height="380"></canvas>
-            <div class="diffCardScrim"></div>
-            <div class="diffCardLabel">
-              <span class="diffCardDot"></span>
-              <span class="diffCardName">Hard</span>
-            </div>
+          <button class="diffCard" data-diff="hard" id="diffCardHard" style="--heat:#d4a63c">
+            <span class="diffHeatBar"></span>
+            <span class="diffPortraitWrap">
+              <img class="diffPortrait" data-portrait="hard" src="" alt="">
+              <canvas class="diffPortraitPlaceholder" id="diffCardHardCanvas" width="380" height="470"></canvas>
+            </span>
+            <span class="diffCardBody">
+              <span class="diffCardLabel">
+                <span class="diffCardDot"></span>
+                <span class="diffCardName">Hard</span>
+              </span>
+              <span class="diffCardUnderline"></span>
+              <span class="diffCardDesc">Reads your habits. Bring your A-game.</span>
+            </span>
           </button>
 
-          <button class="diffCard diffCard--expert" data-diff="expert" id="diffCardExpert">
-            <img class="diffCardArt diffCardArt--photo" id="diffCardExpertImg" src="assets/characters/jordan-ultimate-splash.png" alt=""
-                 onerror="this.onerror=null; this.classList.add('hidden'); var c=document.getElementById('diffCardExpertCanvas'); if(c) c.classList.remove('hidden');">
-            <canvas class="diffCardArt hidden" id="diffCardExpertCanvas" width="380" height="380"></canvas>
-            <div class="diffCardScrim"></div>
-            <div class="diffCardLabel">
-              <span class="diffCardDot"></span>
-              <span class="diffCardName">Expert</span>
-            </div>
+          <button class="diffCard diffCard--expert" data-diff="expert" id="diffCardExpert" style="--heat:#e8637d">
+            <span class="diffHeatBar"></span>
+            <span class="diffPortraitWrap">
+              <img class="diffPortrait" data-portrait="expert" src="" alt="">
+              <canvas class="diffPortraitPlaceholder" id="diffCardExpertCanvas" width="380" height="470"></canvas>
+            </span>
+            <span class="diffCardBody">
+              <span class="diffCardLabel">
+                <span class="diffCardDot"></span>
+                <span class="diffCardName">Expert</span>
+              </span>
+              <span class="diffCardUnderline"></span>
+              <span class="diffCardDesc">Ruthless. It smells fear.</span>
+            </span>
           </button>
         </div>
       </div>
@@ -11501,21 +11657,44 @@
   // the difficulty screen serves both AI modes — this remembers which button opened it
   let pendingAIMode = 'ai';
 
-  document.getElementById('btnAI').addEventListener('click', ()=>{
-    pendingAIMode = 'ai';
+  function openDifficultySelect(){
     document.getElementById('startOverlay').classList.add('hidden');
     document.getElementById('difficultyOverlay').classList.remove('hidden');
+    // Park focus on the first card so keyboard/gamepad nav has somewhere to
+    // start (and the dramatic focus state is immediately visible).
+    const first = document.querySelector('#difficultyOverlay .diffCard');
+    if (first) setTimeout(function(){ first.focus(); }, 0);
+  }
+
+  document.getElementById('btnAI').addEventListener('click', ()=>{
+    pendingAIMode = 'ai';
+    openDifficultySelect();
   });
 
   document.getElementById('btnAIvAI').addEventListener('click', ()=>{
     pendingAIMode = 'aivai';
-    document.getElementById('startOverlay').classList.add('hidden');
-    document.getElementById('difficultyOverlay').classList.remove('hidden');
+    openDifficultySelect();
   });
 
   document.getElementById('btnDiffBack').addEventListener('click', ()=>{
     document.getElementById('difficultyOverlay').classList.add('hidden');
     document.getElementById('startOverlay').classList.remove('hidden');
+  });
+
+  // Left/right moves between the difficulty cards; Enter/Space activate them
+  // natively (they're real <button>s), which is what starts the match.
+  document.getElementById('difficultyOverlay').addEventListener('keydown', function(e){
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const cards = Array.prototype.slice.call(
+      document.querySelectorAll('#difficultyOverlay .diffCard'));
+    if (!cards.length) return;
+    const i = cards.indexOf(document.activeElement);
+    const next = e.key === 'ArrowRight'
+      ? (i < 0 ? 0 : (i + 1) % cards.length)
+      : (i < 0 ? cards.length - 1 : (i - 1 + cards.length) % cards.length);
+    e.preventDefault();
+    e.stopPropagation();
+    cards[next].focus();
   });
 
   // ===========================================================================
@@ -19998,11 +20177,13 @@
     ctx.drawImage(_scanCanvas, 0, 0);
   }
 
-  // Splash art for the difficulty cards: Expert (Jordan) uses his real
-  // ultimate splash-art image (wired directly via <img src> in the markup);
-  // the other three are rendered with the game's own portrait renderer
+  // Placeholder art for the difficulty cards' portrait slots. Each card owns a
+  // swappable <img class="diffPortrait">; while that has no src, this canvas
+  // shows through instead, drawn with the game's own portrait renderer
   // (drawDetailedPortrait — the same one char-select's grid/preview canvases
-  // use) so they're visually consistent with everything else in the app.
+  // use) so the slot is never blank and always matches the app's art style.
+  // Drop a real image into the <img> and it takes over automatically; nothing
+  // here needs to change.
   // Called down here, after every module-level const it depends on
   // (drawDetailedPortrait's pixel path lazily inits _portCtx etc.) has
   // actually run — calling it any earlier hits their temporal dead zone.
@@ -20011,10 +20192,6 @@
       { id: 'sofia',   canvasId: 'diffCardEasyCanvas' },
       { id: 'elijah',  canvasId: 'diffCardMediumCanvas' },
       { id: 'sherman', canvasId: 'diffCardHardCanvas' },
-      // Jordan's real splash-art <img> is the primary Expert art; this canvas
-      // only ever becomes visible if that image fails to load (see its
-      // onerror handler in the markup) — rendered unconditionally up front
-      // so the fallback is ready instantly if/when it's needed.
       { id: 'jordan',  canvasId: 'diffCardExpertCanvas' }
     ];
     casts.forEach(function(entry){
