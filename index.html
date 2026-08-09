@@ -1846,7 +1846,7 @@
     pointer-events: none;
     background: linear-gradient(to top, var(--bg-2) 0%, rgba(18,24,38,0) 100%);
   }
-  .diffPortrait, .diffPortraitPlaceholder {
+  .diffPortrait {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -1858,14 +1858,10 @@
     transition: transform 0.35s cubic-bezier(0.16,1,0.3,1), filter 0.25s ease;
   }
   .diffCard:hover .diffPortrait,
-  .diffCard:hover .diffPortraitPlaceholder,
-  .diffCard:focus-visible .diffPortrait,
-  .diffCard:focus-visible .diffPortraitPlaceholder {
+  .diffCard:focus-visible .diffPortrait {
     transform: scale(1.06);
     filter: saturate(1.12) brightness(1);
   }
-  /* empty slot -> get out of the way and let the placeholder show */
-  .diffPortrait:not([src]), .diffPortrait[src=""] { display: none; }
 
   /* ---- body ---- */
   .diffCardBody {
@@ -3251,7 +3247,6 @@
             <span class="diffHeatBar"></span>
             <span class="diffPortraitWrap">
               <img class="diffPortrait" data-portrait="easy" src="assets/characters/splash-easy.png" alt="Sofia — the Easy AI opponent">
-              <canvas class="diffPortraitPlaceholder" id="diffCardEasyCanvas" width="380" height="470"></canvas>
             </span>
             <span class="diffCardBody">
               <span class="diffCardLabel">
@@ -3267,7 +3262,6 @@
             <span class="diffHeatBar"></span>
             <span class="diffPortraitWrap">
               <img class="diffPortrait" data-portrait="medium" src="assets/characters/splash-medium.png" alt="Elijah — the Medium AI opponent">
-              <canvas class="diffPortraitPlaceholder" id="diffCardMediumCanvas" width="380" height="470"></canvas>
             </span>
             <span class="diffCardBody">
               <span class="diffCardLabel">
@@ -3283,7 +3277,6 @@
             <span class="diffHeatBar"></span>
             <span class="diffPortraitWrap">
               <img class="diffPortrait" data-portrait="hard" src="assets/characters/splash-hard.png" alt="Sherman — the Hard AI opponent">
-              <canvas class="diffPortraitPlaceholder" id="diffCardHardCanvas" width="380" height="470"></canvas>
             </span>
             <span class="diffCardBody">
               <span class="diffCardLabel">
@@ -3299,7 +3292,6 @@
             <span class="diffHeatBar"></span>
             <span class="diffPortraitWrap">
               <img class="diffPortrait" data-portrait="expert" src="assets/characters/splash-expert.png" alt="Jordan — the Expert AI opponent">
-              <canvas class="diffPortraitPlaceholder" id="diffCardExpertCanvas" width="380" height="470"></canvas>
             </span>
             <span class="diffCardBody">
               <span class="diffCardLabel">
@@ -20177,34 +20169,8 @@
     ctx.drawImage(_scanCanvas, 0, 0);
   }
 
-  // Placeholder art for the difficulty cards' portrait slots. Each card owns a
-  // swappable <img class="diffPortrait">; while that has no src, this canvas
-  // shows through instead, drawn with the game's own portrait renderer
-  // (drawDetailedPortrait — the same one char-select's grid/preview canvases
-  // use) so the slot is never blank and always matches the app's art style.
-  // Drop a real image into the <img> and it takes over automatically; nothing
-  // here needs to change.
-  // Called down here, after every module-level const it depends on
-  // (drawDetailedPortrait's pixel path lazily inits _portCtx etc.) has
-  // actually run — calling it any earlier hits their temporal dead zone.
-  function renderDifficultyCardArt(){
-    const casts = [
-      { id: 'sofia',   canvasId: 'diffCardEasyCanvas' },
-      { id: 'elijah',  canvasId: 'diffCardMediumCanvas' },
-      { id: 'sherman', canvasId: 'diffCardHardCanvas' },
-      { id: 'jordan',  canvasId: 'diffCardExpertCanvas' }
-    ];
-    casts.forEach(function(entry){
-      const ch = CHARACTERS.find(function(c){ return c.id === entry.id; });
-      const canvas = document.getElementById(entry.canvasId);
-      if (!ch || !canvas) return;
-      drawDetailedPortrait(canvas.getContext('2d'), ch, false, canvas.width, canvas.height, 1, true);
-    });
-  }
-
   draw();
   requestAnimationFrame(loop);
-  renderDifficultyCardArt();
   setTimeout(adjustScale, 50);
 })();
 </script>
