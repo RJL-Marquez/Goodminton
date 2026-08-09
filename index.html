@@ -11141,6 +11141,19 @@
   // draw()'s `state !== 'start'` HUD gate for the other half of the seam.
   // ================================================================
   let attract = null;
+  // Court the menu rally is being played on. Re-rolled with the characters at
+  // the top of every loop so returning to the menu (or just watching it) shows
+  // a variety of venues instead of always the default green gym. Kept separate
+  // from selectedBackgroundId so it can never leak into a real match, which
+  // always uses whatever court the player actually picked.
+  let attractBgId = null;
+  // Gravity used only for the shuttle's post-winner descent (see attractStepShuttle).
+  const ATTRACT_TAIL_GRAVITY = 1650;
+  // Cross-scenario dip-to-black duration (each end of a loop).
+  const ATTRACT_FADE = 0.42;
+  // Resting zoom for the menu camera — slightly punched in so the rally fills
+  // the frame behind the menu instead of sitting small and far away.
+  const ATTRACT_ZOOM_BASE = 1.07;
 
   function attractLeftX(bias){ return COURT_LEFT + 70 + bias; }
   function attractRightX(bias){ return COURT_RIGHT - 70 - bias - PLAYER_W; }
@@ -11168,6 +11181,21 @@
       hitter = hitter === 'left' ? 'right' : 'left';
       curX = toX; curY = toY;
     };
+    // A jump smash has to be met OVERHEAD, so the setup shot before it gets
+    // retargeted into a high lift — otherwise the smasher leaps to their apex
+    // while the shuttle is still down at chest height and the contact reads as
+    // a whiff. Contact height is matched to where the player actually is at
+    // ATTRACT_JUMP_LEAD into their jump (see attractSideWaypoints).
+    const SMASH_CONTACT_Y = GROUND_Y - PLAYER_H - 110;
+    const pushSmash = function(toX, apex, dur){
+      if (shots.length){
+        const prev = shots[shots.length - 1];
+        prev.toY = SMASH_CONTACT_Y;
+        prev.apex = Math.max(prev.apex, 150);
+        curY = SMASH_CONTACT_Y;
+      }
+      push(toX, GROUND_Y - PLAYER_H + 4, apex, dur, true);
+    };
     const netY = GROUND_Y - 150;
     if (flavor === 0) { // baseline rally -> big smash finish
       const n = 2 + Math.floor(Math.random() * 2);
@@ -11176,7 +11204,7 @@
         push(toX, GROUND_Y - PLAYER_H - 12, 190, 1.05, false);
       }
       const toX = hitter === 'left' ? attractRightX(120) : attractLeftX(120);
-      push(toX, GROUND_Y - PLAYER_H + 4, 40, 0.5, true);
+      pushSmash(toX, 40, 0.5);
     } else if (flavor === 1) { // net battle -> net kill
       const n = 3 + Math.floor(Math.random() * 2);
       for (let i = 0; i < n; i++){
@@ -11184,7 +11212,7 @@
         push(toX, netY, 26, 0.48, false);
       }
       const toX = hitter === 'left' ? attractRightX(140) : attractLeftX(140);
-      push(toX, GROUND_Y - PLAYER_H + 4, 30, 0.48, true);
+      pushSmash(toX, 30, 0.48);
     } else if (flavor === 2) { // wide-angle dash rally -> smash finish
       const n = 2 + Math.floor(Math.random() * 2);
       for (let i = 0; i < n; i++){
@@ -11193,7 +11221,7 @@
         push(toX, GROUND_Y - PLAYER_H - 8, 140, 0.8, false);
       }
       const toX = hitter === 'left' ? attractRightX(90) : attractLeftX(90);
-      push(toX, GROUND_Y - PLAYER_H + 4, 34, 0.48, true);
+      pushSmash(toX, 34, 0.48);
     } else { // long building rally -> emphatic finish (longest loop)
       const n = 4 + Math.floor(Math.random() * 2);
       for (let i = 0; i < n; i++){
@@ -11201,28 +11229,46 @@
         push(toX, GROUND_Y - PLAYER_H - 15, 165, 0.9, false);
       }
       const toX = hitter === 'left' ? attractRightX(150) : attractLeftX(150);
-      push(toX, GROUND_Y - PLAYER_H + 4, 36, 0.55, true);
+      pushSmash(toX, 36, 0.55);
     }
     return shots;
   }
 
-  // Stamps absolute t0/t1 onto each shot, with a short pause at every
-  // contact point so hits read as discrete beats rather than a blur.
+  // Stamps absolute t0/t1 onto each shot. There is deliberately NO pause
+  // between shots — the receiver's contact happens on the exact frame the
+  // incoming shot lands, so the shuttle reverses direction on impact instead
+  // of parking in mid-air waiting to be hit. (An inter-shot gap here was the
+  // "shuttle stops at the player, then they hit it a beat later" lag.)
   function attractAssignTimes(shots){
-    let t = 0.2;
-    const GAP = 0.14;
+    let t = 0.22; // brief hold before the opening shot, so it reads as a serve
     for (let i = 0; i < shots.length; i++){
       shots[i].t0 = t;
       t += shots[i].dur;
       shots[i].t1 = t;
-      t += GAP;
     }
   }
+
+  // drawPlayer()'s swing arc peaks (racket actually meets the shuttle) around
+  // 40% of the way through SWING_DURATION, and a jump needs ~JUMP_VELOCITY/
+  // PLAYER_GRAVITY seconds to reach its apex. Both therefore have to START
+  // ahead of the contact instant for the player to be mid-swing / airborne at
+  // impact — firing them ON contact (as before) is what made the players look
+  // like they were reacting late to a shuttle that had already turned around.
+  const ATTRACT_SWING_LEAD = SWING_DURATION * 0.4;
+  const ATTRACT_JUMP_LEAD  = (-JUMP_VELOCITY / PLAYER_GRAVITY) * 0.92;
 
   function attractSideWaypoints(shots, side){
     const wps = [];
     for (let i = 0; i < shots.length; i++){
-      if (shots[i].hitter === side) wps.push({ t: shots[i].t0, x: shots[i].fromX, smash: shots[i].smash });
+      if (shots[i].hitter !== side) continue;
+      const t0 = shots[i].t0;
+      wps.push({
+        t: t0,
+        swingT: Math.max(0, t0 - ATTRACT_SWING_LEAD),
+        jumpT:  Math.max(0, t0 - ATTRACT_JUMP_LEAD),
+        x: shots[i].fromX,
+        smash: shots[i].smash
+      });
     }
     return wps;
   }
@@ -11231,22 +11277,37 @@
     const chars = attractPickCharacters();
     left.character = chars[0];
     right.character = chars[1];
+    // fresh venue each loop, alongside the fresh matchup
+    attractBgId = BACKGROUNDS[Math.floor(Math.random() * BACKGROUNDS.length)].id;
     const flavor = Math.floor(Math.random() * 4);
     const shots = attractBuildScript(flavor);
     attractAssignTimes(shots);
     const leftWps = attractSideWaypoints(shots, 'left');
     const rightWps = attractSideWaypoints(shots, 'right');
     const last = shots[shots.length - 1];
+    // One "scenario" = this matchup + this court + this choreography, book-ended
+    // by a dip to black so the cut to the next one is a deliberate edit rather
+    // than characters and the whole venue popping mid-frame.
+    const settleEnd = last.t1 + 0.75; // winner lands + players reset to ready
     attract = {
       startTime: nowSec,
       shots: shots,
       leftWps: leftWps,
       rightWps: rightWps,
-      loopEnd: nowSec + last.t1 + 1.2,
+      finisherT0: last.t0,
+      settleEnd: settleEnd,
+      loopEnd: nowSec + settleEnd + ATTRACT_FADE,
       prevShuttleX: shots[0].fromX,
       prevShuttleY: shots[0].fromY,
-      prevLocalT: 0
+      prevLocalT: 0,
+      fadeAlpha: 1,          // scenario opens at full black and fades up
+      camTargetX: 0,
+      camTargetY: 0,
+      camTargetZoom: ATTRACT_ZOOM_BASE,
+      camSeed: Math.random() * 100 // per-scenario drift phase, so no two feel identical
     };
+    // Safe to hard-cut the camera here: this frame is fully black.
+    camX = 0; camY = 0; camZoom = ATTRACT_ZOOM_BASE;
     left.x = leftWps.length ? leftWps[0].x : attractLeftX(20);
     right.x = rightWps.length ? rightWps[0].x : attractRightX(20);
     left.y = right.y = GROUND_Y - PLAYER_H;
@@ -11280,9 +11341,19 @@
     }
     const last = shots[shots.length - 1];
     const lastWp = wps[wps.length-1];
-    if (last.hitter === side) return lastWp.x; // just hit the finisher — hold position
-    const u = Math.min(1, (localT - lastWp.t) / 0.4);
-    return lastWp.x + (last.toX - lastWp.x) * u; // receiver reaching for the finisher
+    // Where this side ends the rally: the finisher's hitter holds where they
+    // struck it, the receiver is still reaching for it. Time is clamped at the
+    // final contact so the reach settles instead of overshooting into the tail.
+    const tEnd = Math.min(localT, last.t1);
+    const endX = (last.hitter === side)
+      ? lastWp.x
+      : lastWp.x + (last.toX - lastWp.x) * Math.min(1, (tEnd - lastWp.t) / 0.4);
+    if (localT <= last.t1) return endX;
+    // Point's over — ease back toward a neutral ready position so the closing
+    // beat of the loop still has movement in it rather than two frozen statues.
+    const readyX = side === 'left' ? attractLeftX(40) : attractRightX(40);
+    const u = Math.min(1, (localT - last.t1) / 0.55);
+    return endX + (readyX - endX) * (1 - Math.pow(1 - u, 3));
   }
 
   function attractStepSide(side, localT, dt){
@@ -11295,10 +11366,16 @@
     p.vx = dt > 0 ? Math.max(-MOVE_SPEED, Math.min(MOVE_SPEED, (p.x - prevX) / dt)) : 0;
 
     for (let i = 0; i < wps.length; i++){
-      if (attract.prevLocalT < wps[i].t && localT >= wps[i].t){
+      const w = wps[i];
+      // Jump first (needs the longest run-up), then the swing — both timed to
+      // peak ON the contact instant rather than starting from it.
+      if (w.smash && p.onGround && attract.prevLocalT < w.jumpT && localT >= w.jumpT){
+        p.onGround = false;
+        p.vy = JUMP_VELOCITY;
+      }
+      if (attract.prevLocalT < w.swingT && localT >= w.swingT){
         p.swingTimer = SWING_DURATION;
-        p.swingPowerFrac = wps[i].smash ? 1 : 0.5;
-        if (wps[i].smash){ p.onGround = false; p.vy = JUMP_VELOCITY; }
+        p.swingPowerFrac = w.smash ? 1 : 0.5;
       }
     }
     if (p.swingTimer > 0) p.swingTimer = Math.max(0, p.swingTimer - dt);
@@ -11322,10 +11399,27 @@
       const u = (localT - shot.t0) / Math.max(0.001, shot.t1 - shot.t0);
       x = shot.fromX + (shot.toX - shot.fromX) * u;
       y = shot.fromY + (shot.toY - shot.fromY) * u - shot.apex * 4 * u * (1 - u);
+    } else if (localT < shots[0].t0){
+      x = shots[0].fromX; y = shots[0].fromY; // held at the server's racket
     } else {
-      let landed = shots[0];
-      for (let i = 0; i < shots.length; i++){ if (localT >= shots[i].t1) landed = shots[i]; }
-      x = landed.toX; y = landed.toY;
+      // Past the final shot. Rather than parking the shuttle in mid-air (which
+      // read as a dead freeze at the end of every loop), carry it on with the
+      // velocity it actually had at contact and let gravity bring it down, so
+      // the rally visibly finishes with the winner landing.
+      const fin = shots[shots.length - 1];
+      const dur = Math.max(0.001, fin.t1 - fin.t0);
+      const vX = (fin.toX - fin.fromX) / dur;
+      const vY = ((fin.toY - fin.fromY) + fin.apex * 4) / dur;
+      const g = ATTRACT_TAIL_GRAVITY;
+      const floorY = GROUND_Y - 6;
+      // Freeze the whole trajectory at the instant it reaches the floor, so the
+      // shuttle stops dead where it lands rather than skating on to the wall
+      // for the rest of the tail.
+      const disc = Math.max(0, vY * vY + 2 * g * (floorY - fin.toY));
+      const tLand = Math.max(0, (-vY + Math.sqrt(disc)) / g);
+      const tau = Math.min(localT - fin.t1, tLand);
+      x = fin.toX + vX * tau;
+      y = Math.min(floorY, fin.toY + vY * tau + 0.5 * g * tau * tau);
     }
     const dtSafe = Math.max(0.001, dt);
     shuttle.vx = (x - attract.prevShuttleX) / dtSafe;
@@ -11335,14 +11429,67 @@
     attract.prevShuttleX = x; attract.prevShuttleY = y;
   }
 
+  // Cinematic camera for the menu rally: a loose shuttle follow (so it never
+  // feels locked to a tripod), a slow per-scenario drift/breath, and a push-in
+  // on the finishing smash. Kept gentle on X because the menu column occupies
+  // the left of the screen — the action needs to stay in the clear right side.
+  function attractUpdateCamera(localT){
+    const a = attract;
+    const follow = 0.13, followY = 0.07;
+    let zoom = ATTRACT_ZOOM_BASE;
+
+    // slow push-in across the rally, so the scenario builds instead of sitting flat
+    const rallyU = Math.max(0, Math.min(1, localT / Math.max(0.001, a.settleEnd)));
+    zoom += rallyU * 0.05;
+
+    // punch in for the finish, then ease back out over the settle beat
+    if (localT >= a.finisherT0){
+      const fu = Math.min(1, (localT - a.finisherT0) / 0.45);
+      zoom += 0.10 * Math.sin(fu * Math.PI); // in and back out
+    }
+    // gentle handheld breath, phase-offset per scenario
+    const br = a.camSeed + localT;
+    zoom += Math.sin(br * 0.7) * 0.006;
+
+    a.camTargetX = (shuttle.x - W / 2) * follow + Math.sin(br * 0.45) * 12;
+    a.camTargetY = (shuttle.y - H / 2) * followY + Math.cos(br * 0.38) * 7;
+    a.camTargetZoom = zoom;
+  }
+
   function updateAttractMode(nowSec, dt){
-    if (state !== 'start'){ attract = null; return; }
+    if (state !== 'start'){
+      // Leaving the menu: drop the scenario and snap the camera back to neutral
+      // so the attract framing can't bleed into the start of a real match.
+      if (attract){ attract = null; camX = 0; camY = 0; camZoom = 1.0; }
+      return;
+    }
     if (!attract || nowSec >= attract.loopEnd) attractStartLoop(nowSec);
     const localT = nowSec - attract.startTime;
     attractStepSide('left', localT, dt);
     attractStepSide('right', localT, dt);
     attractStepShuttle(localT, dt);
+    attractUpdateCamera(localT);
+
+    // Dip to black at both ends of the scenario (see attractStartLoop).
+    let fade = 0;
+    if (localT < ATTRACT_FADE)              fade = 1 - localT / ATTRACT_FADE;
+    else if (localT > attract.settleEnd)    fade = (localT - attract.settleEnd) / ATTRACT_FADE;
+    attract.fadeAlpha = Math.max(0, Math.min(1, fade));
+
     attract.prevLocalT = localT;
+  }
+
+  // Drawn over the finished frame (menu DOM sits above the canvas, so the logo
+  // and menu items stay crisp while only the rally behind them dips).
+  function drawAttractTransition(){
+    if (state !== 'start' || !attract) return;
+    const a = attract.fadeAlpha;
+    if (a <= 0.002) return;
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.fillStyle = '#10131d'; // --bg, so the dip matches the menu's own scrim
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
   }
 
   // ---------- menu flow: mode -> character select -> background select -> game ----------
@@ -16402,7 +16549,10 @@
 
   function drawCourt(){
     updateDomainExpansion(0.016);
-    const bg = BACKGROUNDS.find(function(b){ return b.id === selectedBackgroundId; }) || BACKGROUNDS[0];
+    // On the main menu the attract-mode rally rolls its own random court each
+    // loop (see attractBgId); a real match always uses the player's own pick.
+    const bgId = (state === 'start' && attractBgId) ? attractBgId : selectedBackgroundId;
+    const bg = BACKGROUNDS.find(function(b){ return b.id === bgId; }) || BACKGROUNDS[0];
 
     // scoring bounce is the only thing that animates the environment per point.
     let courtBounce = 0;
@@ -16411,7 +16561,7 @@
     // cache the offscreen render: only rebuild when the theme changes or the bounce
     // animates (during a point pause) — otherwise reuse the buffer every frame (spec Part 5).
     const dynamic = (state === 'pointPause');
-    const key = selectedBackgroundId + '|' + (dynamic ? 'b' + Math.round(courtBounce*3) : 'static');
+    const key = bgId + '|' + (dynamic ? 'b' + Math.round(courtBounce*3) : 'static');
     if(key !== _envKey){ renderCourtEnv(bg, courtBounce); _envKey = key; }
 
     ctx.imageSmoothingEnabled = false;
@@ -19643,6 +19793,14 @@
       // so the decoy drops never leak a directional read.
       targetCamX = 0; targetCamY = 0; targetCamZoom = 1.0;
     } else
+    // Main-menu attract rally runs its own cinematic camera (computed in
+    // updateAttractMode). Deliberately NOT gated on dynamicCameraEnabled —
+    // that setting is about gameplay readability, and this is a showreel.
+    if (state === 'start' && attract) {
+      targetCamX = attract.camTargetX;
+      targetCamY = attract.camTargetY;
+      targetCamZoom = attract.camTargetZoom;
+    } else
     // Camera target selection
     if (dynamicCameraEnabled && state === 'pointPause' && pointCelebrateSide) {
       const p = (pointCelebrateSide === 'left') ? left : right;
@@ -19809,6 +19967,7 @@
     drawAmaraCloseupOverlay();   // full-screen close-up: Puppeteer FACE / Solar Judgment GAZE
     drawUltCinematic(); // full-screen, untranslated (Part 7)
     drawRetroOverlay(); // PIXEL_REVAMP Phase 2 — subtle CRT scanlines + vignette over the whole frame
+    drawAttractTransition(); // main-menu scenario cross-fade (no-op outside the menu)
     updateServeTag();
     updateTouchControlsVisibility();
   }
