@@ -1815,9 +1815,8 @@
 
   /* ---- portrait: a swappable IMAGE SLOT ----------------------------
      .diffPortrait is the drop-in point — give it a real src and it wins.
-     While it's empty it stays hidden and the canvas underneath acts as
-     the placeholder (rendered from the game's own character art, so the
-     slot is never blank). No specific art is baked into the CSS. */
+     .diffFx sits on top of it and only paints while the card is hovered
+     or focused, adding that character's weather (see initDifficultyCardFx). */
   .diffPortraitWrap {
     position: relative;
     flex: 1 1 auto;
@@ -1861,6 +1860,26 @@
   .diffCard:focus-visible .diffPortrait {
     transform: scale(1.06);
     filter: saturate(1.12) brightness(1);
+  }
+  /* Animated weather layer. Sits above the art but below the bottom fade, so
+     particles melt into the card body the same way the portrait does. */
+  .diffFx {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    z-index: 1;
+    pointer-events: none;
+    opacity: 0;
+    /* matches .diffPortrait's hover transform so anchored effects (the dragon's
+       eye, Jordan's eyes) stay locked to the art as it scales */
+    transition: opacity 0.28s ease, transform 0.35s cubic-bezier(0.16,1,0.3,1);
+  }
+  .diffCard:hover .diffFx,
+  .diffCard:focus-visible .diffFx { opacity: 1; transform: scale(1.06); }
+  @media (prefers-reduced-motion: reduce) {
+    .diffFx { display: none; }
   }
 
   /* ---- body ---- */
@@ -3247,6 +3266,7 @@
             <span class="diffHeatBar"></span>
             <span class="diffPortraitWrap">
               <img class="diffPortrait" data-portrait="easy" src="assets/characters/splash-easy.png" alt="Sofia — the Easy AI opponent">
+              <canvas class="diffFx" data-fx="easy" aria-hidden="true"></canvas>
             </span>
             <span class="diffCardBody">
               <span class="diffCardLabel">
@@ -3262,6 +3282,7 @@
             <span class="diffHeatBar"></span>
             <span class="diffPortraitWrap">
               <img class="diffPortrait" data-portrait="medium" src="assets/characters/splash-medium.png" alt="Elijah — the Medium AI opponent">
+              <canvas class="diffFx" data-fx="medium" aria-hidden="true"></canvas>
             </span>
             <span class="diffCardBody">
               <span class="diffCardLabel">
@@ -3277,6 +3298,7 @@
             <span class="diffHeatBar"></span>
             <span class="diffPortraitWrap">
               <img class="diffPortrait" data-portrait="hard" src="assets/characters/splash-hard.png" alt="Sherman — the Hard AI opponent">
+              <canvas class="diffFx" data-fx="hard" aria-hidden="true"></canvas>
             </span>
             <span class="diffCardBody">
               <span class="diffCardLabel">
@@ -3292,6 +3314,7 @@
             <span class="diffHeatBar"></span>
             <span class="diffPortraitWrap">
               <img class="diffPortrait" data-portrait="expert" src="assets/characters/splash-expert.png" alt="Jordan — the Expert AI opponent">
+              <canvas class="diffFx" data-fx="expert" aria-hidden="true"></canvas>
             </span>
             <span class="diffCardBody">
               <span class="diffCardLabel">
@@ -20169,8 +20192,245 @@
     ctx.drawImage(_scanCanvas, 0, 0);
   }
 
+  // ---- difficulty card hover weather ---------------------------------------
+  // Each card owns a <canvas class="diffFx"> layered over its splash. It only
+  // paints while that card is hovered or keyboard-focused, and the shared rAF
+  // loop parks itself the moment every layer has faded out, so an idle menu
+  // costs nothing. Anchored effects (the dragon's eye, Jordan's eyes, the
+  // dragon's body path) are positioned in card-normalised coordinates derived
+  // from where those features actually sit in the 800x1500 source art.
+  function initDifficultyCardFx(){
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const nodes = Array.prototype.slice.call(document.querySelectorAll('.diffFx'));
+    if (!nodes.length) return;
+    const DPR = Math.min(2, window.devicePixelRatio || 1);
+    const rnd = function(a, b){ return a + Math.random() * (b - a); };
+
+    // Catmull-Rom through the same control points the splash generator used for
+    // the serpent, converted into card space, so energy pulses ride the body.
+    function catmull(pts, n){
+      const out = [], p = [pts[0]].concat(pts, [pts[pts.length - 1]]);
+      for (let i = 0; i < p.length - 3; i++) {
+        for (let s = 0; s < n; s++) {
+          const t = s / n, t2 = t * t, t3 = t2 * t, c = [];
+          for (let d = 0; d < 2; d++) {
+            c.push(0.5 * ((2 * p[i + 1][d]) + (-p[i][d] + p[i + 2][d]) * t +
+              (2 * p[i][d] - 5 * p[i + 1][d] + 4 * p[i + 2][d] - p[i + 3][d]) * t2 +
+              (-p[i][d] + 3 * p[i + 1][d] - 3 * p[i + 2][d] + p[i + 3][d]) * t3));
+          }
+          out.push(c);
+        }
+      }
+      return out;
+    }
+    const DRAGON = catmull([[1.07,0.749],[0.88,0.528],[0.95,0.324],[0.65,0.143],[0.33,0.177],[0.18,0.318]], 22);
+    const DRAGON_EYE = [0.18, 0.318];
+    const JORDAN_EYES = [[0.40, 0.287], [0.625, 0.287]];
+
+    function seed(L){
+      L.p = [];
+      const K = L.kind;
+      if (K === 'easy') {
+        for (let i = 0; i < 78; i++) {
+          L.p.push({ x: Math.random(), y: Math.random(), vy: rnd(0.03, 0.10),
+            vx: rnd(-0.016, 0.016), r: Math.random() < 0.38 ? 2 : 1,
+            ph: Math.random() * 6.28, sp: rnd(1.6, 4),
+            c: Math.random() < 0.4 ? '#ffd6e6' : (Math.random() < 0.5 ? '#ffffff' : '#9ce8c9') });
+        }
+      } else if (K === 'medium' || K === 'expert') {
+        const n = K === 'medium' ? 90 : 76;
+        for (let i = 0; i < n; i++) {
+          L.p.push({ x: rnd(-0.15, 1.1), y: Math.random(), len: rnd(0.05, 0.16),
+            sp: rnd(0.9, 1.9), w: Math.random() < 0.25 ? 2 : 1, a: rnd(0.18, 0.6) });
+        }
+        L.splash = [];
+        L.nextFlash = K === 'expert' ? rnd(0.3, 1.4) : 0;
+      } else if (K === 'hard') {
+        for (let i = 0; i < 44; i++) {
+          L.p.push({ x: Math.random(), y: Math.random(), vy: rnd(0.05, 0.14),
+            vx: rnd(-0.02, 0.02), r: Math.random() < 0.2 ? 2 : 1,
+            ph: Math.random() * 6.28, sp: rnd(1.5, 3.5) });
+        }
+        L.pulses = [];
+        for (let i = 0; i < 4; i++) L.pulses.push({ u: Math.random(), sp: rnd(0.10, 0.19) });
+      }
+    }
+
+    function paint(L, dt){
+      const c = L.ctx, w = L.w, h = L.h, K = L.kind;
+      c.clearRect(0, 0, w, h);
+      c.globalAlpha = L.fade;
+      c.globalCompositeOperation = 'lighter';
+
+      if (K === 'easy') {
+        for (const s of L.p) {
+          s.y -= s.vy * dt; s.x += s.vx * dt;
+          if (s.y < -0.03) { s.y = 1.03; s.x = Math.random(); }
+          const tw = 0.45 + 0.55 * Math.sin(L.t * s.sp + s.ph);
+          const px = s.x * w, py = s.y * h, r = s.r * DPR;
+          c.fillStyle = s.c; c.globalAlpha = L.fade * tw;
+          c.fillRect(px, py, r, r);
+          if (s.r > 1) {                    // sparkle cross on the bigger motes
+            c.globalAlpha = L.fade * tw * 0.6;
+            c.fillRect(px - r * 1.5, py + r * 0.5, r * 4, r * 0.5);
+            c.fillRect(px + r * 0.5, py - r * 1.5, r * 0.5, r * 4);
+          }
+        }
+      } else if (K === 'medium' || K === 'expert') {
+        const cold = K === 'expert';
+        c.strokeStyle = cold ? '#cfe8ff' : '#cfe2ff';
+        c.lineCap = 'round';
+        for (const d of L.p) {
+          d.y += d.sp * dt;
+          if (d.y > 1.1) { d.y = rnd(-0.3, -0.02); d.x = rnd(-0.15, 1.1); }
+          c.globalAlpha = L.fade * d.a * (cold ? 0.75 : 1);
+          c.lineWidth = d.w * DPR;
+          c.beginPath();
+          c.moveTo(d.x * w, d.y * h);
+          c.lineTo((d.x - d.len * 0.3) * w, (d.y + d.len) * h);
+          c.stroke();
+          if (d.y > 0.62 && Math.random() < 0.02) {
+            L.splash.push({ x: d.x - d.len * 0.3, y: d.y + d.len, t: 0 });
+          }
+        }
+        for (let i = L.splash.length - 1; i >= 0; i--) {
+          const s = L.splash[i];
+          s.t += dt * 3.4;
+          if (s.t > 1) { L.splash.splice(i, 1); continue; }
+          c.globalAlpha = L.fade * (1 - s.t) * 0.5;
+          c.lineWidth = DPR;
+          c.beginPath();
+          c.arc(s.x * w, s.y * h, s.t * 9 * DPR, 0, 6.283);
+          c.stroke();
+        }
+        if (cold) {
+          // eyes burning through the storm
+          for (const e of JORDAN_EYES) {
+            const pulse = 0.55 + 0.45 * Math.sin(L.t * 2.6);
+            const g = c.createRadialGradient(e[0] * w, e[1] * h, 0, e[0] * w, e[1] * h, 26 * DPR);
+            g.addColorStop(0, 'rgba(180,240,255,' + (0.5 * pulse) + ')');
+            g.addColorStop(1, 'rgba(120,200,255,0)');
+            c.globalAlpha = L.fade; c.fillStyle = g;
+            c.fillRect(e[0] * w - 30 * DPR, e[1] * h - 30 * DPR, 60 * DPR, 60 * DPR);
+          }
+          // lightning: a full-frame wash plus a drawn bolt, on an irregular beat
+          L.nextFlash -= dt;
+          if (L.nextFlash <= 0) {
+            L.nextFlash = rnd(1.1, 3.2);
+            L.flash = 1;
+            const pts = [[rnd(0.08, 0.92), -0.05]];
+            while (pts[pts.length - 1][1] < rnd(0.5, 0.95)) {
+              const p = pts[pts.length - 1];
+              pts.push([p[0] + rnd(-0.09, 0.09), p[1] + rnd(0.05, 0.12)]);
+            }
+            L.bolt = pts;
+          }
+          if (L.flash > 0) {
+            L.flash = Math.max(0, L.flash - dt * 3.6);
+            const f = L.flash * L.flash;
+            c.globalAlpha = L.fade * f * 0.30;
+            c.fillStyle = '#9fd8ff';
+            c.fillRect(0, 0, w, h);
+            if (L.bolt) {
+              c.globalAlpha = L.fade * f;
+              c.strokeStyle = '#eaf8ff';
+              c.lineWidth = 3 * DPR; c.globalAlpha = L.fade * f * 0.5;
+              c.beginPath(); c.moveTo(L.bolt[0][0] * w, L.bolt[0][1] * h);
+              for (const p of L.bolt) c.lineTo(p[0] * w, p[1] * h);
+              c.stroke();
+              c.lineWidth = DPR; c.globalAlpha = L.fade * f;
+              c.stroke();
+            }
+          }
+        }
+      } else if (K === 'hard') {
+        // embers rising off the throne-room floor
+        for (const s of L.p) {
+          s.y -= s.vy * dt; s.x += s.vx * dt + Math.sin(L.t * s.sp + s.ph) * 0.0007;
+          if (s.y < -0.03) { s.y = 1.03; s.x = Math.random(); }
+          const tw = 0.4 + 0.6 * Math.sin(L.t * s.sp + s.ph);
+          c.globalAlpha = L.fade * tw * 0.85;
+          c.fillStyle = tw > 0.75 ? '#ffe6a3' : '#d4a63c';
+          c.fillRect(s.x * w, s.y * h, s.r * DPR, s.r * DPR);
+        }
+        // ki running up the serpent's body toward the head
+        for (const p of L.pulses) {
+          p.u += p.sp * dt;
+          if (p.u > 1.15) p.u -= 1.3;
+          for (let k = 0; k < 14; k++) {
+            const u = p.u - k * 0.012;
+            if (u < 0 || u > 1) continue;
+            const idx = Math.min(DRAGON.length - 1, Math.max(0, Math.round(u * (DRAGON.length - 1))));
+            const pt = DRAGON[idx];
+            const fall = (1 - k / 14);
+            c.globalAlpha = L.fade * fall * 0.55;
+            c.fillStyle = k < 4 ? '#eaffd8' : '#9be8b8';
+            const r = (1 + fall * 2.2) * DPR;
+            c.fillRect(pt[0] * w - r / 2, pt[1] * h - r / 2, r, r);
+          }
+        }
+        // the eye waking up
+        const pulse = 0.5 + 0.5 * Math.sin(L.t * 3.1);
+        const g = c.createRadialGradient(DRAGON_EYE[0] * w, DRAGON_EYE[1] * h, 0,
+          DRAGON_EYE[0] * w, DRAGON_EYE[1] * h, 24 * DPR);
+        g.addColorStop(0, 'rgba(255,70,80,' + (0.55 * pulse) + ')');
+        g.addColorStop(1, 'rgba(255,60,70,0)');
+        c.globalAlpha = L.fade; c.fillStyle = g;
+        c.fillRect(DRAGON_EYE[0] * w - 28 * DPR, DRAGON_EYE[1] * h - 28 * DPR, 56 * DPR, 56 * DPR);
+      }
+
+      c.globalAlpha = 1;
+      c.globalCompositeOperation = 'source-over';
+    }
+
+    function measure(L){
+      const r = L.cv.getBoundingClientRect();
+      if (!r.width || !r.height) return false;
+      const w = Math.round(r.width * DPR), h = Math.round(r.height * DPR);
+      if (L.cv.width !== w || L.cv.height !== h) { L.cv.width = w; L.cv.height = h; L.seeded = false; }
+      L.w = w; L.h = h;
+      return true;
+    }
+
+    let raf = 0, last = 0;
+    function tick(now){
+      const dt = Math.min(0.05, (now - last) / 1000) || 0.016;
+      last = now;
+      let alive = false;
+      for (const L of layers) {
+        L.fade += ((L.on ? 1 : 0) - L.fade) * Math.min(1, dt * 7);
+        if (!L.on && L.fade < 0.01) {
+          if (!L.cleared && L.w) { L.ctx.clearRect(0, 0, L.w, L.h); L.cleared = true; }
+          continue;
+        }
+        alive = true; L.cleared = false;
+        if (!measure(L)) continue;
+        if (!L.seeded) { seed(L); L.seeded = true; }
+        L.t += dt;
+        paint(L, dt);
+      }
+      raf = alive ? requestAnimationFrame(tick) : 0;
+    }
+    function run(){ if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick); } }
+
+    const layers = nodes.map(function(cv){
+      const L = { cv: cv, ctx: cv.getContext('2d'), kind: cv.dataset.fx,
+        card: cv.closest('.diffCard'), on: false, fade: 0, t: 0, w: 0, h: 0,
+        seeded: false, cleared: true, p: [], splash: [], pulses: [], flash: 0, nextFlash: 0, bolt: null };
+      if (!L.card) return L;
+      const wake = function(){ L.on = true; run(); };
+      const sleep = function(){ L.on = false; run(); };
+      L.card.addEventListener('pointerenter', wake);
+      L.card.addEventListener('pointerleave', sleep);
+      L.card.addEventListener('focus', wake);
+      L.card.addEventListener('blur', sleep);
+      return L;
+    });
+  }
+
   draw();
   requestAnimationFrame(loop);
+  initDifficultyCardFx();
   setTimeout(adjustScale, 50);
 })();
 </script>
