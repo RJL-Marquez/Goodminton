@@ -11627,8 +11627,25 @@
     a.camTargetZoom = zoom;
   }
 
+  // The attract rally borrows the REAL left.character / right.character slots to
+  // render its demo match, and `state` stays 'start' for the whole selection
+  // flow — difficulty, character select, background select and the VS card all
+  // run as overlays on top of the menu. So the loop has to stop the moment the
+  // player starts choosing for real: otherwise a loop boundary landing anywhere
+  // in that window re-rolls both fighters behind the overlay, and the match
+  // starts with someone you never picked.
+  const ATTRACT_BLOCKERS = ['difficultyOverlay', 'charSelectOverlay', 'bgSelectOverlay', 'vsOverlay'];
+  function attractShouldRun(){
+    if (state !== 'start') return false;
+    for (let i = 0; i < ATTRACT_BLOCKERS.length; i++){
+      const el = document.getElementById(ATTRACT_BLOCKERS[i]);
+      if (el && !el.classList.contains('hidden')) return false;
+    }
+    return true;
+  }
+
   function updateAttractMode(nowSec, dt){
-    if (state !== 'start'){
+    if (!attractShouldRun()){
       // Leaving the menu: drop the scenario and snap the camera back to neutral
       // so the attract framing can't bleed into the start of a real match.
       if (attract){ attract = null; camX = 0; camY = 0; camZoom = 1.0; }
@@ -14421,12 +14438,17 @@
       // Halo size is bounded by geometry, not taste: the two halo centres sit 3.5 sprite units
       // apart, so anything at/over r=1.75 makes them touch and fuse back into one glowing head.
       // r=1.7 is right at that ceiling — the most glow available while the eyes stay separate.
-      _pixCtx.globalAlpha=ang.eyeGlow*0.62;
+      // Brightness is turned back up to the original burning read. The radius
+      // is what has to stay bounded (past ~1.75 the two halos touch and fuse
+      // into one glowing head) — intensity does not, so the glow is driven hard
+      // on alpha and a hot white core instead of on size.
+      _pixCtx.globalAlpha=ang.eyeGlow;
       var _haloR=1.7;
       [[_gfx+_geL+1,_gfy+_gey+0.5],[_gfx+_geR+0.5,_gfy+_gey+0.5]].forEach(function(pt){
-        var grad=_pixCtx.createRadialGradient(pt[0],pt[1],0.15,pt[0],pt[1],_haloR);
-        grad.addColorStop(0,'rgba(235,252,255,0.95)');
-        grad.addColorStop(0.45,'rgba(150,232,255,0.5)');
+        var grad=_pixCtx.createRadialGradient(pt[0],pt[1],0.12,pt[0],pt[1],_haloR);
+        grad.addColorStop(0,'rgba(255,255,255,1)');
+        grad.addColorStop(0.3,'rgba(215,248,255,0.92)');
+        grad.addColorStop(0.62,'rgba(150,232,255,0.62)');
         grad.addColorStop(1,'rgba(120,220,255,0)');
         _pixCtx.fillStyle=grad;
         _pixCtx.fillRect(pt[0]-_haloR,pt[1]-_haloR,_haloR*2,_haloR*2);
@@ -14537,9 +14559,42 @@
     var prevSmooth=c.imageSmoothingEnabled;
     c.save();
     c.imageSmoothingEnabled=false;
-    c.translate(cx, groundY);
-    c.scale(facing,1);
-    c.drawImage(_pixBuf, -ANCHOR_X*s, -ANCHOR_Y*s, BUF_W*s, BUF_H*s);
+    // Snap the sprite to whole DEVICE pixels before blitting.
+    //
+    // The figure is a 30x40 pixel-art buffer nearest-neighbour upscaled by a
+    // per-character factor that is not an integer (Jordan lands on ~3.23 device
+    // px per sprite px, Maya ~2.86) and drawn at a fractional player x. Two
+    // things go wrong with a fractional destination rect: the browser
+    // antialiases the rect's EDGES against the court even with smoothing off,
+    // and which source rows/columns get doubled shifts every frame as the
+    // player slides sub-pixel. On a face only ~6 sprite px tall that reads as
+    // the head flickering half-transparent. It changes rather than disappears
+    // while charging because the charge camera zoom (1.02 -> 1.08) moves the
+    // fractional part.
+    //
+    // Rounding the destination in device space keeps the character's size and
+    // the existing camera transform, but lands every edge on a real pixel, so
+    // the sprite stays opaque and stops shimmering.
+    var m = c.getTransform();
+    if (m.b || m.c) {
+      // rotated/skewed caller: snapping to an axis-aligned device rect would
+      // drop the rotation, so draw the normal way and accept the resampling
+      c.translate(cx, groundY);
+      c.scale(facing, 1);
+      c.drawImage(_pixBuf, -ANCHOR_X*s, -ANCHOR_Y*s, BUF_W*s, BUF_H*s);
+    } else {
+      var sxAbs = Math.abs(m.a) || 1, syAbs = Math.abs(m.d) || 1;
+      var dx = Math.round(m.e + m.a * cx);
+      var dy = Math.round(m.f + m.d * groundY);
+      var ox = Math.round(ANCHOR_X * s * sxAbs);
+      var oy = Math.round(ANCHOR_Y * s * syAbs);
+      var dw = Math.round(BUF_W * s * sxAbs);
+      var dh = Math.round(BUF_H * s * syAbs);
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.translate(dx, dy);
+      c.scale(facing, 1);
+      c.drawImage(_pixBuf, -ox, -oy, dw, dh);
+    }
     c.restore();
     c.imageSmoothingEnabled=prevSmooth;
   }
@@ -17784,12 +17839,14 @@
         drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), silCh, angData, facing);
         ctx.restore();
       } else {
-        if (sil < 1) {
-          ctx.save();
-          ctx.globalAlpha = 1 - sil;
-          drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), ch, angData, facing);
-          ctx.restore();
-        }
+        // Cross-fade normal -> pure silhouette. Both layers used to be painted
+        // at partial alpha (1-sil and sil), which never sums back to opaque:
+        // source-over gives (1-sil) + sil*sil coverage, so at sil=0.5 Jordan is
+        // only 75% there and the court shows THROUGH him — worst over the head,
+        // where a 1px hair row has nothing behind it to hide the gap. Painting
+        // the base opaque and blending the silhouette on top produces the same
+        // colour ramp with no transparency dip.
+        drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), ch, angData, facing);
         if (sil > 0) {
           const dk = '#080808';
           const silCh = {id:ch.id, skin:dk, hair:dk, hairStyle:ch.hairStyle, shirt:dk, shirt2:dk, shorts:dk, shoe:dk, demeanor:ch.demeanor, pixSilhouette:true};
