@@ -14067,19 +14067,21 @@
     if(!ch.pixSilhouette) drawPixFace(px,hx+1,hy,expr,t,ch.glasses); // pure silhouette: no eyes/brows/mouth baked into the sprite — only the overlay glow-eyes read
     // Jordan's transformation glow
     if(ang.eyeGlow > 0){
-      // The head sprite is only ~8px wide, so the old 5px-radius halo per eye (alpha 0.9)
-      // overlapped across the whole skull and read as a glowing HEAD rather than eyes. The
-      // halo is now tight and dim; the eyes themselves carry the read as two hard-edged
-      // angled slits — a cyan slit with a hot white core, slanting down toward the nose for
-      // a glare instead of two neutral square dots.
-      var _gfx=hx+1, _gfy=hy, _geL=2, _geR=5, _gey=3;
+      // Eye geometry, in sprite units: the head map is 8 wide starting at hx, and the two eyes
+      // sit at hx+3 and hx+6. That leaves very little room for a halo — the original 5px radius
+      // (and the 2.4px first attempt) both spanned the ENTIRE skull once the two overlapped,
+      // which is why it read as a glowing head instead of eyes. At r=1.1 the two glows stop at
+      // x≈4.6 and x≈5.4, so a dark gap survives between them and they read as two eyes.
+      // _geL pulled one column back (was 2) so the two 2px slits are separated by a 2px dark
+      // bridge instead of a single pixel — at a 1px gap the two glows still fused into one bar.
+      var _gfx=hx+1, _gfy=hy, _geL=1, _geR=5, _gey=3;
       _pixCtx.save();
       _pixCtx.globalCompositeOperation='lighter';
-      _pixCtx.globalAlpha=ang.eyeGlow*0.55;
-      var _haloR=2.4;
-      [[_gfx+_geL+1,_gfy+_gey+0.5],[_gfx+_geR+1,_gfy+_gey+0.5]].forEach(function(pt){
-        var grad=_pixCtx.createRadialGradient(pt[0],pt[1],0.2,pt[0],pt[1],_haloR);
-        grad.addColorStop(0,'rgba(200,245,255,0.75)');
+      _pixCtx.globalAlpha=ang.eyeGlow*0.45;
+      var _haloR=1.1;
+      [[_gfx+_geL+1,_gfy+_gey+0.5],[_gfx+_geR+0.5,_gfy+_gey+0.5]].forEach(function(pt){
+        var grad=_pixCtx.createRadialGradient(pt[0],pt[1],0.15,pt[0],pt[1],_haloR);
+        grad.addColorStop(0,'rgba(210,248,255,0.85)');
         grad.addColorStop(1,'rgba(120,220,255,0)');
         _pixCtx.fillStyle=grad;
         _pixCtx.fillRect(pt[0]-_haloR,pt[1]-_haloR,_haloR*2,_haloR*2);
@@ -14087,16 +14089,24 @@
       _pixCtx.restore();
       _pixCtx.save();
       _pixCtx.globalAlpha=ang.eyeGlow;
-      // cyan slit body (2x1), with the OUTER pixel dropped one row so the pair slants inward
+      // Brow bar sunk just above the eyes: a hard dark lid gives the glow an edge to sit under,
+      // which is what actually makes two lit pixels register as EYES on a black silhouette.
+      // (kept exactly 2 wide over each slit: the head map only spans hx..hx+8, so a wider bar
+      // punched black pixels out past the silhouette edge.)
+      _pixCtx.fillStyle='#000000';
+      _pixCtx.fillRect(_gfx+_geL, _gfy+_gey-1, 2, 1);
+      _pixCtx.fillRect(_gfx+_geR, _gfy+_gey-1, 2, 1);
+      // Cyan slit body (2x1 each), with the OUTER pixel lifted so the pair slants inward — a
+      // glare rather than two neutral dots.
       _pixCtx.fillStyle='#22d3ee';
-      _pixCtx.fillRect(_gfx+_geL,   _gfy+_gey, 2, 1);
-      _pixCtx.fillRect(_gfx+_geL,   _gfy+_gey-1, 1, 1);   // outer corner lifts → angry slant
-      _pixCtx.fillRect(_gfx+_geR,   _gfy+_gey, 2, 1);
-      _pixCtx.fillRect(_gfx+_geR+1, _gfy+_gey-1, 1, 1);
-      // hot white core, kept to the inner pixel of each slit so the eyes stay distinct
-      _pixCtx.fillStyle='#eafeff';
-      _pixCtx.fillRect(_gfx+_geL+1, _gfy+_gey, 1, 1);
-      _pixCtx.fillRect(_gfx+_geR,   _gfy+_gey, 1, 1);
+      _pixCtx.fillRect(_gfx+_geL, _gfy+_gey, 2, 1);
+      _pixCtx.fillRect(_gfx+_geR, _gfy+_gey, 2, 1);
+      // Hot white core on the OUTER pixel of each slit. Putting both cores on the inner pixels
+      // clustered the two brightest points either side of the 1px gap, which read as one wide
+      // glare (and slightly cross-eyed); pushing them apart makes them land as two eyes.
+      _pixCtx.fillStyle='#ffffff';
+      _pixCtx.fillRect(_gfx+_geL,   _gfy+_gey, 1, 1);
+      _pixCtx.fillRect(_gfx+_geR+1, _gfy+_gey, 1, 1);
       _pixCtx.restore();
     }
     // Fursona Unleashed — ginger cat ears, whiskers + a pink nose over the head
@@ -18730,7 +18740,10 @@
     // with light leaking out of its fissures, held together by a hard storm-cyan rim. Flat
     // black alone just reads as a hole punched in the screen, so the interior carries a faint
     // drifting texture and the silhouette keeps his curtain-cut shape so he stays recognisable.
-    const VOID_BODY = '#05060c', VOID_DEEP = '#020306';
+    // Two values, not one: at near-identical darkness the hair mass and the face fused into a
+    // single smooth dome that read as a helmet. The face sits a touch lighter so the curtain
+    // cut still reads as hair.
+    const VOID_BODY = '#0b1020', VOID_DEEP = '#010206';
 
     // Shoulders / chest filling the bottom of the frame
     const shY = cy + HR*1.00;
@@ -18773,15 +18786,17 @@
     // Fissures — cracks of storm light splitting the void face, spreading as the beat runs
     const crackU = Math.max(0, Math.min(1, (uFace - 0.34) / 0.30));
     if (crackU > 0) {
-      const cracks = [[-0.55, 0.28, -0.30], [0.50, 0.22, 0.34], [-0.18, 0.62, 0.10]];
+      // Kept short, thin and off the centre of the face — long vertical runs read as dotted
+      // rain falling down his cheeks rather than fissures in a void.
+      const cracks = [[-0.62, 0.26, -0.55], [0.58, 0.20, 0.60]];
       for (let c2 = 0; c2 < cracks.length; c2++){
         const ox = cracks[c2][0], oy = cracks[c2][1], drift = cracks[c2][2];
         let px2 = cx + HR*ox, py2 = cy + HR*oy;
-        const segs = Math.round(5 * crackU);
+        const segs = Math.round(4 * crackU);
         for (let s2 = 0; s2 < segs; s2++){
-          px2 += HR*0.055*drift + Math.sin(s2*2.3 + c2)*HR*0.03;
-          py2 += HR*0.075;
-          pxl(px2, py2, 2, 3, 'rgba(103,232,249,' + (0.55*crackU).toFixed(2) + ')');
+          px2 += HR*0.075*drift;
+          py2 += HR*0.055;
+          pxl(px2, py2, 1, 2, 'rgba(103,232,249,' + (0.38*crackU).toFixed(2) + ')');
         }
       }
     }
@@ -18877,20 +18892,26 @@
     // rather than a neutral rectangle), a hot core, hard lid lines defining the aperture, and
     // its own tight bloom. The framing darkness is what makes it read as an eye.
     const drawVoidEye = function(ex, outward, openH){
-      const halfH = openH / 2;
-      pxl(ex - eyeW*1.34, eyeY - halfH*1.85, eyeW*2.68, openH*1.85, '#01040a');   // socket recess
-      const slices = 6, sw = (eyeW*2) / slices;
+      // Almond profile, not a wedge: the height peaks mid-eye and tapers to a point at BOTH
+      // corners, with the whole slit tilted so the outer corner rides higher. A monotonic
+      // inner→outer ramp (the first attempt) just read as an arrow/bowtie, not an eye.
+      const slices = 9, sw = (eyeW*2) / slices;
+      pxl(ex - eyeW*1.20, eyeY - openH*0.95, eyeW*2.40, openH*1.90, '#01040a');   // socket recess
       for (let s2 = 0; s2 < slices; s2++){
-        const f = s2 / (slices - 1);
+        const f = (s2 + 0.5) / slices;                    // 0..1 across the eye
         const along = outward > 0 ? f : (1 - f);          // 0 = inner corner, 1 = outer corner
-        const hgt = openH * (0.42 + 0.58*along);          // taller toward the outer corner
+        const taper = Math.sin(Math.PI * f);              // → 0 at both corners
+        const hgt = Math.max(1, openH * (0.18 + 0.82*taper));
+        const tilt = (along - 0.5) * openH * 0.34;        // outer corner rides higher
         const sx2 = ex - eyeW + s2*sw;
-        pxl(sx2, eyeY - hgt/2, sw + 1, hgt, '#06b6d4');
-        pxl(sx2, eyeY - hgt*0.26, sw + 1, hgt*0.52, '#9ceaff');
+        const top = eyeY - hgt/2 - tilt;
+        pxl(sx2, top - 2, sw + 1, 2, '#000308');          // hard lid cap follows the tilt
+        pxl(sx2, top, sw + 1, hgt, '#06b6d4');
+        pxl(sx2, top + hgt*0.22, sw + 1, hgt*0.56, '#9ceaff');
+        pxl(sx2, top + hgt, sw + 1, 2, '#000308');        // lower lid
       }
-      pxl(ex - eyeW*0.34 - outward*eyeW*0.22, eyeY - openH*0.24, eyeW*0.68, openH*0.48, '#eaf9ff');
-      pxl(ex - eyeW*1.10, eyeY - openH*0.66, eyeW*2.20, 2, '#000308');            // upper lid
-      pxl(ex - eyeW*1.10, eyeY + openH*0.54, eyeW*2.20, 2, '#000308');            // lower lid
+      // hot core, held to the middle third so each eye has one bright pupil-like point
+      pxl(ex - eyeW*0.28, eyeY - openH*0.22, eyeW*0.56, openH*0.44, '#ffffff');
       g.save();
       g.globalCompositeOperation = 'lighter';
       const eb = g.createRadialGradient(ex, eyeY, 0.5, ex, eyeY, eyeW*2.4);
