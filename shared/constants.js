@@ -65,9 +65,10 @@
     // --- Shuttle physics ---
     SHUTTLE_RADIUS: 5.5,
     SHUTTLE_ROTATION_MIN_SPEED_SQ: 25,
-    SHUTTLE_GRAVITY: 950,
-    SHUTTLE_TERMINAL_VY: 260,
-    HORIZONTAL_DRAG: 1.1,
+    SHUTTLE_GRAVITY: 1200,      // v² drag overhaul: steeper base pull (was 950), paired with SHUTTLE_DRAG_K
+    SHUTTLE_DRAG_K: 0.0009,     // quadratic (v²) air drag coefficient (1/px) for base float/serve/smash flight
+    SHUTTLE_TERMINAL_VY: 1200,  // high SAFETY clamp only now (was 260); real fall speed emerges from √(g/k)
+    HORIZONTAL_DRAG: 1.1,       // linear drag — dinks + Sherman rain only, NOT base flight
     HIT_COOLDOWN: 1.0,
     HIT_REACH_X: 72,
     MAX_CHARGE_TIME: 0.8,
@@ -75,12 +76,12 @@
     MAX_POWER_MULT: 1.0,
 
     // --- Float / clear ---
-    FLOAT_BASE_SPEED: 1440,
+    FLOAT_BASE_SPEED: 1850,     // v² drag overhaul retune (was 1440)
     FLOAT_ANGLE_NEAR: 24,
-    FLOAT_ANGLE_FAR: 37,
+    FLOAT_ANGLE_FAR: 39,        // nudged up from 37 — v² drag shortens deep clears
 
     // --- Smash ---
-    SMASH_BASE_SPEED: 2185,
+    SMASH_BASE_SPEED: 2500,     // v² drag overhaul retune (was 2185)
     SMASH_NET_SLOWDOWN: 0.55,
     SMASH_NET_STEEP_ANGLE: 46,
     SMASH_BACK_ANGLE: 23,
@@ -132,7 +133,7 @@
     SERVICE_LONG_MARGIN: 80,   // distance from the outer boundary to the long service line
 
     // --- Serve ---
-    SERVE_BASE_SPEED: 1130,
+    SERVE_BASE_SPEED: 1300,     // v² drag overhaul retune (was 1130)
     SERVE_MIN_POWER_MULT: 0.7,
 
     // --- Point pause ---

@@ -3712,20 +3712,25 @@
   // holds at whatever it last was rather than recomputing from velocity — avoids a jittery/
   // undefined spin while the shuttle is essentially stationary (held on serve, etc.)
   const SHUTTLE_ROTATION_MIN_SPEED_SQ = 25;
-  const SHUTTLE_GRAVITY = 950;      // bumped up from 700 so ordinary flight (float/regular
-                                     // hits especially) drops noticeably faster and is harder
-                                     // to run down. Still used for float, serves, and the
-                                     // pre-dive portion of smashes — dinks now use their own
-                                     // DINK_PRE_NET_GRAVITY below instead (see that constant),
-                                     // and dive-specific gravity values (SMASH_MAXPOWER_DIVE_GRAVITY,
-                                     // dink's post-net gravity) are untouched and still layer on
-                                     // top of this
-  const SHUTTLE_TERMINAL_VY = 260; // capped fall speed once momentum is spent -> the "floaty" tail —
-                                    // raised alongside gravity above so the steeper pull
-                                    // actually carries through instead of getting capped early.
-                                    // Same float-only scope as SHUTTLE_GRAVITY — dinks use
-                                    // DINK_PRE_NET_TERMINAL_VY instead
-  const HORIZONTAL_DRAG = 1.1;     // per-second exponential decay on forward speed
+  const SHUTTLE_GRAVITY = 1200;     // steeper base pull, paired with the v² drag below so
+                                     // ordinary flight (float/clear/serve + the pre-dive portion
+                                     // of smashes) reads asymmetric: a gentle rise then a sharp,
+                                     // near-vertical drop. Still float/serve/smash scope only —
+                                     // dinks use DINK_PRE_NET_GRAVITY, and dive-specific gravity
+                                     // values (SMASH_MAXPOWER_DIVE_GRAVITY, dink's post-net
+                                     // gravity) are untouched and still layer on top of this.
+  // Quadratic (v²) air drag coefficient (1/px), applied to base float/serve/smash flight only
+  // (see usesQuadraticDrag). a_drag = -k*|v|*v — magnitude k*|v|², opposing the velocity vector,
+  // so it bleeds a fast shot's speed hard early and eases off as it slows. This is what actually
+  // sculpts the fall now: terminal speed EMERGES at √(g/k) ≈ √(1200/0.0009) ≈ 1155 px/s rather
+  // than being imposed by a cap. Dinks and every scripted descent keep the old linear drag.
+  const SHUTTLE_DRAG_K = 0.0009;
+  const SHUTTLE_TERMINAL_VY = 1200; // high SAFETY clamp only now — the real fall speed emerges
+                                    // from √(g/k) (see SHUTTLE_DRAG_K), so this just guards against
+                                    // runaway values and is essentially never reached in base flight.
+                                    // Dinks still use their own DINK_PRE_NET_TERMINAL_VY.
+  const HORIZONTAL_DRAG = 1.1;     // per-second exponential (linear) decay on forward speed —
+                                    // still used by dinks and Sherman's meteor rain, NOT base flight
   const HIT_COOLDOWN = 1.0;
   const HIT_REACH_X = 72;
   const MAX_CHARGE_TIME = 0.8;   // seconds held to reach 100% charge
@@ -3737,11 +3742,17 @@
   // (All three base speeds got an across-the-board ~15% bump for a faster overall pace —
   // the per-character power multiplier below is applied on top, unchanged, so higher-power
   // characters still hit proportionally harder than lower-power ones.)
-  const FLOAT_BASE_SPEED = 1440; // at 28° launch angle — bumped up for a snappier overall rally pace
+  const FLOAT_BASE_SPEED = 1850; // retuned for v² drag: a 100%-charge backline clear now lands
+                                  // ~50px inside the far baseline (verified via predictShuttleLandingX),
+                                  // and the overall rally sits a step faster than the old 1440.
   const FLOAT_ANGLE_NEAR = 24;   // launch angle for a float hit taken right up at the net
-  const FLOAT_ANGLE_FAR = 37;    // launch angle for a float hit taken from deep in the court —
+  const FLOAT_ANGLE_FAR = 39;    // launch angle for a float hit taken from deep in the court —
+                                  // nudged up from 37: v² drag shortens deep clears, so the arc
+                                  // needs a touch more loft to still carry to the back line.
                                   // a noticeably higher, clearer arc the further back it's played from
-  const SMASH_BASE_SPEED = 2185; // at 23° launch angle — big bump for a much harder, faster-hitting smash
+  const SMASH_BASE_SPEED = 2500; // at 23° launch angle — retuned for v² drag; a mid-court full smash
+                                  // still lands well inside, and the steep downward launch + v² drag
+                                  // means even a 5★ smash plummets in bounds instead of sailing long
   const SMASH_NET_SLOWDOWN = 0.55; // speed multiplier applied when smashing right on top of the net,
                                     // scaling back up to 1.0 the farther back the hit is taken —
                                     // keeps close-in smashes from sailing an unrealistically long way
@@ -3934,6 +3945,16 @@
   const POWER_REGULAR_LINEAR = 0.05;
   const POWER_REGULAR_KICKER = 0.01;
   function powerMultForRegular(ch){ return statMult(ch && ch.stats && ch.stats.power, POWER_REGULAR_LINEAR, POWER_REGULAR_KICKER); }
+  // Phase 4 (physics overhaul): a small, fair shot-to-shot micro-variation applied ONCE at
+  // contact — never per frame. The resulting vx/vy is what everything downstream reads
+  // (including predictShuttleLandingX), so the AI still nails the landing and neither side knows
+  // the exact variation until the hit lands. Amplitude is kept small enough that the in-bounds
+  // clamps that run afterward never have to rescue a shot. Single-player uses Math.random here;
+  // the authoritative multiplayer sim folds its own deterministic variance in (shared/simulation.js).
+  const HIT_SPEED_VARIANCE = 0.03; // ±3% launch speed
+  const HIT_ANGLE_VARIANCE = 1.5;  // ±1.5° launch angle
+  function regularHitSpeedMult(){ return 1 + (Math.random()*2 - 1) * HIT_SPEED_VARIANCE; }
+  function regularHitAngleJitter(){ return (Math.random()*2 - 1) * HIT_ANGLE_VARIANCE; }
   // control: a max-control (5) character now has ~55% more effective reach than neutral,
   // a min-control (1) character ~55% less — makes precision players noticeably more
   // forgiving to line up shots with, and low-control ones noticeably trickier
@@ -5115,30 +5136,28 @@
   // releaseHit, where `shuttle`, `left`, `right` and the court constants are live.
   function ultOpponent(p){ return p.side === 'left' ? right : left; }
 
-  // Ballistic aim: set the shuttle onto an arc that lands near targetX. Ignores
-  // horizontal drag, so it lands a touch short — fine for a prototype, and the
-  // deception marker (not pinpoint placement) is the point for Amara/Maya.
+  // Ballistic aim: set the shuttle onto an arc that lands near targetX. The launch vy (peak
+  // height) is unchanged; the horizontal speed is now solved numerically against the real v²/
+  // linear integrator (solveLaunchVxForTargetX) instead of the old linear-drag closed form,
+  // which "landed a touch short" and would break outright now that base flight uses v² drag.
   function ultLaunchToward(targetX, arcH, downwardGravityMult, upwardGravityMult){
     // upwardGravityMult (optional): scales the ASCENT gravity only. Peak height stays at arcH,
-    // but tUp = sqrt(2*arcH/gUp) shrinks — used by Jordan to keep his signature high arc and
-    // fast fall while cutting the sluggish "hangs at the peak" dead-time.
+    // but the rise is quicker — used by Jordan to keep his signature high arc and fast fall
+    // while cutting the sluggish "hangs at the peak" dead-time.
     const gUp = (upwardGravityMult && upwardGravityMult > 1) ? SHUTTLE_GRAVITY * upwardGravityMult : SHUTTLE_GRAVITY;
-    const gDown = (downwardGravityMult && downwardGravityMult > 1) ? SHUTTLE_GRAVITY * downwardGravityMult : SHUTTLE_GRAVITY;
     const x0 = shuttle.x, y0 = shuttle.y;
     const vyUp = -Math.sqrt(2 * gUp * Math.max(20, arcH));
-    const tUp = -vyUp / gUp;
-    const tDown = Math.sqrt(2 * Math.max(1, (GROUND_Y - (y0 - arcH))) / gDown);
-    const T = Math.max(0.2, tUp + tDown);
+    // Set the shot's identity + gravity-selector flags BEFORE solving, so the numeric solver
+    // (via simulateFlightStep) integrates the exact arc this shot will actually fly — including
+    // the asymmetric fast-ascent/fast-drop gravity these mults select, which it honours per step.
     shuttle.vy = vyUp;
-    // X(t) = x0 + (vx / drag) * (1 - e^(-drag * T)) => vx = (targetX - x0) * drag / (1 - e^(-drag * T))
-    const drag = HORIZONTAL_DRAG;
-    shuttle.vx = (targetX - x0) * drag / (1 - Math.exp(-drag * T));
     shuttle.kind = 'float';
     shuttle.ultFastAscent = (upwardGravityMult && upwardGravityMult > 1) ? upwardGravityMult : null;
     shuttle.ultFastDrop = (downwardGravityMult && downwardGravityMult > 1) ? downwardGravityMult : null;
     shuttle.ultSmashArc = false;
     shuttle.hitByMaxPower = false; shuttle.maxPowerDiveApplied = false;
     shuttle.dinkDiveApplied = false; shuttle.netCollisionResolved = false;
+    shuttle.vx = solveLaunchVxForTargetX(x0, y0, vyUp, targetX, shuttle);
   }
 
   function ultDeepCornerX(p){ return p.side === 'left' ? (COURT_RIGHT - 40) : (COURT_LEFT + 40); }
@@ -5188,31 +5207,22 @@
       }
     }
 
-    // 2. Guaranteed In-Bounds Landing
-    const g = SHUTTLE_GRAVITY, vy = shuttle.vy;
-    const disc = vy*vy - 2*g*(shuttle.y - GROUND_Y);
-    if(disc >= 0){
-      const tLand = (-vy + Math.sqrt(disc)) / g;
-      if(tLand > 0){
-        const drag = HORIZONTAL_DRAG;
-        const landX = shuttle.x + (shuttle.vx / drag) * (1 - Math.exp(-drag * tLand));
-        
-        const outer = dir > 0 ? (COURT_RIGHT - 55) : (COURT_LEFT + 55); // inside baseline
-        const inner = dir > 0 ? (NET_X + 110) : (NET_X - 110);          // past net
-        
-        let targetX = landX;
-        if(dir > 0){
-          if(landX > outer) targetX = outer;
-          else if(landX < inner) targetX = inner;
-        } else {
-          if(landX < outer) targetX = outer;
-          else if(landX > inner) targetX = inner;
-        }
-        
-        if(targetX !== landX){
-          shuttle.vx = (targetX - shuttle.x) * drag / (1 - Math.exp(-drag * tLand));
-        }
-      }
+    // 2. Guaranteed In-Bounds Landing — numeric now (the old closed form assumed linear drag).
+    // Predict the real landing under this shot's own physics, then, only if it falls outside the
+    // [past-net, inside-baseline] window, solve the horizontal speed that drops it on the edge.
+    const landX = simulateFlightLanding(shuttle.x, shuttle.y, shuttle.vx, shuttle.vy, shuttle).x;
+    const outer = dir > 0 ? (COURT_RIGHT - 55) : (COURT_LEFT + 55); // inside baseline
+    const inner = dir > 0 ? (NET_X + 110) : (NET_X - 110);          // past net
+    let targetX = landX;
+    if(dir > 0){
+      if(landX > outer) targetX = outer;
+      else if(landX < inner) targetX = inner;
+    } else {
+      if(landX < outer) targetX = outer;
+      else if(landX > inner) targetX = inner;
+    }
+    if(targetX !== landX){
+      shuttle.vx = solveLaunchVxForTargetX(shuttle.x, shuttle.y, shuttle.vy, targetX, shuttle);
     }
   }
 
@@ -5226,28 +5236,15 @@
   function ensureSmashInBounds(p){
     if(shuttle.kind !== 'smash' || shuttle.allowOverchargeOut) return;
     const dir = p.side === 'left' ? 1 : -1;
-    const g = currentShuttleGravity(), vy = shuttle.vy;
-    const disc = vy*vy - 2*g*(shuttle.y - GROUND_Y);
-    if(disc >= 0){
-      const tLand = (-vy + Math.sqrt(disc)) / g;
-      if(tLand > 0){
-        const drag = HORIZONTAL_DRAG;
-        const landX = shuttle.x + (shuttle.vx / drag) * (1 - Math.exp(-drag * tLand));
-        
-        // Baseline landing target inside court
-        const outer = dir > 0 ? (COURT_RIGHT - 55) : (COURT_LEFT + 55);
-        
-        let targetX = landX;
-        if(dir > 0 && landX > outer){
-          targetX = outer;
-        } else if(dir < 0 && landX < outer){
-          targetX = outer;
-        }
-        
-        if(targetX !== landX){
-          shuttle.vx = (targetX - shuttle.x) * drag / (1 - Math.exp(-drag * tLand));
-        }
-      }
+    // Numeric now: predict the real landing (v² pre-dive + the max-power dive when armed) and,
+    // only if it sails past the baseline target, solve the horizontal speed that lands it inside.
+    const landX = simulateFlightLanding(shuttle.x, shuttle.y, shuttle.vx, shuttle.vy, shuttle).x;
+    const outer = dir > 0 ? (COURT_RIGHT - 55) : (COURT_LEFT + 55); // inside baseline
+    let targetX = landX;
+    if(dir > 0 && landX > outer) targetX = outer;
+    else if(dir < 0 && landX < outer) targetX = outer;
+    if(targetX !== landX){
+      shuttle.vx = solveLaunchVxForTargetX(shuttle.x, shuttle.y, shuttle.vy, targetX, shuttle);
     }
   }
 
@@ -5579,6 +5576,13 @@
   // Scales the straight-down plunge speed below. The spec's table listed 1.0, but Phase 3 asks
   // for a dive "slightly above current" — 1.0 is the identity value, so this ships above it.
   const SHERMAN_AIR_DESCENT_SPEED_MULT = 1.35;
+  // Sherman's meteor rain falls in its own loop (see updateShuttle) with linear drag. It used to
+  // scale off the base SHUTTLE_GRAVITY/SHUTTLE_TERMINAL_VY (×0.8), but the v² drag overhaul raised
+  // those (950→1200, 260→1200 safety clamp), which would have made the meteors slam down several
+  // times faster. These pin the rain to its original feel (the old gravity×0.8 / terminal×0.8),
+  // independent of the base-flight numbers.
+  const SHERMAN_RAIN_GRAVITY = 760;      // was SHUTTLE_GRAVITY(950) × 0.8
+  const SHERMAN_RAIN_TERMINAL_VY = 208;  // was SHUTTLE_TERMINAL_VY(260) × 0.8
   // The descent is no longer a ballistic arc: the dragon takes the shuttlecock up out of frame
   // during the cut, then comes back down VERTICALLY over a randomized spot in the opponent's
   // court — head-first, no horizontal drift, straight into the floor. These three shape it.
@@ -10310,9 +10314,11 @@
         const angleDeg = baseAngleDeg - chargeArcOffset;
 
         const manualOffsetSmash = (advancedControlsEnabled && isHumanControlled(p)) ? p.attackAngle : 0;
-        const angle = (angleDeg - manualOffsetSmash) * Math.PI/180;
-        shuttle.vx = dir * speed * Math.cos(angle);
-        shuttle.vy = speed * Math.sin(angle);
+        // Phase 4: fair contact-time micro-variance (once, not per-frame)
+        const smashSpeed = speed * regularHitSpeedMult();
+        const angle = (angleDeg - manualOffsetSmash + regularHitAngleJitter()) * Math.PI/180;
+        shuttle.vx = dir * smashSpeed * Math.cos(angle);
+        shuttle.vy = smashSpeed * Math.sin(angle);
         shuttle.ultSmashArc = false;
         shuttle.kind = 'smash';
         shuttle.hitByMaxPower = !!(p.character && p.character.stats && p.character.stats.power === 5) || !!spend;
@@ -10431,9 +10437,11 @@
       const angleDeg = FLOAT_ANGLE_NEAR + (FLOAT_ANGLE_FAR - FLOAT_ANGLE_NEAR) * netDistFrac;
       // manual attack angle: positive lifts the clear into a higher arc, negative flattens it
       const manualOffsetFloat = (advancedControlsEnabled && isHumanControlled(p)) ? p.attackAngle : 0;
-      const angle = (angleDeg + manualOffsetFloat) * Math.PI/180;
-      shuttle.vx = dir * speed * Math.cos(angle);
-      shuttle.vy = -speed * Math.sin(angle);
+      // Phase 4: fair contact-time micro-variance (once, not per-frame)
+      const floatSpeed = speed * regularHitSpeedMult();
+      const angle = (angleDeg + manualOffsetFloat + regularHitAngleJitter()) * Math.PI/180;
+      shuttle.vx = dir * floatSpeed * Math.cos(angle);
+      shuttle.vy = -floatSpeed * Math.sin(angle);
       
       // Standard hit audio and juice sparks + subtle rumble
       playSound('hit');
@@ -10656,7 +10664,8 @@
     playSound('hit');
   }
 
-  const SERVE_BASE_SPEED = 1130; // ~15% faster than before, in line with the float/smash bump above
+  const SERVE_BASE_SPEED = 1300; // retuned for v² drag + the faster overall pace; a full-power serve
+                                  // still lands safely short of the long service line
   const SERVE_MIN_POWER_MULT = 0.7;
 
   function doServe(p, chargeFrac, now){
@@ -10681,8 +10690,9 @@
     p.swingPowerFrac = 0.6 + 0.4*chargeFrac;
     p.swingKind = 'serve';
     const dir = p.side === 'left' ? 1 : -1;
-    const speed = SERVE_BASE_SPEED * power * powerMultForRegular(p.character);
-    const angle = 32 * Math.PI/180;
+    // Phase 4: fair contact-time micro-variance (once, not per-frame)
+    const speed = SERVE_BASE_SPEED * power * powerMultForRegular(p.character) * regularHitSpeedMult();
+    const angle = (32 + regularHitAngleJitter()) * Math.PI/180;
     shuttle.vx = dir * speed * Math.cos(angle);
     shuttle.vy = -speed * Math.sin(angle);
     shuttle.active = true;
@@ -13829,72 +13839,136 @@
   // never mix up or override one another. Pulled out into its own helper (instead of only
   // living inline in updateShuttle) so the AI's landing-spot predictor below can reuse the
   // exact same rule instead of duplicating it.
-  function currentShuttleGravity(){
-    return shuttle.maxPowerDiveApplied ? SMASH_MAXPOWER_DIVE_GRAVITY
-         : shuttle.dinkDiveApplied ? shuttle.dinkPostNetGravity
-         : shuttle.kind === 'dink' ? DINK_PRE_NET_GRAVITY
-         : (shuttle.ultFastDrop && shuttle.vy > 0) ? SHUTTLE_GRAVITY * shuttle.ultFastDrop
-         : (shuttle.ultFastAscent && shuttle.vy < 0) ? SHUTTLE_GRAVITY * shuttle.ultFastAscent
-         : (shuttle.ultFx && shuttle.ultFx.art && shuttle.kind !== 'smash' && shuttle.vy > 0) ? SHUTTLE_GRAVITY * 2.5
+  // Both selectors now take an optional shuttle so the numeric forward-sim helpers
+  // (simulateFlightLanding / solveLaunchVxForTargetX) can evaluate them against a hypothetical
+  // in-flight state without disturbing the live shuttle. Default to the live `shuttle`.
+  function currentShuttleGravity(s){
+    s = s || shuttle;
+    return s.maxPowerDiveApplied ? SMASH_MAXPOWER_DIVE_GRAVITY
+         : s.dinkDiveApplied ? s.dinkPostNetGravity
+         : s.kind === 'dink' ? DINK_PRE_NET_GRAVITY
+         : (s.ultFastDrop && s.vy > 0) ? SHUTTLE_GRAVITY * s.ultFastDrop
+         : (s.ultFastAscent && s.vy < 0) ? SHUTTLE_GRAVITY * s.ultFastAscent
+         : (s.ultFx && s.ultFx.art && s.kind !== 'smash' && s.vy > 0) ? SHUTTLE_GRAVITY * 2.5
          : SHUTTLE_GRAVITY;
   }
-  function currentShuttleTerminalVy(){
+  function currentShuttleTerminalVy(s){
+    s = s || shuttle;
     // Imperial Dragon Descent owns its own terminal: the plunge is a scripted vertical drop at
     // SHERMAN_AIR_DIVE_SPEED, so the generic caps below (which would clamp it back to 850–900)
     // must not apply. Everything else falls through untouched.
-    if (shuttle.isShermanDragonSmash && shuttle.vy > 0) {
+    if (s.isShermanDragonSmash && s.vy > 0) {
       return SHERMAN_AIR_DIVE_SPEED * SHERMAN_AIR_DESCENT_SPEED_MULT;
     }
-    return (shuttle.maxPowerDiveApplied ? SMASH_MAXPOWER_DIVE_TERMINAL_VY
-         : shuttle.dinkDiveApplied ? DINK_POST_NET_TERMINAL_VY
-         : shuttle.kind === 'dink' ? DINK_PRE_NET_TERMINAL_VY
-         : (shuttle.ultFastDrop && shuttle.vy > 0) ? 850
-         : (shuttle.ultFx && shuttle.ultFx.art && shuttle.kind !== 'smash' && shuttle.vy > 0) ? SHUTTLE_TERMINAL_VY * 2.5
+    return (s.maxPowerDiveApplied ? SMASH_MAXPOWER_DIVE_TERMINAL_VY
+         : s.dinkDiveApplied ? DINK_POST_NET_TERMINAL_VY
+         : s.kind === 'dink' ? DINK_PRE_NET_TERMINAL_VY
+         : (s.ultFastDrop && s.vy > 0) ? 850
+         : (s.ultFx && s.ultFx.art && s.kind !== 'smash' && s.vy > 0) ? SHUTTLE_TERMINAL_VY * 2.5
          : SHUTTLE_TERMINAL_VY);
   }
 
-  // Rough forward simulation of the shuttle's CURRENT flight (from wherever it is right
-  // now, at whatever speed/gravity currently applies) to estimate where it will eventually
-  // land. Deliberately approximate — it holds today's gravity/terminal-vy for the whole
-  // simulated flight rather than re-deriving every future dive trigger — which is plenty
-  // accurate for AI movement planning (it only needs a good "which general spot should I
-  // head toward" answer, not a frame-perfect landing point) while staying cheap enough to
-  // call every AI decision tick.
-  function predictShuttleLandingX(){
-    let x = shuttle.x, y = shuttle.y, vx = shuttle.vx, vy = shuttle.vy;
-    const g = currentShuttleGravity(), termVy = currentShuttleTerminalVy();
-    const dt = 1/60;
-    for(let i=0; i<240; i++){
-      vy += g*dt;
-      if(vy > termVy) vy = termVy;
-      vx -= HORIZONTAL_DRAG * vx * dt;
-      x += vx*dt;
-      y += vy*dt;
-      if(y + SHUTTLE_RADIUS >= GROUND_Y) break;
-    }
-    return x;
+  // True only for BASE float / serve / smash flight — the flight the v² drag overhaul targets.
+  // Everything with its own carefully-tuned trajectory keeps the old linear HORIZONTAL_DRAG:
+  //   * dinks (own gravity/terminal/dive, byte-for-byte preserved),
+  //   * the max-power smash dive and the dink post-net dive (own dive gravity + terminal),
+  //   * every scripted ult descent (ultFastDrop/ultFastAscent, art ults, knuckleball, Sherman
+  //     meteor rain + dragon dive) and any noDrag set-piece.
+  // Because the dive states (maxPowerDiveApplied/dinkDiveApplied) flip mid-flight, a smash uses
+  // v² drag on the way in and switches to its linear-drag dive exactly as before once it triggers.
+  function usesQuadraticDrag(s){
+    s = s || shuttle;
+    return s.kind !== 'dink'
+        && !s.noDrag
+        && !s.maxPowerDiveApplied
+        && !s.dinkDiveApplied
+        && !s.ultFastDrop && !s.ultFastAscent
+        && !(s.ultFx && s.ultFx.art)
+        && !s.isKnuckleball
+        && !s.isShermanRain && !s.isShermanDragonSmash;
   }
 
-  // Same forward simulation as predictShuttleLandingX, but answers a different question:
-  // how many seconds until the shuttle's height crosses targetY (descends down to/past
-  // that level)? This is what the AI's jump-smash timing runs on — it's the difference
-  // between "jump when the ball LOOKS close" (a same-frame reactive check, which is
-  // inherently either early or late relative to a fast, steep flight) and "jump when the
-  // ball WILL arrive in exactly as long as my own jump takes to rise" (a real prediction).
-  // Returns null if the shuttle lands before ever reaching that height.
-  function predictShuttleTimeToY(targetY){
-    let y = shuttle.y, vy = shuttle.vy;
-    if(y >= targetY) return 0; // already at/past that height right now
-    const g = currentShuttleGravity(), termVy = currentShuttleTerminalVy();
+  // ---- Numeric flight forward-sim: the single source of truth for placement ----------------
+  // Steps the REAL Phase-1 integrator (same gravity/terminal/drag SELECTORS as updateShuttle,
+  // including v² drag where usesQuadraticDrag applies) forward from a hypothetical (x,y,vx,vy)
+  // until the shuttle reaches the ground, or — if stopY is given — until it descends past stopY.
+  // `ref` supplies the drag/gravity MODEL via its flags (kind, dive/ult markers); it is never
+  // mutated. Like the AI predictors always did, it holds ref's selector flags fixed for the whole
+  // flight (it does NOT re-arm future dive triggers) — but the per-step v² integration, gravity
+  // and terminal are otherwise exact, and gravity/terminal DO re-evaluate against the evolving vy
+  // sign each step (so an ultFastAscent-then-ultFastDrop arc like Jordan's is honoured). This one
+  // helper backs predictShuttleLandingX, predictShuttleTimeToY, ensureSmashInBounds,
+  // ensureUltInBoundsAndClearsNet and ultLaunchToward, so a shot always lands where they predict.
+  function simulateFlightStep(x, y, vx, vy, ref, stopY){
+    ref = ref || shuttle;
+    const quad = usesQuadraticDrag(ref);
+    const s = { vx: vx, vy: vy, kind: ref.kind,
+      maxPowerDiveApplied: ref.maxPowerDiveApplied, dinkDiveApplied: ref.dinkDiveApplied,
+      dinkPostNetGravity: ref.dinkPostNetGravity, ultFastDrop: ref.ultFastDrop,
+      ultFastAscent: ref.ultFastAscent, ultFx: ref.ultFx, noDrag: ref.noDrag,
+      isShermanDragonSmash: ref.isShermanDragonSmash };
     const dt = 1/120;
-    for(let i=1; i<=480; i++){
-      vy += g*dt;
-      if(vy > termVy) vy = termVy;
-      y += vy*dt;
-      if(y >= targetY) return i*dt;
-      if(y + SHUTTLE_RADIUS >= GROUND_Y) return null;
+    let t = 0;
+    for(let i=0; i<900; i++){          // up to 7.5s — far longer than any real rally flight
+      const g = currentShuttleGravity(s);
+      const termVy = currentShuttleTerminalVy(s);
+      if(quad){
+        const sp = Math.hypot(s.vx, s.vy);
+        s.vx -= SHUTTLE_DRAG_K * sp * s.vx * dt;
+        s.vy -= SHUTTLE_DRAG_K * sp * s.vy * dt;
+      } else if(!s.noDrag){
+        s.vx -= HORIZONTAL_DRAG * s.vx * dt;
+      }
+      s.vy += g*dt;
+      if(s.vy > termVy) s.vy = termVy;
+      x += s.vx*dt;
+      y += s.vy*dt;
+      t += dt;
+      if(stopY != null && y >= stopY) return { x, y, vx: s.vx, vy: s.vy, t, reachedStopY: true };
+      if(y + SHUTTLE_RADIUS >= GROUND_Y) return { x, y, vx: s.vx, vy: s.vy, t, reachedStopY: false };
     }
-    return null;
+    return { x, y, vx: s.vx, vy: s.vy, t, reachedStopY: false };
+  }
+
+  // Where a shot from (x,y,vx,vy) under `ref`'s physics comes to ground. Returns {x, t}.
+  function simulateFlightLanding(x, y, vx, vy, ref){
+    const r = simulateFlightStep(x, y, vx, vy, ref, null);
+    return { x: r.x, t: r.t };
+  }
+
+  // Binary-search the launch horizontal speed so a shot from (x0,y0) with vertical launch vy0
+  // lands at targetX under `ref`'s physics. Replaces the closed-form vx solve, which assumed
+  // linear drag and breaks under v². Returns a SIGNED vx (toward targetX).
+  function solveLaunchVxForTargetX(x0, y0, vy0, targetX, ref){
+    const dir = targetX >= x0 ? 1 : -1;
+    let lo = 0, hi = 5000;             // vx magnitude bounds
+    for(let it=0; it<24; it++){
+      const mid = (lo + hi) / 2;
+      const landX = simulateFlightStep(x0, y0, dir*mid, vy0, ref, null).x;
+      // more speed always lands farther in `dir`; steer the bracket toward targetX
+      const short = dir > 0 ? (landX < targetX) : (landX > targetX);
+      if(short) lo = mid; else hi = mid;
+    }
+    return dir * (lo + hi) / 2;
+  }
+
+  // Forward simulation of the shuttle's CURRENT flight to estimate where it will land. Now runs
+  // the exact v² step (see simulateFlightStep) instead of the old linear approximation, so the
+  // AI reads the same asymmetric arc the shuttle actually flies. Still deliberately approximate
+  // in that it holds the current dive/ult selector flags fixed for the whole flight — plenty
+  // accurate for "which general spot should I head toward" and cheap enough for every AI tick.
+  function predictShuttleLandingX(){
+    return simulateFlightStep(shuttle.x, shuttle.y, shuttle.vx, shuttle.vy, shuttle, null).x;
+  }
+
+  // How many seconds until the shuttle descends to targetY — the AI's jump-smash timing runs on
+  // this. Now carries AND decays vx through the sim (vy's v² drag depends on total speed, so the
+  // vertical profile can't be integrated in isolation any more). Returns null if the shuttle
+  // lands before ever reaching that height.
+  function predictShuttleTimeToY(targetY){
+    if(shuttle.y >= targetY) return 0; // already at/past that height right now
+    const r = simulateFlightStep(shuttle.x, shuttle.y, shuttle.vx, shuttle.vy, shuttle, targetY);
+    return r.reachedStopY ? r.t : null;
   }
 
   function updateShuttle(dt){
@@ -14081,9 +14155,10 @@
         const item = shuttle.rainShuttles[i];
         if(item.hit) continue;
         
-        // 20% slower descent for Sherman's rain shuttlecocks
-        item.vy += (gravity * 0.8) * dt;
-        if(item.vy > terminalVy * 0.8) item.vy = terminalVy * 0.8;
+        // Sherman's meteor rain keeps its own linear-drag descent, pinned to its original feel
+        // via dedicated constants so the v² drag overhaul's base-flight retune can't speed it up.
+        item.vy += SHERMAN_RAIN_GRAVITY * dt;
+        if(item.vy > SHERMAN_RAIN_TERMINAL_VY) item.vy = SHERMAN_RAIN_TERMINAL_VY;
         item.vx -= HORIZONTAL_DRAG * item.vx * dt;
         item.x += item.vx * dt;
         item.y += item.vy * dt;
@@ -14127,11 +14202,20 @@
         shuttle.rainShuttles = [];
       }
     } else {
-      shuttle.vy += gravity*dt;
-      if(shuttle.vy > terminalVy) shuttle.vy = terminalVy;
-      if(!shuttle.noDrag){
-        shuttle.vx -= HORIZONTAL_DRAG * shuttle.vx * dt;
+      // --- air drag ---
+      if(usesQuadraticDrag(shuttle)){
+        // v² drag on base float/serve/smash flight: a_drag = -k*|v|*v, magnitude k*|v|²,
+        // opposing the full velocity vector. Bleeds a fast shot's speed hard early and eases
+        // off as it slows, which is what gives the asymmetric "gentle rise, sharp drop" arc.
+        const k = SHUTTLE_DRAG_K;
+        const speed = Math.hypot(shuttle.vx, shuttle.vy);
+        shuttle.vx -= k * speed * shuttle.vx * dt;
+        shuttle.vy -= k * speed * shuttle.vy * dt;
+      } else if(!shuttle.noDrag){
+        shuttle.vx -= HORIZONTAL_DRAG * shuttle.vx * dt; // dinks / scripted arcs keep linear drag
       }
+      shuttle.vy += gravity*dt;
+      if(shuttle.vy > terminalVy) shuttle.vy = terminalVy; // high SAFETY clamp only — terminal emerges from √(g/k)
 
       shuttle.x += shuttle.vx*dt;
       shuttle.y += shuttle.vy*dt;

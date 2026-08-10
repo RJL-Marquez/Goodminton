@@ -68,6 +68,25 @@
     return statMult(ch && ch.stats && ch.stats.speed, C.DASH_DIST_LINEAR, C.DASH_DIST_KICKER);
   }
 
+  // Phase 4 (physics overhaul): small, fair shot-to-shot micro-variance applied ONCE at contact.
+  // index.html's single-player copy uses Math.random for this; the authoritative sim must stay
+  // reproducible given inputs (DETERMINISM, Part 0.1 — no Math.random in flight code), so it
+  // hashes deterministic per-hit state (the rally hit index + which side struck + a salt) into a
+  // [0,1) value instead. The realized vx/vy is what everything downstream reads, so the AI still
+  // nails the landing and neither side knows the exact variation until the hit lands. Math.imul
+  // keeps the mixing exact 32-bit across engines.
+  function hitNoise(w, p, salt) {
+    var n = (Math.imul(w.rallyHitCount | 0, 2654435761) + (p.side === 'left' ? 40503 : 12289) + Math.imul(salt | 0, 668265263)) >>> 0;
+    n ^= n >>> 16; n = Math.imul(n, 2246822519) >>> 0;
+    n ^= n >>> 13; n = Math.imul(n, 3266489917) >>> 0;
+    n ^= n >>> 16;
+    return (n >>> 0) / 4294967296;
+  }
+  var HIT_SPEED_VARIANCE = 0.03; // ±3% launch speed
+  var HIT_ANGLE_VARIANCE = 1.5;  // ±1.5° launch angle
+  function hitSpeedMult(w, p) { return 1 + (hitNoise(w, p, 1) * 2 - 1) * HIT_SPEED_VARIANCE; }
+  function hitAngleJitter(w, p) { return (hitNoise(w, p, 2) * 2 - 1) * HIT_ANGLE_VARIANCE; }
+
   // ==== MOMENTUM ENGINE (MOMENTUM_SPEC Parts 0-2) =========================
   // Phase 1: the meter and its per-character fill weights only. No ultimates,
   // no stamina spend, no physics changes — just the numbers and the tiers.
@@ -451,7 +470,9 @@
       var speed = C.SMASH_BASE_SPEED * power * netSpeedScale * powerMultFor(p.character);
       var netCloseFrac = Math.max(0, Math.min(1, 1 - distFromNet / C.NET_CLOSE_RANGE));
       var angleDeg = C.SMASH_BACK_ANGLE + (C.SMASH_NET_STEEP_ANGLE - C.SMASH_BACK_ANGLE) * netCloseFrac;
-      var angleS = (angleDeg - manualOffset(w, p)) * Math.PI / 180;
+      // Phase 4: deterministic fair contact-time micro-variance (once, not per-frame)
+      speed *= hitSpeedMult(w, p);
+      var angleS = (angleDeg - manualOffset(w, p) + hitAngleJitter(w, p)) * Math.PI / 180;
       shuttle.vx = dir * speed * Math.cos(angleS);
       shuttle.vy = speed * Math.sin(angleS);
       shuttle.ultSmashArc = false;
@@ -493,7 +514,9 @@
       var halfCourtF = (C.COURT_RIGHT - C.COURT_LEFT) / 2;
       var netDistFrac = Math.max(0, Math.min(1, distFromNetF / halfCourtF));
       var angleDegF = C.FLOAT_ANGLE_NEAR + (C.FLOAT_ANGLE_FAR - C.FLOAT_ANGLE_NEAR) * netDistFrac;
-      var angleF = (angleDegF + manualOffset(w, p)) * Math.PI / 180;
+      // Phase 4: deterministic fair contact-time micro-variance (once, not per-frame)
+      speedF *= hitSpeedMult(w, p);
+      var angleF = (angleDegF + manualOffset(w, p) + hitAngleJitter(w, p)) * Math.PI / 180;
       shuttle.vx = dir * speedF * Math.cos(angleF);
       shuttle.vy = -speedF * Math.sin(angleF);
       emit(w, { kind: 'shake', mag: 2.5, duration: 0.12 });
@@ -530,8 +553,9 @@
     p.swingPowerFrac = 0.6 + 0.4 * chargeFrac;
     p.swingKind = 'float';
     var dir = p.side === 'left' ? 1 : -1;
-    var speed = C.SERVE_BASE_SPEED * power * powerMultForRegular(p.character);
-    var angle = 32 * Math.PI / 180;
+    // Phase 4: deterministic fair contact-time micro-variance (once, not per-frame)
+    var speed = C.SERVE_BASE_SPEED * power * powerMultForRegular(p.character) * hitSpeedMult(w, p);
+    var angle = (32 + hitAngleJitter(w, p)) * Math.PI / 180;
     shuttle.vx = dir * speed * Math.cos(angle);
     shuttle.vy = -speed * Math.sin(angle);
     shuttle.active = true;
@@ -711,6 +735,21 @@
             : C.SHUTTLE_TERMINAL_VY;
   }
 
+  // v² drag applies to BASE float/serve/smash flight only — mirrors index.html's usesQuadraticDrag.
+  // Dinks, the smash/dink dives, and any scripted descent keep the old linear HORIZONTAL_DRAG.
+  // (The extra ult/knuckleball/Sherman guards are harmless here — this headless sim never sets
+  // those flags — but are kept so the two copies read identically.)
+  function usesQuadraticDrag(shuttle) {
+    return shuttle.kind !== 'dink'
+      && !shuttle.noDrag
+      && !shuttle.maxPowerDiveApplied
+      && !shuttle.dinkDiveApplied
+      && !shuttle.ultFastDrop && !shuttle.ultFastAscent
+      && !(shuttle.ultFx && shuttle.ultFx.art)
+      && !shuttle.isKnuckleball
+      && !shuttle.isShermanRain && !shuttle.isShermanDragonSmash;
+  }
+
   // ---- shuttle integration + collisions + scoring (verbatim) --------------
   function updateShuttle(w, dt) {
     var shuttle = w.shuttle;
@@ -718,9 +757,16 @@
 
     var gravity = currentShuttleGravity(shuttle);
     var terminalVy = currentShuttleTerminalVy(shuttle);
+    if (usesQuadraticDrag(shuttle)) {
+      // v² drag: a_drag = -k*|v|*v, opposing the full velocity vector (see index.html/spec Phase 1)
+      var speed = Math.sqrt(shuttle.vx * shuttle.vx + shuttle.vy * shuttle.vy);
+      shuttle.vx -= C.SHUTTLE_DRAG_K * speed * shuttle.vx * dt;
+      shuttle.vy -= C.SHUTTLE_DRAG_K * speed * shuttle.vy * dt;
+    } else if (!shuttle.noDrag) {
+      shuttle.vx -= C.HORIZONTAL_DRAG * shuttle.vx * dt; // dinks / scripted arcs keep linear drag
+    }
     shuttle.vy += gravity * dt;
-    if (shuttle.vy > terminalVy) shuttle.vy = terminalVy;
-    shuttle.vx -= C.HORIZONTAL_DRAG * shuttle.vx * dt;
+    if (shuttle.vy > terminalVy) shuttle.vy = terminalVy; // high SAFETY clamp only — terminal emerges from √(g/k)
     shuttle.x += shuttle.vx * dt;
     shuttle.y += shuttle.vy * dt;
 
