@@ -736,13 +736,19 @@
   }
 
   // v² drag applies to BASE float/serve/smash flight only — mirrors index.html's usesQuadraticDrag.
-  // Dinks, the smash/dink dives, and any scripted descent keep the old linear HORIZONTAL_DRAG.
+  // Dinks, the dink dive, and any scripted descent keep the old linear HORIZONTAL_DRAG.
   // (The extra ult/knuckleball/Sherman guards are harmless here — this headless sim never sets
   // those flags — but are kept so the two copies read identically.)
+  //
+  // A2: the max-power smash dive NO LONGER bypasses v² drag. It used to, which meant the raised
+  // SMASH_BASE_SPEED would pass straight through the dive with only linear drag to eat it — nothing
+  // scaled with the extra speed, so the shot arrived flat and fast and the defender window shrank.
+  // With v² drag on through the dive the window widens from every position (see SMASH_BASE_SPEED in
+  // constants.js for the measured table). SMASH_MAXPOWER_DIVE_GRAVITY / _TERMINAL_VY still apply on
+  // top; only the drag term changed.
   function usesQuadraticDrag(shuttle) {
     return shuttle.kind !== 'dink'
       && !shuttle.noDrag
-      && !shuttle.maxPowerDiveApplied
       && !shuttle.dinkDiveApplied
       && !shuttle.ultFastDrop && !shuttle.ultFastAscent
       && !(shuttle.ultFx && shuttle.ultFx.art)

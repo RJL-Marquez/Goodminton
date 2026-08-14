@@ -66,7 +66,15 @@
     SHUTTLE_RADIUS: 5.5,
     SHUTTLE_ROTATION_MIN_SPEED_SQ: 25,
     SHUTTLE_GRAVITY: 1200,      // v² drag overhaul: steeper base pull (was 950), paired with SHUTTLE_DRAG_K
-    SHUTTLE_DRAG_K: 0.0009,     // quadratic (v²) air drag coefficient (1/px) for base float/serve/smash flight
+                                // DO NOT retune casually: every ultLaunchToward() arc height is derived
+                                // from this value, so changing it reshapes all 22 ult launch sites at once.
+    SHUTTLE_DRAG_K: 0.0019,     // quadratic (v²) air drag coefficient (1/px) for base float/serve/smash flight
+                                // "A2" retune (was 0.0009). Arc SHAPE is set by k×court_width, not k alone:
+                                // 0.0009×1240 = 1.12 read as a ball (landed with 29% of launch vx intact);
+                                // 0.0019×1240 = 2.36 matches real badminton (~2.84) — the clear now lands
+                                // with ~5% of launch vx, i.e. it stops travelling sideways and drops.
+                                // Speeds below are scaled up to match: under v² drag range grows with
+                                // log(speed), so a shuttle is hit far harder and dies far faster.
     SHUTTLE_TERMINAL_VY: 1200,  // high SAFETY clamp only now (was 260); real fall speed emerges from √(g/k)
     HORIZONTAL_DRAG: 1.1,       // linear drag — dinks + Sherman rain only, NOT base flight
     HIT_COOLDOWN: 1.0,
@@ -76,18 +84,37 @@
     MAX_POWER_MULT: 1.0,
 
     // --- Float / clear ---
-    FLOAT_BASE_SPEED: 1850,     // v² drag overhaul retune (was 1440)
-    FLOAT_ANGLE_NEAR: 24,
-    FLOAT_ANGLE_FAR: 39,        // nudged up from 37 — v² drag shortens deep clears
+    FLOAT_BASE_SPEED: 3400,     // A2 retune (was 1850, ×1.84) — pairs with SHUTTLE_DRAG_K 0.0019.
+                                // Full-charge deep clear: apex at 65% of distance / 37% of flight time,
+                                // 78° descent, lands with vx ~151 (was 414). Flight time 1.51s → 1.76s.
+    FLOAT_ANGLE_NEAR: 28,       // A2: +4° — the heavier drag eats loft, so the arc needs more of it
+    FLOAT_ANGLE_FAR: 44,        // A2: +5° (was 39)
 
     // --- Smash ---
-    SMASH_BASE_SPEED: 2500,     // v² drag overhaul retune (was 2185)
+    SMASH_BASE_SPEED: 3600,     // A2 retune (was 2500) — deliberately ×1.44, NOT the ×1.84 the float got.
+                                // The smash now keeps v² drag through the max-power dive (see
+                                // usesQuadraticDrag); at a full ×1.84 the extra speed arrived as a flat
+                                // laser with a shrinking defender window.
+                                // Measured before -> after (dive gravity 950), descent / defender window:
+                                //   close  39° / 0.217s  ->  33° / 0.237s   (lands 898 -> 940)
+                                //   mid    35° / 0.119s  ->  31° / 0.135s   (lands 796 -> 821)
+                                //   deep   35° / 0.073s  ->  33° / 0.100s   (lands 740 -> 761)
+                                // So the smash is currently a little FLATTER but lands deeper and gives
+                                // the defender more time everywhere. Steepness is not fixed here — that
+                                // is the job of the geometric angle-budget model (see the plan), which
+                                // replaces the net-distance angle constants entirely.
     SMASH_NET_SLOWDOWN: 0.55,
     SMASH_NET_STEEP_ANGLE: 46,
     SMASH_BACK_ANGLE: 23,
     NET_CLOSE_RANGE: 90,
     SMASH_MAXPOWER_DIVE_DIST: 45,
-    SMASH_MAXPOWER_DIVE_GRAVITY: 1900,
+    SMASH_MAXPOWER_DIVE_GRAVITY: 950,   // PARITY FIX (pre-existing desync, found by the A2 parity check):
+                                        // index.html was deliberately retuned 1900 -> 950 ("milder downward
+                                        // acceleration to keep the curve natural") and this copy never got
+                                        // the change, so single-player and the authoritative multiplayer sim
+                                        // were dropping max-power smashes at different rates. Client wins:
+                                        // that's where the tuning decision was made. At 950 the dive lands
+                                        // at 33° with a 0.237s defender window (1900 gave 38° / 0.215s).
     SMASH_MAXPOWER_DIVE_TERMINAL_VY: 900,
     SWING_DURATION: 0.28,
     SHAKE_SMASH_DURATION: 0.28,
@@ -133,7 +160,9 @@
     SERVICE_LONG_MARGIN: 80,   // distance from the outer boundary to the long service line
 
     // --- Serve ---
-    SERVE_BASE_SPEED: 1300,     // v² drag overhaul retune (was 1130)
+    SERVE_BASE_SPEED: 2000,     // A2 retune (was 1300) — ×1.54, not ×1.84: at 2392 serves cleared the
+                                // long service line from most legal positions. 2000 preserves the old
+                                // landing window, and the charge-to-landing spread tightens 276px → 184px.
     SERVE_MIN_POWER_MULT: 0.7,
 
     // --- Point pause ---

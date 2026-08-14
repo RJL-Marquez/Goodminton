@@ -3722,9 +3722,18 @@
   // Quadratic (v²) air drag coefficient (1/px), applied to base float/serve/smash flight only
   // (see usesQuadraticDrag). a_drag = -k*|v|*v — magnitude k*|v|², opposing the velocity vector,
   // so it bleeds a fast shot's speed hard early and eases off as it slows. This is what actually
-  // sculpts the fall now: terminal speed EMERGES at √(g/k) ≈ √(1200/0.0009) ≈ 1155 px/s rather
+  // sculpts the fall now: terminal speed EMERGES at √(g/k) ≈ √(1200/0.0019) ≈ 795 px/s rather
   // than being imposed by a cap. Dinks and every scripted descent keep the old linear drag.
-  const SHUTTLE_DRAG_K = 0.0009;
+  //
+  // "A2" retune (was 0.0009). Arc SHAPE is governed by k×court_width, not by k alone:
+  //   0.0009 × 1240 = 1.12  -> read as a BALL: the clear still had 29% of its launch vx at
+  //                            touchdown, so it kept drifting sideways all the way down (62°).
+  //   0.0019 × 1240 = 2.36  -> real badminton territory (~2.84): ~5% of launch vx survives, so
+  //                            the shuttle stops travelling forward and drops (78°).
+  // The base speeds below are scaled up to match. That pairing is the whole point: under v² drag
+  // range grows only with LOG of launch speed, which is exactly why a real shuttle can be hit
+  // absurdly hard and still die inside a 13m court.
+  const SHUTTLE_DRAG_K = 0.0019;
   const SHUTTLE_TERMINAL_VY = 1200; // high SAFETY clamp only now — the real fall speed emerges
                                     // from √(g/k) (see SHUTTLE_DRAG_K), so this just guards against
                                     // runaway values and is essentially never reached in base flight.
@@ -3742,17 +3751,29 @@
   // (All three base speeds got an across-the-board ~15% bump for a faster overall pace —
   // the per-character power multiplier below is applied on top, unchanged, so higher-power
   // characters still hit proportionally harder than lower-power ones.)
-  const FLOAT_BASE_SPEED = 1850; // retuned for v² drag: a 100%-charge backline clear now lands
-                                  // ~50px inside the far baseline (verified via predictShuttleLandingX),
-                                  // and the overall rally sits a step faster than the old 1440.
-  const FLOAT_ANGLE_NEAR = 24;   // launch angle for a float hit taken right up at the net
-  const FLOAT_ANGLE_FAR = 39;    // launch angle for a float hit taken from deep in the court —
-                                  // nudged up from 37: v² drag shortens deep clears, so the arc
-                                  // needs a touch more loft to still carry to the back line.
-                                  // a noticeably higher, clearer arc the further back it's played from
-  const SMASH_BASE_SPEED = 2500; // at 23° launch angle — retuned for v² drag; a mid-court full smash
-                                  // still lands well inside, and the steep downward launch + v² drag
-                                  // means even a 5★ smash plummets in bounds instead of sailing long
+  const FLOAT_BASE_SPEED = 3400; // A2 retune (was 1850, ×1.84) — paired with SHUTTLE_DRAG_K 0.0019.
+                                  // A full-charge deep clear now peaks at 65% of its horizontal
+                                  // distance / 37% of its flight time, descends at 78°, and touches
+                                  // down with vx ~151 (was 414) — i.e. it parks over a spot and drops
+                                  // instead of sliding forward like a ball. Flight time 1.51s → 1.76s,
+                                  // so rallies read SLOWER and more legible even though the shuttle
+                                  // leaves the racket much faster.
+  const FLOAT_ANGLE_NEAR = 28;   // launch angle for a float hit taken right up at the net (A2: +4°)
+  const FLOAT_ANGLE_FAR = 44;    // launch angle for a float hit taken from deep in the court —
+                                  // A2: +5° (was 39). Heavier drag eats loft, so the arc needs more
+                                  // of it to still carry to the back line.
+  const SMASH_BASE_SPEED = 3600; // A2 retune (was 2500). Deliberately ×1.44, NOT the ×1.84 the float
+                                  // got: the smash now keeps v² drag through the max-power dive (see
+                                  // usesQuadraticDrag), and at a full ×1.84 the extra speed arrived as
+                                  // a FLAT laser with a shrinking defender window.
+                                  // Measured before -> after (descent / defender window / landing X):
+                                  //   close  39° / 0.217s / 898  ->  33° / 0.237s / 940
+                                  //   mid    35° / 0.119s / 796  ->  31° / 0.135s / 821
+                                  //   deep   35° / 0.073s / 740  ->  33° / 0.100s / 761
+                                  // The smash is currently a touch FLATTER, but lands deeper and gives
+                                  // the defender more time from every position. Making it steeper is NOT
+                                  // this change's job — that needs the geometric angle-budget model,
+                                  // which replaces SMASH_BACK_ANGLE / SMASH_NET_STEEP_ANGLE outright.
   const SMASH_NET_SLOWDOWN = 0.55; // speed multiplier applied when smashing right on top of the net,
                                     // scaling back up to 1.0 the farther back the hit is taken —
                                     // keeps close-in smashes from sailing an unrealistically long way
@@ -10664,8 +10685,11 @@
     playSound('hit');
   }
 
-  const SERVE_BASE_SPEED = 1300; // retuned for v² drag + the faster overall pace; a full-power serve
-                                  // still lands safely short of the long service line
+  const SERVE_BASE_SPEED = 2000; // A2 retune (was 1300). ×1.54, deliberately not the float's ×1.84 —
+                                  // at 2392 a full-power serve cleared the long service line from most
+                                  // legal serving positions. 2000 reproduces the old landing window, and
+                                  // the spread between a 0% and a 100% charge tightens 276px → 184px, so
+                                  // serving is more forgiving than it was.
   const SERVE_MIN_POWER_MULT = 0.7;
 
   function doServe(p, chargeFrac, now){
@@ -13876,11 +13900,16 @@
   //     meteor rain + dragon dive) and any noDrag set-piece.
   // Because the dive states (maxPowerDiveApplied/dinkDiveApplied) flip mid-flight, a smash uses
   // v² drag on the way in and switches to its linear-drag dive exactly as before once it triggers.
+  // A2: the max-power smash dive NO LONGER bypasses v² drag. It used to, which meant the raised
+  // SMASH_BASE_SPEED sailed through the dive with only the linear HORIZONTAL_DRAG to eat it — nothing
+  // scaled with the extra speed, so the shot arrived flat and fast and the defender window shrank.
+  // With v² drag on through the dive the window widens from every position (see SMASH_BASE_SPEED for
+  // the measured table). SMASH_MAXPOWER_DIVE_GRAVITY / _TERMINAL_VY still layer on top unchanged;
+  // only the drag term moved. Dinks, the dink dive and every scripted ult descent are untouched.
   function usesQuadraticDrag(s){
     s = s || shuttle;
     return s.kind !== 'dink'
         && !s.noDrag
-        && !s.maxPowerDiveApplied
         && !s.dinkDiveApplied
         && !s.ultFastDrop && !s.ultFastAscent
         && !(s.ultFx && s.ultFx.art)
