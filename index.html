@@ -3774,15 +3774,34 @@
                                   // the defender more time from every position. Making it steeper is NOT
                                   // this change's job — that needs the geometric angle-budget model,
                                   // which replaces SMASH_BACK_ANGLE / SMASH_NET_STEEP_ANGLE outright.
-  const SMASH_NET_SLOWDOWN = 0.55; // speed multiplier applied when smashing right on top of the net,
-                                    // scaling back up to 1.0 the farther back the hit is taken —
-                                    // keeps close-in smashes from sailing an unrealistically long way
-  const SMASH_NET_STEEP_ANGLE = 46; // launch angle (degrees) used for a smash taken right at the net —
-                                     // steep enough that it drops just past the net instead of riding
-                                     // a long, flat arc all the way to (or past) the back line
-  const SMASH_BACK_ANGLE = 23;      // normal launch angle for a smash taken from deeper in the court
-  const NET_CLOSE_RANGE = 90;       // distance from the net (px) within which a smash counts as "right
-                                     // at the net" and gets the steep safety angle above
+  const SMASH_NET_SLOWDOWN = 0.55; // still scales ULT smash speed by net proximity. The REGULAR smash
+                                    // no longer uses it — the steepness cost below does that job, keyed
+                                    // to the shot the player actually produced rather than to where
+                                    // they happened to be standing.
+  // ---- Smash angle budget ----------------------------------------------------------------------
+  // Replaces the old net-distance angle ramp (SMASH_BACK_ANGLE 23 -> SMASH_NET_STEEP_ANGLE 46 across
+  // NET_CLOSE_RANGE 90px). That model read two DIFFERENT distance scales — speed off half-court
+  // (620px), angle off a 90px window — so between 90px and 620px from the net (i.e. most of the
+  // court) the angle sat pinned flat while speed ramped freely. Worse, it knew nothing about contact
+  // HEIGHT, which is the variable that actually decides whether a downward shot can reach: a deep
+  // jump smash got handed 23° with only ~170px of altitude to spend and went into the net, losing
+  // the point outright. No constant could fix that; the model needed a different input.
+  //
+  // The rule now: a smash is the STEEPEST angle that still clears the tape and still leaves the
+  // defender a fair reaction window (see solveSmashAngle). Because the angle is searched against
+  // the real integrator, it self-adapts to physics retunes instead of needing per-region constants —
+  // and jumping higher now buys a steeper, more lethal angle instead of only buying reach.
+  const SMASH_ANGLE_MIN = 8;               // flattest smash the search will consider
+  const SMASH_ANGLE_MAX = 52;              // steepest ditto
+  const SMASH_STEEP_SPEED_FLOOR = 0.60;    // speed retained at SMASH_ANGLE_MAX (1.0 at SMASH_ANGLE_MIN)
+  const SMASH_NET_MARGIN = 20;             // px of air the shot must keep over the tape
+  const SMASH_MIN_DEFENSE_WINDOW = 0.20;   // s between net-crossing and landing — human reaction floor.
+                                            // Also what makes Power self-flattening: more speed lands
+                                            // sooner, so the search is forced to pick a shallower angle.
+  const SMASH_ULT_MIN_DEFENSE_WINDOW = 0.12; // ultimates get to be scarier than a fair rally shot
+  const SMASH_ANGLE_SEARCH_ITERS = 12;     // bisection steps (~0.01° over the 44° band)
+  const SMASH_AMEN_NET_CLOSE_RANGE = 90;   // was NET_CLOSE_RANGE. Only the AMEN transform's authored
+                                            // smashes still ramp their angle off net distance.
   // Max-power "dive" adjustment: a 5-star power character swings so hard that, without help,
   // a smash can carry all the way out of bounds. Once that smash crosses onto the opponent's
   // side of the net and has a little clearance from it, we steepen its descent so it comes down
@@ -3972,13 +3991,32 @@
   // the exact variation until the hit lands. Amplitude is kept small enough that the in-bounds
   // clamps that run afterward never have to rescue a shot. Single-player uses Math.random here;
   // the authoritative multiplayer sim folds its own deterministic variance in (shared/simulation.js).
-  const HIT_SPEED_VARIANCE = 0.03; // ±3% launch speed
-  const HIT_ANGLE_VARIANCE = 1.5;  // ±1.5° launch angle
-  function regularHitSpeedMult(){ return 1 + (Math.random()*2 - 1) * HIT_SPEED_VARIANCE; }
-  function regularHitAngleJitter(){ return (Math.random()*2 - 1) * HIT_ANGLE_VARIANCE; }
+  const HIT_SPEED_VARIANCE = 0.03; // ±3% launch speed at 3★ Control
+  const HIT_ANGLE_VARIANCE = 1.5;  // ±1.5° launch angle at 3★ Control
+  // Control scales that variance on EVERY hit — smash, clear and serve alike. Until now both
+  // amplitudes were flat for every character, so the stat literally named "control" did nothing
+  // for shot precision outside the dink: a 5★ Control player sprayed exactly as much as a 1★ one.
+  // Dividing by the multiplier keeps 3★ on the historical ±1.5°/±3% and spreads the rest around it:
+  //   1★ ±4.17° / ±8.3%  (≈ ±72px landing scatter)
+  //   5★ ±0.91° / ±1.8%  (≈ ±16px)
+  function controlVarianceMult(ch){
+    return statMult(ch && ch.stats && ch.stats.control,
+      GameConstants.CONTROL_VARIANCE_LINEAR, GameConstants.CONTROL_VARIANCE_KICKER);
+  }
+  function regularHitSpeedMult(ch){ return 1 + (Math.random()*2 - 1) * HIT_SPEED_VARIANCE / controlVarianceMult(ch); }
+  function regularHitAngleJitter(ch){ return (Math.random()*2 - 1) * HIT_ANGLE_VARIANCE / controlVarianceMult(ch); }
   // control: a max-control (5) character now has ~55% more effective reach than neutral,
   // a min-control (1) character ~55% less — makes precision players noticeably more
   // forgiving to line up shots with, and low-control ones noticeably trickier
+  // Control -> how far a smash is actually STEERED toward the opening the player is aiming at.
+  // This is Control's contribution to the smash, and it is placement rather than net margin:
+  // margin was measured and found inert (once the defender-window floor binds, smashes clear the
+  // tape by 90-130px and a tighter margin never changes the chosen angle), whereas placement is
+  // both meaningful and what the word "control" should mean. 1★ 0.00, 3★ 0.34, 5★ 0.68.
+  function smashAimFracFor(ch){
+    const c = (ch && ch.stats && ch.stats.control) || 3;
+    return Math.max(0, Math.min(0.85, (c - 1) * 0.17));
+  }
   function reachFor(ch){
     const c = (ch && ch.stats && ch.stats.control) || 3;
     const diff = c - 3;
@@ -10276,7 +10314,10 @@
       const halfCourt = (COURT_RIGHT - COURT_LEFT)/2;
       const netProximityFrac = Math.max(0, Math.min(1, distFromNet / halfCourt));
       const netSpeedScale = SMASH_NET_SLOWDOWN + (1 - SMASH_NET_SLOWDOWN) * netProximityFrac;
-      const netCloseFrac = Math.max(0, Math.min(1, 1 - distFromNet / NET_CLOSE_RANGE));
+      // Only the AMEN transform still reads this: its two smashes are authored shots with their
+      // own hand-picked angles, so they keep the old net-proximity ramp rather than going through
+      // the angle budget. The regular smash below no longer uses it.
+      const netCloseFrac = Math.max(0, Math.min(1, 1 - distFromNet / SMASH_AMEN_NET_CLOSE_RANGE));
 
       if (p.transform && p.transform.type === 'AMEN') {
         if (chargeFrac > 0.88) {
@@ -10315,8 +10356,11 @@
           spawnHitParticles(shuttle.x, shuttle.y, 20, true, '#ffd700');
         }
       } else {
+        // ---- Speed: Power + charge (+ ult overrides). Net proximity NO LONGER scales a regular
+        // smash — the steepness cost inside the angle budget does that job now, and it keys off
+        // the shot the player actually produced rather than off where they were standing.
         const star5Speed = SMASH_BASE_SPEED * (power || 1.0) * netSpeedScale * 1.25;
-        let speed = SMASH_BASE_SPEED * power * netSpeedScale * powerMultFor(p.character);
+        let speed = SMASH_BASE_SPEED * power * powerMultFor(p.character);
         if (spend === 'art') speed *= 1.25;
 
         if (spend && !p.onGround) {
@@ -10324,30 +10368,100 @@
           const is5StarPower = !!(p.character && p.character.stats && p.character.stats.power === 5);
           speed = is5StarPower ? (star5Speed * 1.5) : star5Speed;
         }
+        speed *= (0.75 + 0.25 * chargeFrac);
 
-        // Height (Part 4): taller players get a steeper downward smash angle.
-        const baseAngleDeg = SMASH_BACK_ANGLE + (SMASH_NET_STEEP_ANGLE - SMASH_BACK_ANGLE) * netCloseFrac + heightSmashSteepen(p.character);
-        
-        const chargeArcOffset = (1 - Math.min(1, Math.max(0.5, chargeFrac))) * 12;
-        const chargeSpeedScale = 0.75 + 0.25 * chargeFrac;
-        speed *= chargeSpeedScale;
+        // ---- Angle: solved, not tuned -------------------------------------------------------
+        // The contact point is what the shuttle will be moved to further down; the search has to
+        // run from THERE, not from the shuttle's current (pre-hit) position.
+        const cx = headX + dir*10, cy = dy;
+        // hitByMaxPower has to be decided BEFORE the search so the forward-sim models the dive.
+        // The 5★-Power trigger is RETIRED: the dive existed to stop a 5★ smash sailing out, and
+        // the angle budget plus ensureSmashInBounds already guarantee that. Keeping it made 4★->5★
+        // a cliff far larger than 3★->4★ and quietly made 5★ Power feel mandatory. Ultimates keep
+        // the dive, because there it is an authored part of the shot rather than a stat threshold.
+        const maxPower = !!spend;
+        const smashRef = { kind: 'smash', hitByMaxPower: maxPower, hitDir: dir,
+          maxPowerDiveApplied: false, dinkDiveApplied: false };
+        // Height (Part 4): tall players hold a steeper angle closer to the tape, so they get to
+        // shave the clearance margin. Control does NOT feed this — measured, and it is inert:
+        // once the defender-window floor binds, shots clear the tape by 90-130px and the margin
+        // never decides anything. Control buys placement below instead.
+        const netMargin = Math.max(6, SMASH_NET_MARGIN - heightSmashSteepen(p.character));
+        const minWindow = smashMinWindow(speed, !!spend);
+        const solvedAngle = solveSmashAngle(cx, cy, dir, speed, smashRef, netMargin, minWindow);
 
-        const angleDeg = baseAngleDeg - chargeArcOffset;
+        if(solvedAngle === null){
+          // No downward angle reaches from here — too low a contact, too deep in the court. This
+          // is the case that used to fire straight into the net and hand over the point. Convert
+          // to a hard flat drive instead: same input, a shot that is merely mediocre rather than
+          // an instant loss, and the swing animation still reads as an attempt.
+          p.swingKind = 'float';
+          kind = 'float';
+          // Use the ORDINARY CLEAR's speed, not the smash's. A smash-derived speed is far too hot
+          // for an upward shot: it is not bounds-checked (ensureSmashInBounds only touches
+          // kind==='smash'), so a 5★ fallback sailed straight out the back, and at the other end a
+          // 1★ half-charge drive was too slow to even reach the net. This is simply the shot the
+          // player would have got had they not charged into a smash — the one shape that is safe
+          // from every legal contact — with solveFallbackLift picking the FLATTEST angle that
+          // still clears, so it keeps as much aggression as the geometry allows.
+          const maxLiftSpeed = FLOAT_BASE_SPEED * power * powerMultForRegular(p.character)
+                             * regularHitSpeedMult(p.character);
+          const liftRef = { kind: 'float', maxPowerDiveApplied: false, dinkDiveApplied: false, hitDir: dir };
+          const lift = solveFallbackLift(cx, cy, dir, maxLiftSpeed, liftRef, netMargin);
+          const driveAngle = (lift.deg + regularHitAngleJitter(p.character)) * Math.PI/180;
+          shuttle.vx = dir * lift.speed * Math.cos(driveAngle);
+          shuttle.vy = -lift.speed * Math.sin(driveAngle);
+          shuttle.kind = 'float';
+          shuttle.ultSmashArc = false;
+          shuttle.hitByMaxPower = false;
+          shuttle.hitDir = dir;
+          shuttle.maxPowerDiveApplied = false;
+          shuttle.dinkDiveApplied = false;
+          shuttle.netCollisionResolved = false;
+          triggerShake(5, 0.18);
+          playSound('hit');
+          spawnHitParticles(shuttle.x, shuttle.y, 10, false, '#9aa4b8');
+        } else {
+
+        const angleDeg = solvedAngle;
+        // The steeper the angle the search settled on, the slower it leaves the racket.
+        speed *= smashSteepSpeedScale(angleDeg);
 
         const manualOffsetSmash = (advancedControlsEnabled && isHumanControlled(p)) ? p.attackAngle : 0;
         // Phase 4: fair contact-time micro-variance (once, not per-frame)
-        const smashSpeed = speed * regularHitSpeedMult();
-        const angle = (angleDeg - manualOffsetSmash + regularHitAngleJitter()) * Math.PI/180;
+        const smashSpeed = speed * regularHitSpeedMult(p.character);
+        const angle = (angleDeg - manualOffsetSmash + regularHitAngleJitter(p.character)) * Math.PI/180;
         shuttle.vx = dir * smashSpeed * Math.cos(angle);
         shuttle.vy = smashSpeed * Math.sin(angle);
         shuttle.ultSmashArc = false;
         shuttle.kind = 'smash';
-        shuttle.hitByMaxPower = !!(p.character && p.character.stats && p.character.stats.power === 5) || !!spend;
+        shuttle.hitByMaxPower = maxPower;
         shuttle.hitDir = dir;
         shuttle.maxPowerDiveApplied = false;
         shuttle.dinkDiveApplied = false;
         shuttle.netCollisionResolved = false;
-        
+
+        // ---- Control: steer the smash at the opening ----------------------------------------
+        // Pull the landing spot toward whichever end of the opponent's court is FARTHER from
+        // where they are standing, by however much this character's Control allows. The aimed
+        // shot is only accepted if it still clears the tape and still leaves the defender their
+        // window — steering must never be a back door around the two constraints the angle
+        // search just enforced.
+        const aimFrac = smashAimFracFor(p.character);
+        if(aimFrac > 0.01){
+          const opp = ultOpponent(p);
+          const shortX = dir > 0 ? NET_X + 130 : NET_X - 130;
+          const deepX  = dir > 0 ? COURT_RIGHT - 55 : COURT_LEFT + 55;
+          const targetX = (Math.abs(opp.x - shortX) >= Math.abs(opp.x - deepX)) ? shortX : deepX;
+          const naturalX = simulateFlightLanding(cx, cy, shuttle.vx, shuttle.vy, shuttle).x;
+          const aimedX = naturalX + (targetX - naturalX) * aimFrac;
+          const tryVx = solveLaunchVxForTargetX(cx, cy, shuttle.vy, aimedX, shuttle);
+          const chk = simulateFlightStep(cx, cy, tryVx, shuttle.vy, shuttle, null);
+          if(chk.tNet != null && chk.netGap >= netMargin && (chk.t - chk.tNet) >= minWindow){
+            shuttle.vx = tryVx;
+          }
+        }
+
         // DYNAMIC JUICE & SHAKE BASED ON CHARGE METER FULLNESS
         if (chargeFrac >= 0.95) {
           triggerShake(14, 0.35);
@@ -10373,6 +10487,7 @@
         
         playSound('smash');
         spawnHitParticles(shuttle.x, shuttle.y, 20, true, p.side === 'left' ? '#3b82f6' : '#ec4899');
+        } // end: a legal smash angle was found
       }
     } else if(kind === 'dink'){
       // A realistic net shot: a short, gentle arc that barely clears the net, then a
@@ -10459,8 +10574,8 @@
       // manual attack angle: positive lifts the clear into a higher arc, negative flattens it
       const manualOffsetFloat = (advancedControlsEnabled && isHumanControlled(p)) ? p.attackAngle : 0;
       // Phase 4: fair contact-time micro-variance (once, not per-frame)
-      const floatSpeed = speed * regularHitSpeedMult();
-      const angle = (angleDeg + manualOffsetFloat + regularHitAngleJitter()) * Math.PI/180;
+      const floatSpeed = speed * regularHitSpeedMult(p.character);
+      const angle = (angleDeg + manualOffsetFloat + regularHitAngleJitter(p.character)) * Math.PI/180;
       shuttle.vx = dir * floatSpeed * Math.cos(angle);
       shuttle.vy = -floatSpeed * Math.sin(angle);
       
@@ -10715,8 +10830,8 @@
     p.swingKind = 'serve';
     const dir = p.side === 'left' ? 1 : -1;
     // Phase 4: fair contact-time micro-variance (once, not per-frame)
-    const speed = SERVE_BASE_SPEED * power * powerMultForRegular(p.character) * regularHitSpeedMult();
-    const angle = (32 + regularHitAngleJitter()) * Math.PI/180;
+    const speed = SERVE_BASE_SPEED * power * powerMultForRegular(p.character) * regularHitSpeedMult(p.character);
+    const angle = (32 + regularHitAngleJitter(p.character)) * Math.PI/180;
     shuttle.vx = dir * speed * Math.cos(angle);
     shuttle.vy = -speed * Math.sin(angle);
     shuttle.active = true;
@@ -13938,7 +14053,21 @@
       isShermanDragonSmash: ref.isShermanDragonSmash };
     const dt = 1/120;
     let t = 0;
+    // Net-crossing bookkeeping — the smash angle search needs BOTH how much air the shot keeps
+    // over the tape and how long the defender gets between the crossing and the bounce.
+    const hitDir = ref.hitDir || (vx >= 0 ? 1 : -1);
+    let tNet = null, netGap = null;
+    if(hitDir * (x - NET_X) >= 0){ tNet = 0; netGap = Infinity; } // contact already past the net
     for(let i=0; i<900; i++){          // up to 7.5s — far longer than any real rally flight
+      // Re-arm the max-power dive mid-flight rather than holding the flag fixed. The AI's
+      // "roughly where will it land" callers barely noticed the difference, but the smash angle
+      // search compares candidate angles against the tape and the defender window, and a smash
+      // that dives is a materially different curve — predicting it undived picked angles that
+      // the real shot could not hold.
+      if(!s.maxPowerDiveApplied && s.kind === 'smash' && ref.hitByMaxPower &&
+         hitDir * (x - NET_X) >= SMASH_MAXPOWER_DIVE_DIST){
+        s.maxPowerDiveApplied = true;
+      }
       const g = currentShuttleGravity(s);
       const termVy = currentShuttleTerminalVy(s);
       if(quad){
@@ -13950,13 +14079,15 @@
       }
       s.vy += g*dt;
       if(s.vy > termVy) s.vy = termVy;
+      const prevX = x;
       x += s.vx*dt;
       y += s.vy*dt;
       t += dt;
-      if(stopY != null && y >= stopY) return { x, y, vx: s.vx, vy: s.vy, t, reachedStopY: true };
-      if(y + SHUTTLE_RADIUS >= GROUND_Y) return { x, y, vx: s.vx, vy: s.vy, t, reachedStopY: false };
+      if(tNet === null && (prevX - NET_X) * (x - NET_X) <= 0){ tNet = t; netGap = NET_TOP - y; }
+      if(stopY != null && y >= stopY) return { x, y, vx: s.vx, vy: s.vy, t, tNet, netGap, reachedStopY: true };
+      if(y + SHUTTLE_RADIUS >= GROUND_Y) return { x, y, vx: s.vx, vy: s.vy, t, tNet, netGap, reachedStopY: false };
     }
-    return { x, y, vx: s.vx, vy: s.vy, t, reachedStopY: false };
+    return { x, y, vx: s.vx, vy: s.vy, t, tNet, netGap, reachedStopY: false };
   }
 
   // Where a shot from (x,y,vx,vy) under `ref`'s physics comes to ground. Returns {x, t}.
@@ -13979,6 +14110,109 @@
       if(short) lo = mid; else hi = mid;
     }
     return dir * (lo + hi) / 2;
+  }
+
+  // ---- Smash angle budget --------------------------------------------------------------------
+  // Driving down against a shuttle that is above you trades pace for angle, so a steeper smash
+  // leaves the racket slower. 1.0 at SMASH_ANGLE_MIN -> SMASH_STEEP_SPEED_FLOOR at SMASH_ANGLE_MAX.
+  // This is the risk/reward knob: flat is fast but liftable, steep is an unanswerable angle but
+  // slow enough that the defender is still in the rally.
+  function smashSteepSpeedScale(angleDeg){
+    const f = Math.max(0, Math.min(1,
+      (angleDeg - SMASH_ANGLE_MIN) / (SMASH_ANGLE_MAX - SMASH_ANGLE_MIN)));
+    return SMASH_STEEP_SPEED_FLOOR + (1 - SMASH_STEEP_SPEED_FLOOR) * (1 - f);
+  }
+
+  // Fly a candidate angle and return the trajectory that would ACTUALLY be played — i.e. after
+  // the baseline trim. Overshoot must not REJECT an angle (it is recoverable, and gating on it
+  // makes every mid-court smash report "no legal angle" because the flattest candidate sails a
+  // few px long), but it cannot be ignored either: a very fast flat shot otherwise "passes" the
+  // defender-window test by landing far past the baseline and spending a long time in the air,
+  // and then ensureSmashInBounds trims it and the window collapses. Measuring the trimmed shot
+  // is what keeps the guarantee honest — and what makes legality monotone in the angle, which
+  // the bisection in solveSmashAngle depends on.
+  function smashCandidate(x0, y0, dir, baseSpeed, angleDeg, ref){
+    const sp = baseSpeed * smashSteepSpeedScale(angleDeg);
+    const a = angleDeg * Math.PI/180;
+    let vx = dir*sp*Math.cos(a); const vy = sp*Math.sin(a);
+    let r = simulateFlightStep(x0, y0, vx, vy, ref, null);
+    const outer = dir > 0 ? (COURT_RIGHT - 55) : (COURT_LEFT + 55);
+    if((dir > 0 && r.x > outer) || (dir < 0 && r.x < outer)){
+      vx = solveLaunchVxForTargetX(x0, y0, vy, outer, ref);
+      r = simulateFlightStep(x0, y0, vx, vy, ref, null);
+    }
+    return r;
+  }
+  // Can this smash actually be played at this angle? Two constraints, both UNRECOVERABLE:
+  //   1. it has to get over the tape with netMargin px to spare
+  //   2. it has to leave the defender minWindow seconds between the crossing and the bounce
+  function smashAngleOk(x0, y0, dir, baseSpeed, angleDeg, ref, netMargin, minWindow){
+    const r = smashCandidate(x0, y0, dir, baseSpeed, angleDeg, ref);
+    if(r.tNet == null) return false;               // died on our own side, never reached the net
+    if(r.netGap < netMargin) return false;         // clipped the tape
+    return (r.t - r.tNet) >= minWindow;
+  }
+
+  // How much reaction time this swing owes the defender. Never less than the floor, and hitting
+  // harder than SMASH_BASE_SPEED owes proportionally more. This is Power's COST, and it had to be
+  // explicit: the fixed floor alone was expected to make Power self-flattening, but measured
+  // against the real integrator it does the opposite — a faster smash carries farther past the net
+  // and so hangs LONGER after crossing it, which keeps steeper angles legal (5★ solved to 33°
+  // where 3★ solved to 22°). With the scaling in, a close smash runs 1★ 34°/1432 launch (steep,
+  // slow, short) to 5★ 13°/5104 (flat, fast, deep) — two different shots, and the hardest hitters
+  // owe the most reaction time.
+  function smashMinWindow(baseSpeed, isUlt){
+    const floor = isUlt ? SMASH_ULT_MIN_DEFENSE_WINDOW : SMASH_MIN_DEFENSE_WINDOW;
+    return floor * Math.max(1, baseSpeed / SMASH_BASE_SPEED);
+  }
+  // When no downward angle is playable, the swing still has to produce SOMETHING that clears the
+  // tape — a flat drive fired from a low, deep contact goes straight into the net, which is the
+  // exact failure the fallback exists to prevent. Try progressively more lofted launches and take
+  // the first that actually clears; the flattest survivor keeps as much aggression as the geometry
+  // allows. Returns an UPWARD angle in degrees.
+  // Returns {deg, speed}: the flattest launch that clears the tape AND stays in the court. Speed is
+  // trimmed per candidate rather than left at full — otherwise the fallback merely swaps one way of
+  // losing the point (into the net) for another (sailing out the back).
+  function solveFallbackLift(x0, y0, dir, maxSpeed, ref, netMargin){
+    const outer = dir > 0 ? (COURT_RIGHT - 55) : (COURT_LEFT + 55);
+    const candidates = [6, 12, 20, 30, FLOAT_ANGLE_NEAR, FLOAT_ANGLE_FAR, 55];
+    const fly = (deg, sp) => {
+      const a = deg * Math.PI/180;
+      return simulateFlightStep(x0, y0, dir*sp*Math.cos(a), -sp*Math.sin(a), ref, null);
+    };
+    for(let i = 0; i < candidates.length; i++){
+      const deg = candidates[i];
+      let sp = maxSpeed;
+      let r = fly(deg, sp);
+      if((dir > 0 && r.x > outer) || (dir < 0 && r.x < outer)){
+        let lo = 100, hi = maxSpeed;               // same angle, just less of it
+        for(let it = 0; it < 18; it++){
+          const mid = (lo + hi) / 2;
+          const rr = fly(deg, mid);
+          const over = dir > 0 ? (rr.x > outer) : (rr.x < outer);
+          if(over) hi = mid; else lo = mid;
+        }
+        sp = (lo + hi) / 2;
+        r = fly(deg, sp);
+      }
+      if(r.tNet != null && r.netGap >= netMargin) return { deg: deg, speed: sp };
+    }
+    return { deg: candidates[candidates.length - 1], speed: maxSpeed };
+  }
+
+  // The steepest playable angle. Both constraints tighten monotonically as the angle steepens
+  // (steeper => crosses lower over the tape AND lands sooner after it), so a bisection lands on
+  // the exact boundary. Returns null when even SMASH_ANGLE_MIN is unplayable from here — i.e.
+  // the contact is too low and too deep for a downward shot to reach, which is precisely the
+  // situation that used to fire a smash straight into the net for an instant loss of point.
+  function solveSmashAngle(x0, y0, dir, baseSpeed, ref, netMargin, minWindow){
+    if(!smashAngleOk(x0, y0, dir, baseSpeed, SMASH_ANGLE_MIN, ref, netMargin, minWindow)) return null;
+    let lo = SMASH_ANGLE_MIN, hi = SMASH_ANGLE_MAX;
+    for(let it=0; it<SMASH_ANGLE_SEARCH_ITERS; it++){
+      const mid = (lo + hi) / 2;
+      if(smashAngleOk(x0, y0, dir, baseSpeed, mid, ref, netMargin, minWindow)) lo = mid; else hi = mid;
+    }
+    return lo;
   }
 
   // Forward simulation of the shuttle's CURRENT flight to estimate where it will land. Now runs

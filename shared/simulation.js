@@ -82,10 +82,29 @@
     n ^= n >>> 16;
     return (n >>> 0) / 4294967296;
   }
-  var HIT_SPEED_VARIANCE = 0.03; // ±3% launch speed
-  var HIT_ANGLE_VARIANCE = 1.5;  // ±1.5° launch angle
-  function hitSpeedMult(w, p) { return 1 + (hitNoise(w, p, 1) * 2 - 1) * HIT_SPEED_VARIANCE; }
-  function hitAngleJitter(w, p) { return (hitNoise(w, p, 2) * 2 - 1) * HIT_ANGLE_VARIANCE; }
+  var HIT_SPEED_VARIANCE = 0.03; // ±3% launch speed at 3★ Control
+  var HIT_ANGLE_VARIANCE = 1.5;  // ±1.5° launch angle at 3★ Control
+  // Control scales that variance on EVERY hit — smash, clear and serve alike. Both amplitudes used
+  // to be flat for every character, so the stat named "control" did nothing for shot precision
+  // outside the dink. Dividing keeps 3★ on the historical ±1.5°/±3%:
+  //   1★ ±4.17° / ±8.3%   5★ ±0.91° / ±1.8%
+  function controlVarianceMult(ch) {
+    return statMult(ch && ch.stats && ch.stats.control,
+      C.CONTROL_VARIANCE_LINEAR, C.CONTROL_VARIANCE_KICKER);
+  }
+  function hitSpeedMult(w, p) {
+    return 1 + (hitNoise(w, p, 1) * 2 - 1) * HIT_SPEED_VARIANCE / controlVarianceMult(p.character);
+  }
+  function hitAngleJitter(w, p) {
+    return (hitNoise(w, p, 2) * 2 - 1) * HIT_ANGLE_VARIANCE / controlVarianceMult(p.character);
+  }
+  // Control -> how far a smash is STEERED toward the opening. Control's smash contribution is
+  // placement, not net margin (margin is inert once the defender-window floor binds).
+  // 1★ 0.00, 3★ 0.34, 5★ 0.68.
+  function smashAimFracFor(ch) {
+    var c = (ch && ch.stats && ch.stats.control) || 3;
+    return Math.max(0, Math.min(0.85, (c - 1) * 0.17));
+  }
 
   // ==== MOMENTUM ENGINE (MOMENTUM_SPEC Parts 0-2) =========================
   // Phase 1: the meter and its per-character fill weights only. No ultimates,
@@ -463,27 +482,85 @@
     var dir = p.side === 'left' ? 1 : -1;
 
     if (kind === 'smash') {
-      var distFromNet = Math.abs(headX - C.NET_X);
-      var halfCourt = (C.COURT_RIGHT - C.COURT_LEFT) / 2;
-      var netProximityFrac = Math.max(0, Math.min(1, distFromNet / halfCourt));
-      var netSpeedScale = C.SMASH_NET_SLOWDOWN + (1 - C.SMASH_NET_SLOWDOWN) * netProximityFrac;
-      var speed = C.SMASH_BASE_SPEED * power * netSpeedScale * powerMultFor(p.character);
-      var netCloseFrac = Math.max(0, Math.min(1, 1 - distFromNet / C.NET_CLOSE_RANGE));
-      var angleDeg = C.SMASH_BACK_ANGLE + (C.SMASH_NET_STEEP_ANGLE - C.SMASH_BACK_ANGLE) * netCloseFrac;
-      // Phase 4: deterministic fair contact-time micro-variance (once, not per-frame)
-      speed *= hitSpeedMult(w, p);
-      var angleS = (angleDeg - manualOffset(w, p) + hitAngleJitter(w, p)) * Math.PI / 180;
-      shuttle.vx = dir * speed * Math.cos(angleS);
-      shuttle.vy = speed * Math.sin(angleS);
-      shuttle.ultSmashArc = false;
-      shuttle.kind = 'smash';
-      shuttle.hitByMaxPower = !!(p.character && p.character.stats && p.character.stats.power === 5);
-      shuttle.hitDir = dir;
-      shuttle.maxPowerDiveApplied = false;
-      shuttle.dinkDiveApplied = false;
-      shuttle.netCollisionResolved = false;
-      emit(w, { kind: 'shake', mag: 9, duration: C.SHAKE_SMASH_DURATION });
-      emit(w, { kind: 'hit', side: p.side, hitKind: 'smash', x: shuttle.x, y: shuttle.y });
+      // Speed: Power + charge. Net proximity NO LONGER scales a regular smash — the steepness cost
+      // inside the angle budget does that job, keyed to the shot the player actually produced
+      // rather than to where they happened to be standing.
+      var speed = C.SMASH_BASE_SPEED * power * powerMultFor(p.character);
+      // Angle: solved against the real integrator, not ramped off net distance. The contact point
+      // is committed further down, so the search has to run from THERE.
+      var cx = headX + dir * 10, cy = dy;
+      // The 5★-Power dive trigger is RETIRED: the dive existed to stop a 5★ smash sailing out, and
+      // the angle budget plus ensureSmashInBounds already guarantee that. It made 4★->5★ a cliff
+      // far larger than 3★->4★ and quietly made 5★ Power mandatory.
+      var smashRef = { kind: 'smash', hitByMaxPower: false, hitDir: dir,
+        maxPowerDiveApplied: false, dinkDiveApplied: false };
+      var netMargin = C.SMASH_NET_MARGIN;
+      var minWindow = smashMinWindow(speed, false);
+      var solvedAngle = solveSmashAngle(cx, cy, dir, speed, smashRef, netMargin, minWindow);
+
+      if (solvedAngle === null) {
+        // No downward angle reaches from here — too low a contact, too deep in the court. This is
+        // the case that used to fire straight into the net and hand over the point. Convert to a
+        // hard flat drive: the same input produces a merely mediocre shot instead of a lost rally.
+        kind = 'float';
+        p.swingKind = 'float';
+        // Use the ORDINARY CLEAR's speed, not the smash's. A smash-derived speed is far too hot for
+        // an upward shot: it is not bounds-checked (ensureSmashInBounds only touches kind==='smash')
+        // so a 5★ fallback sailed out the back, while a 1★ half-charge drive was too slow to even
+        // reach the net. This is just the shot the player would have got without charging into a
+        // smash, with solveFallbackLift picking the flattest angle that still clears.
+        var maxLiftSpeed = C.FLOAT_BASE_SPEED * power * powerMultForRegular(p.character) * hitSpeedMult(w, p);
+        var liftRef = { kind: 'float', maxPowerDiveApplied: false, dinkDiveApplied: false, hitDir: dir };
+        var lift = solveFallbackLift(cx, cy, dir, maxLiftSpeed, liftRef, netMargin);
+        var driveAngle = (lift.deg + hitAngleJitter(w, p)) * Math.PI / 180;
+        shuttle.vx = dir * lift.speed * Math.cos(driveAngle);
+        shuttle.vy = -lift.speed * Math.sin(driveAngle);
+        shuttle.kind = 'float';
+        shuttle.ultSmashArc = false;
+        shuttle.hitByMaxPower = false;
+        shuttle.hitDir = dir;
+        shuttle.maxPowerDiveApplied = false;
+        shuttle.dinkDiveApplied = false;
+        shuttle.netCollisionResolved = false;
+        emit(w, { kind: 'shake', mag: 2.5, duration: 0.12 });
+        emit(w, { kind: 'hit', side: p.side, hitKind: 'float', x: shuttle.x, y: shuttle.y });
+      } else {
+        // The steeper the angle the search settled on, the slower it leaves the racket.
+        speed *= smashSteepSpeedScale(solvedAngle);
+        // Phase 4: deterministic fair contact-time micro-variance (once, not per-frame)
+        speed *= hitSpeedMult(w, p);
+        var angleS = (solvedAngle - manualOffset(w, p) + hitAngleJitter(w, p)) * Math.PI / 180;
+        shuttle.vx = dir * speed * Math.cos(angleS);
+        shuttle.vy = speed * Math.sin(angleS);
+        shuttle.ultSmashArc = false;
+        shuttle.kind = 'smash';
+        shuttle.hitByMaxPower = false;
+        shuttle.hitDir = dir;
+        shuttle.maxPowerDiveApplied = false;
+        shuttle.dinkDiveApplied = false;
+        shuttle.netCollisionResolved = false;
+
+        // Control: steer the smash toward whichever end of the opponent's court is FARTHER from
+        // them, by however much this character's Control allows. Only accepted if it still clears
+        // the tape and still leaves the defender their window — steering must never be a back door
+        // around the two constraints the angle search just enforced.
+        var aimFrac = smashAimFracFor(p.character);
+        if (aimFrac > 0.01) {
+          var opp = p.side === 'left' ? w.right : w.left;
+          var shortX = dir > 0 ? C.NET_X + 130 : C.NET_X - 130;
+          var deepX = dir > 0 ? C.COURT_RIGHT - 55 : C.COURT_LEFT + 55;
+          var targetX = (Math.abs(opp.x - shortX) >= Math.abs(opp.x - deepX)) ? shortX : deepX;
+          var naturalX = simulateFlightLanding(cx, cy, shuttle.vx, shuttle.vy, shuttle).x;
+          var aimedX = naturalX + (targetX - naturalX) * aimFrac;
+          var tryVx = solveLaunchVxForTargetX(cx, cy, shuttle.vy, aimedX, shuttle);
+          var chk = simulateFlightStep(cx, cy, tryVx, shuttle.vy, shuttle, null);
+          if (chk.tNet != null && chk.netGap >= netMargin && (chk.t - chk.tNet) >= minWindow) {
+            shuttle.vx = tryVx;
+          }
+        }
+        emit(w, { kind: 'shake', mag: 9, duration: C.SHAKE_SMASH_DURATION });
+        emit(w, { kind: 'hit', side: p.side, hitKind: 'smash', x: shuttle.x, y: shuttle.y });
+      }
     } else if (kind === 'dink') {
       shuttle.kind = 'dink';
       shuttle.hitByMaxPower = false;
@@ -524,6 +601,10 @@
     }
     shuttle.x = headX + dir * 10;
     shuttle.y = dy;
+    // Trim a smash that would sail past the baseline. index.html has always done this; this sim
+    // never did, so multiplayer smashes went out where the identical single-player shot was
+    // rescued. Runs after the contact point is committed because it re-solves from shuttle.x/y.
+    ensureSmashInBounds(w, p);
 
     // ---- Momentum gain for this clean contact (MOMENTUM_SPEC Part 1/2) ----
     var moOpp = p.side === 'left' ? w.right : w.left;
@@ -756,6 +837,177 @@
       && !shuttle.isShermanRain && !shuttle.isShermanDragonSmash;
   }
 
+  // ---- Numeric flight forward-sim -----------------------------------------
+  // Ported from index.html so BOTH sims place shots with the same machinery. Until now this file
+  // had no forward-sim and no smash in-bounds clamp AT ALL, so a multiplayer smash was never
+  // trimmed the way a single-player one was — a much bigger desync than any single constant.
+  //
+  // Steps the REAL integrator (same gravity/terminal/drag selectors as updateShuttle) forward from
+  // a hypothetical (x,y,vx,vy) until the ground, or until it descends past stopY. `ref` supplies
+  // the physics MODEL via its flags and is never mutated. Also reports the net crossing, which the
+  // smash angle search needs: how much air the shot keeps over the tape, and how long the defender
+  // gets between that crossing and the bounce.
+  function simulateFlightStep(x, y, vx, vy, ref, stopY) {
+    var quad = usesQuadraticDrag(ref);
+    var s = { vx: vx, vy: vy, kind: ref.kind,
+      maxPowerDiveApplied: ref.maxPowerDiveApplied, dinkDiveApplied: ref.dinkDiveApplied,
+      dinkPostNetGravity: ref.dinkPostNetGravity, ultFastDrop: ref.ultFastDrop,
+      ultFastAscent: ref.ultFastAscent, ultFx: ref.ultFx, noDrag: ref.noDrag,
+      isShermanDragonSmash: ref.isShermanDragonSmash };
+    var dt = 1 / 120, t = 0;
+    var hitDir = ref.hitDir || (vx >= 0 ? 1 : -1);
+    var tNet = null, netGap = null;
+    if (hitDir * (x - C.NET_X) >= 0) { tNet = 0; netGap = Infinity; } // contact already past the net
+    for (var i = 0; i < 900; i++) {
+      // Re-arm the max-power dive mid-flight instead of holding the flag fixed: a smash that dives
+      // is a materially different curve, and predicting it undived picks angles the real shot
+      // cannot hold.
+      if (!s.maxPowerDiveApplied && s.kind === 'smash' && ref.hitByMaxPower &&
+          hitDir * (x - C.NET_X) >= C.SMASH_MAXPOWER_DIVE_DIST) {
+        s.maxPowerDiveApplied = true;
+      }
+      var g = currentShuttleGravity(s);
+      var termVy = currentShuttleTerminalVy(s);
+      if (quad) {
+        var sp = Math.sqrt(s.vx * s.vx + s.vy * s.vy);
+        s.vx -= C.SHUTTLE_DRAG_K * sp * s.vx * dt;
+        s.vy -= C.SHUTTLE_DRAG_K * sp * s.vy * dt;
+      } else if (!s.noDrag) {
+        s.vx -= C.HORIZONTAL_DRAG * s.vx * dt;
+      }
+      s.vy += g * dt;
+      if (s.vy > termVy) s.vy = termVy;
+      var prevX = x;
+      x += s.vx * dt;
+      y += s.vy * dt;
+      t += dt;
+      if (tNet === null && (prevX - C.NET_X) * (x - C.NET_X) <= 0) { tNet = t; netGap = C.NET_TOP - y; }
+      if (stopY != null && y >= stopY) return { x: x, y: y, vx: s.vx, vy: s.vy, t: t, tNet: tNet, netGap: netGap, reachedStopY: true };
+      if (y + C.SHUTTLE_RADIUS >= C.GROUND_Y) return { x: x, y: y, vx: s.vx, vy: s.vy, t: t, tNet: tNet, netGap: netGap, reachedStopY: false };
+    }
+    return { x: x, y: y, vx: s.vx, vy: s.vy, t: t, tNet: tNet, netGap: netGap, reachedStopY: false };
+  }
+  function simulateFlightLanding(x, y, vx, vy, ref) {
+    var r = simulateFlightStep(x, y, vx, vy, ref, null);
+    return { x: r.x, t: r.t };
+  }
+  // Binary-search the launch horizontal speed so a shot from (x0,y0) with vertical launch vy0
+  // lands at targetX. Returns a SIGNED vx (toward targetX).
+  function solveLaunchVxForTargetX(x0, y0, vy0, targetX, ref) {
+    var dir = targetX >= x0 ? 1 : -1;
+    var lo = 0, hi = 5000;
+    for (var it = 0; it < 24; it++) {
+      var mid = (lo + hi) / 2;
+      var landX = simulateFlightStep(x0, y0, dir * mid, vy0, ref, null).x;
+      var short = dir > 0 ? (landX < targetX) : (landX > targetX);
+      if (short) lo = mid; else hi = mid;
+    }
+    return dir * (lo + hi) / 2;
+  }
+
+  // ---- Smash angle budget --------------------------------------------------
+  // Driving down against a shuttle above you trades pace for angle, so a steeper smash leaves the
+  // racket slower: flat is fast but liftable, steep is an unanswerable angle but slow enough that
+  // the defender is still in the rally.
+  function smashSteepSpeedScale(angleDeg) {
+    var f = Math.max(0, Math.min(1,
+      (angleDeg - C.SMASH_ANGLE_MIN) / (C.SMASH_ANGLE_MAX - C.SMASH_ANGLE_MIN)));
+    return C.SMASH_STEEP_SPEED_FLOOR + (1 - C.SMASH_STEEP_SPEED_FLOOR) * (1 - f);
+  }
+  // Fly a candidate angle and return the trajectory that would ACTUALLY be played — i.e. after
+  // the baseline trim. Overshoot must not REJECT an angle (it is recoverable, and gating on it
+  // makes every mid-court smash report "no legal angle" because the flattest candidate sails a
+  // few px long), but it cannot be ignored either: a very fast flat shot otherwise "passes" the
+  // defender-window test by landing far past the baseline and spending a long time in the air,
+  // and then ensureSmashInBounds trims it and the window collapses. Measuring the trimmed shot
+  // is what keeps the guarantee honest — and what makes legality monotone in the angle, which
+  // the bisection below depends on.
+  function smashCandidate(x0, y0, dir, baseSpeed, angleDeg, ref) {
+    var sp = baseSpeed * smashSteepSpeedScale(angleDeg);
+    var a = angleDeg * Math.PI / 180;
+    var vx = dir * sp * Math.cos(a);
+    var vy = sp * Math.sin(a);
+    var r = simulateFlightStep(x0, y0, vx, vy, ref, null);
+    var outer = dir > 0 ? (C.COURT_RIGHT - 55) : (C.COURT_LEFT + 55);
+    if ((dir > 0 && r.x > outer) || (dir < 0 && r.x < outer)) {
+      vx = solveLaunchVxForTargetX(x0, y0, vy, outer, ref);
+      r = simulateFlightStep(x0, y0, vx, vy, ref, null);
+    }
+    return r;
+  }
+  // Two constraints, both UNRECOVERABLE: clear the tape by netMargin, and leave the defender
+  // minWindow seconds between the crossing and the bounce.
+  function smashAngleOk(x0, y0, dir, baseSpeed, angleDeg, ref, netMargin, minWindow) {
+    var r = smashCandidate(x0, y0, dir, baseSpeed, angleDeg, ref);
+    if (r.tNet == null) return false;
+    if (r.netGap < netMargin) return false;
+    return (r.t - r.tNet) >= minWindow;
+  }
+  // When no downward angle is playable, the swing still has to produce SOMETHING that clears the
+  // tape — a flat drive fired from a low, deep contact goes straight into the net, which is the
+  // exact failure the fallback exists to prevent. Try progressively more lofted launches and take
+  // the first that actually clears. Returns an UPWARD angle in degrees.
+  // Returns {deg, speed}: the flattest launch that clears the tape AND stays in the court. Speed is
+  // trimmed per candidate rather than left at full — otherwise the fallback merely swaps one way of
+  // losing the point (into the net) for another (sailing out the back).
+  function solveFallbackLift(x0, y0, dir, maxSpeed, ref, netMargin) {
+    var outer = dir > 0 ? (C.COURT_RIGHT - 55) : (C.COURT_LEFT + 55);
+    var candidates = [6, 12, 20, 30, C.FLOAT_ANGLE_NEAR, C.FLOAT_ANGLE_FAR, 55];
+    function fly(deg, sp) {
+      var a = deg * Math.PI / 180;
+      return simulateFlightStep(x0, y0, dir * sp * Math.cos(a), -sp * Math.sin(a), ref, null);
+    }
+    for (var i = 0; i < candidates.length; i++) {
+      var deg = candidates[i];
+      var sp = maxSpeed;
+      var r = fly(deg, sp);
+      if ((dir > 0 && r.x > outer) || (dir < 0 && r.x < outer)) {
+        var lo = 100, hi = maxSpeed;               // same angle, just less of it
+        for (var it = 0; it < 18; it++) {
+          var mid = (lo + hi) / 2;
+          var rr = fly(deg, mid);
+          var over = dir > 0 ? (rr.x > outer) : (rr.x < outer);
+          if (over) hi = mid; else lo = mid;
+        }
+        sp = (lo + hi) / 2;
+        r = fly(deg, sp);
+      }
+      if (r.tNet != null && r.netGap >= netMargin) return { deg: deg, speed: sp };
+    }
+    return { deg: candidates[candidates.length - 1], speed: maxSpeed };
+  }
+
+  // How much reaction time this swing owes the defender. Never less than the floor, and hitting
+  // harder than SMASH_BASE_SPEED owes proportionally more. This is Power's cost — see the note on
+  // SMASH_MIN_DEFENSE_WINDOW: without it a faster smash kept MORE angle rather than less, because
+  // it carries farther past the net and so hangs longer after crossing it.
+  function smashMinWindow(baseSpeed, isUlt) {
+    var floor = isUlt ? C.SMASH_ULT_MIN_DEFENSE_WINDOW : C.SMASH_MIN_DEFENSE_WINDOW;
+    return floor * Math.max(1, baseSpeed / C.SMASH_BASE_SPEED);
+  }
+  // The steepest playable angle. Both constraints tighten monotonically with angle, so bisection
+  // lands on the exact boundary. Returns null when even the flattest smash is unplayable here.
+  function solveSmashAngle(x0, y0, dir, baseSpeed, ref, netMargin, minWindow) {
+    if (!smashAngleOk(x0, y0, dir, baseSpeed, C.SMASH_ANGLE_MIN, ref, netMargin, minWindow)) return null;
+    var lo = C.SMASH_ANGLE_MIN, hi = C.SMASH_ANGLE_MAX;
+    for (var it = 0; it < C.SMASH_ANGLE_SEARCH_ITERS; it++) {
+      var mid = (lo + hi) / 2;
+      if (smashAngleOk(x0, y0, dir, baseSpeed, mid, ref, netMargin, minWindow)) lo = mid; else hi = mid;
+    }
+    return lo;
+  }
+  // Trim a smash that would sail past the baseline back to just inside it.
+  function ensureSmashInBounds(w, p) {
+    var shuttle = w.shuttle;
+    if (shuttle.kind !== 'smash') return;
+    var dir = p.side === 'left' ? 1 : -1;
+    var landX = simulateFlightLanding(shuttle.x, shuttle.y, shuttle.vx, shuttle.vy, shuttle).x;
+    var outer = dir > 0 ? (C.COURT_RIGHT - 55) : (C.COURT_LEFT + 55);
+    if ((dir > 0 && landX > outer) || (dir < 0 && landX < outer)) {
+      shuttle.vx = solveLaunchVxForTargetX(shuttle.x, shuttle.y, shuttle.vy, outer, shuttle);
+    }
+  }
+
   // ---- shuttle integration + collisions + scoring (verbatim) --------------
   function updateShuttle(w, dt) {
     var shuttle = w.shuttle;
@@ -882,6 +1134,17 @@
     spendMomentum: spendMomentum,
     currentShuttleGravity: currentShuttleGravity,
     currentShuttleTerminalVy: currentShuttleTerminalVy,
+    // Pure placement solvers — exported so the client can reuse them and so the parity
+    // harness can compare the two copies' smash maths directly instead of inferring it
+    // from flown trajectories.
+    simulateFlightStep: simulateFlightStep,
+    simulateFlightLanding: simulateFlightLanding,
+    solveLaunchVxForTargetX: solveLaunchVxForTargetX,
+    solveSmashAngle: solveSmashAngle,
+    smashSteepSpeedScale: smashSteepSpeedScale,
+    smashAimFracFor: smashAimFracFor,
+    controlVarianceMult: controlVarianceMult,
+    ensureSmashInBounds: ensureSmashInBounds,
     // Phase 8: the client re-runs ONLY movement (never shuttle/hit resolution,
     // which stays server-authoritative) to predict the local player's own
     // position instantly instead of waiting a round trip. Exporting the exact

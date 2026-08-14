@@ -103,10 +103,40 @@
                                 // the defender more time everywhere. Steepness is not fixed here — that
                                 // is the job of the geometric angle-budget model (see the plan), which
                                 // replaces the net-distance angle constants entirely.
-    SMASH_NET_SLOWDOWN: 0.55,
-    SMASH_NET_STEEP_ANGLE: 46,
-    SMASH_BACK_ANGLE: 23,
-    NET_CLOSE_RANGE: 90,
+    SMASH_NET_SLOWDOWN: 0.55,   // still scales ULT smash speed by net proximity; the regular smash
+                                // no longer uses it (the steepness cost below does that job instead).
+
+    // --- Smash angle budget -------------------------------------------------------------
+    // Replaces the old net-distance angle ramp (SMASH_BACK_ANGLE 23 -> SMASH_NET_STEEP_ANGLE 46
+    // across NET_CLOSE_RANGE 90px). That model read two DIFFERENT distance scales — speed off
+    // half-court (620px), angle off a 90px window — and knew nothing about contact HEIGHT, which
+    // is the variable that actually decides whether a downward shot can reach. Result: a deep
+    // jump smash was pinned at 23° with no altitude to spend and went into the net for an
+    // instant loss of point.
+    //
+    // The rule now: a smash is the STEEPEST angle that still clears the tape and still leaves
+    // the defender a fair reaction window. The angle is searched against the real integrator
+    // (solveSmashAngle), so it self-adapts to any future physics retune instead of needing
+    // hand-tuned constants per court region.
+    SMASH_ANGLE_MIN: 8,               // flattest smash the search will consider
+    SMASH_ANGLE_MAX: 52,              // steepest ditto
+    SMASH_STEEP_SPEED_FLOOR: 0.60,    // speed retained at SMASH_ANGLE_MAX (1.0 at SMASH_ANGLE_MIN):
+                                      // driving down against a shuttle above you trades pace for angle
+    SMASH_NET_MARGIN: 20,             // px of air the shot must keep over the tape
+    SMASH_MIN_DEFENSE_WINDOW: 0.20,   // s between net-crossing and landing — human reaction floor
+    SMASH_ULT_MIN_DEFENSE_WINDOW: 0.12, // ultimates are allowed to be scarier than a fair rally shot
+    // The window owed scales UP with launch speed (never down — the floor above always applies):
+    //   owed = floor * max(1, baseSpeed / SMASH_BASE_SPEED)
+    // This is what gives Power a real cost, and it had to be added explicitly. The original design
+    // assumed the fixed floor alone would make Power self-flattening — measured against the real
+    // integrator, it does the OPPOSITE: a faster smash carries farther past the net, so it spends
+    // LONGER in the air after crossing, so steeper angles stay inside the window (5★ solved to 33°
+    // where 3★ solved to 22°). Power ended up with no downside at all. With the scaling in:
+    //   1★  34° / 1432 launch / lands 809      steep, slow, short — a finesse kill
+    //   5★  13° / 5104 launch / lands 1215     flat, fast, deep — a power kill
+    // Two genuinely different shots, and the hardest hitters owe the most reaction time.
+    // (The speed reference is SMASH_BASE_SPEED itself, so no extra constant is needed.)
+    SMASH_ANGLE_SEARCH_ITERS: 12,     // bisection steps (~0.01° resolution over the 44° band)
     SMASH_MAXPOWER_DIVE_DIST: 45,
     SMASH_MAXPOWER_DIVE_GRAVITY: 950,   // PARITY FIX (pre-existing desync, found by the A2 parity check):
                                         // index.html was deliberately retuned 1900 -> 950 ("milder downward
@@ -129,6 +159,16 @@
     DINK_POST_NET_TRIGGER_DIST: 22,
     DINK_POST_NET_GRAVITY_BASE: 3400,
     DINK_POST_NET_TERMINAL_VY: 620,
+    // Control also scales SHOT VARIANCE on every hit — not just dinks. Before this,
+    // HIT_ANGLE_VARIANCE / HIT_SPEED_VARIANCE were a flat ±1.5° / ±3% for every character, so
+    // the stat literally named "control" had no effect on shot precision anywhere outside the
+    // dink. Both variances are now DIVIDED by statMult(control, ...) below:
+    //   1★ ±4.17° / ±8.3%  (≈ ±72px landing scatter)
+    //   3★ ±1.50° / ±3.0%  (≈ ±27px — the old flat value, unchanged for neutral characters)
+    //   5★ ±0.91° / ±1.8%  (≈ ±16px)
+    CONTROL_VARIANCE_LINEAR: 0.22,
+    CONTROL_VARIANCE_KICKER: 0.05,
+
     DINK_CONTROL_ACCURACY_LINEAR: 0.18,
     DINK_CONTROL_ACCURACY_KICKER: 0.05,
     DINK_CONTROL_DIVE_LINEAR: 0.15,
