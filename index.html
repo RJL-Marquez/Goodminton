@@ -1562,79 +1562,86 @@
     transform: translateX(6px);
   }
 
-  /* Pause / game-over: full-width rows so the underline tracks align into one
-     clean left-aligned stack. */
-  .pausePanel, .gameOverPanel {
+  /* Game-over: full-width rows so the underline tracks align into one clean
+     left-aligned stack. (The pause screen no longer uses a panel at all — see
+     .pauseScreen below — so it is no longer part of this rule.) */
+  .gameOverPanel {
     min-width: 340px;
     align-items: stretch;
   }
-  .pausePanel button.gameBtn, .gameOverPanel button.gameBtn {
+  .gameOverPanel button.gameBtn {
     width: 100%;
     white-space: nowrap;
   }
 
-  /* --- Pause menu: two-column match brief ---------------------------------
-     Left column states what you are returning to, right column what you can do
-     about it, split by a hairline. Collapses to a single stack when the panel
-     can't hold two columns (narrow windows, phones in portrait). */
-  /* Sized to its content rather than inheriting .panel's `width: 90%` up to a 900px cap.
-     Stretched to the cap, the label/value pairs in the meta block ended up marooned at
-     opposite ends of the column and the button underlines ran on forever, which read as
-     sparse rather than spacious. Hugging the content keeps the pairs legible as pairs. */
-  .pausePanel { padding: 40px 46px; gap: 0; text-align: left; width: auto; max-width: min(94%, 730px); }
-  .pauseBrief {
-    display: flex;
-    align-items: stretch;
-    gap: 46px;
+  /* --- Pause screen: full-bleed, composed like the title screen -------------
+     No panel. The menu column floats over the frozen frame in the same place
+     .menuLeft puts the main menu's own list, so pausing barely moves anything.
+     The match data is centred in whatever space is left to its right. */
+  .pauseScreen {
+    flex-direction: row !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    text-align: left !important;
+    padding: 32px 34px 22px 44px !important;   /* matches .menuLeft's own padding */
   }
-  /* Actions lead on the LEFT, matching where the main menu puts its own list, so pausing
-     never moves the thing you opened the menu to click. The divider hangs off this column. */
-  /* Sized to its own content rather than a fixed basis. The rows are white-space: nowrap, so
-     a basis narrower than the longest label ("Change Characters", 280px including the dot and
-     its gap) doesn't clip the label — it squeezes the DATA column instead, which is how the
-     scoreboard ended up 99px wide. Letting the stack set its own width keeps that honest even
-     if a label is renamed later. */
-  .pauseBrief__actions {
+  .pauseScreen__menu {
     flex: 0 0 auto;
-    border-right: 1px solid var(--border);
-    padding-right: 46px;
+    width: min(46%, 560px);   /* same column width as .menuLeft */
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
+    max-height: 100%;
   }
-  .pauseBrief__data {
+  .pauseScreen__data {
     flex: 1 1 auto;
-    min-width: 234px;    /* the scoreboard's own floor — the longest character names, either
-                            side of the rule, without ellipsis */
+    min-width: 0;
     display: flex;
-    flex-direction: column;
+    justify-content: center;   /* centred in the space left of it, not pinned to the edge */
+    align-items: flex-start;   /* top-anchored, level with the brand mark */
+    max-height: 100%;
   }
-  .pauseBrief__data .fx-section-title { margin-bottom: 14px; }
-  .pausePanel .pauseTitle {
+  .pauseData { width: min(300px, 100%); }
+  .pauseData .fx-section-title { margin-bottom: 14px; }
+  /* Both blocks drift up on entry. The old .panel entrance no longer applies — there is
+     no panel — so the two columns carry it themselves, the data a beat behind the menu. */
+  .overlay:not(.hidden) .pauseScreen__menu { animation: pauseColumnIn 0.42s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .overlay:not(.hidden) .pauseScreen__data { animation: pauseColumnIn 0.42s cubic-bezier(0.16, 1, 0.3, 1) 0.07s both; }
+  @keyframes pauseColumnIn {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: none; }
+  }
+  /* The list is the title screen's own .menuTextLink at full size — the scale is a big part
+     of why that screen reads the way it does, so it is not dialled down here. */
+  .pauseMenuList { width: 100%; margin-top: 4px; }
+  /* .hidden only zeroes opacity/visibility, which would leave a 27px hole in the stack for
+     the two buttons that are dropped in online matches. */
+  .pauseMenuList .menuTextLink.hidden { display: none !important; }
+  .pauseScreen .pauseTitle {
     font-family: 'Archivo Black', 'Space Grotesk', sans-serif;
-    font-size: clamp(34px, 4vw, 44px);
+    font-size: clamp(38px, 4.6vw, 58px);   /* the hero, where the title screen puts its logo */
     line-height: 0.95;
     letter-spacing: 1px;
     text-transform: uppercase;
-    margin: 22px 0 0;
+    margin: 16px 0 0;
     color: var(--ink);
   }
   .pauseRule {
-    width: 46px;
+    width: 52px;
     height: 3px;
     border-radius: 2px;
     background: var(--accent);
-    margin: 16px 0 30px;
+    margin: 16px 0 26px;
   }
-  /* Head-to-head scoreboard. The trailing side dims, so who is ahead is legible at a
-     glance without reading the numbers. */
+  /* Head-to-head scoreboard, centred: each name sits over its own number, either side of a
+     hairline. The trailing side dims, so who is ahead is legible without reading the digits. */
   .pauseScore {
     display: flex;
     align-items: flex-end;
-    gap: 18px;
-    margin-bottom: 26px;
+    gap: 16px;
+    margin-bottom: 24px;
   }
-  .pauseScore__side { flex: 1 1 0; min-width: 0; }
-  .pauseScore__side--right { text-align: right; }
+  .pauseScore__side { flex: 1 1 0; min-width: 0; text-align: center; }
   .pauseScore__sep {
     flex: 0 0 1px;
     align-self: stretch;
@@ -1659,9 +1666,7 @@
   }
   .pauseScore__pts.is-trailing { color: var(--ink-dim); }
   .pauseScore__pts.is-leading { color: var(--accent); }
-  /* The meta block bottom-aligns with the last action row, so the two columns end
-     together instead of one stopping short and leaving the divider hanging. */
-  .pauseMeta { margin: auto 0 0; }
+  .pauseMeta { margin: 0; }
   .pauseMeta__row {
     display: flex;
     justify-content: space-between;
@@ -1688,49 +1693,34 @@
     white-space: nowrap;
   }
   .pauseHint {
-    margin: auto 0 0;      /* pinned to the bottom of the actions column */
-    padding-top: 24px;
+    margin: 26px 0 0;
     font-size: 10px;
     letter-spacing: 2px;
     text-transform: uppercase;
     color: var(--ink-dim);
   }
-  /* Row rhythm. The base .gameBtn padding (8/12) is tuned for the main menu, where
-     the stack is the only thing on screen; inside the brief it read as clumped.
-     The first row keeps a flush top so RESUME's baseline still lines up with the
-     FAULT mark across the divider. */
-  .pauseBrief__actions button.gameBtn { padding: 14px 0 16px; }
-  .pauseBrief__actions button.gameBtn:first-child { padding-top: 0; }
-  /* Resume is the action you want 90% of the time — every row used to carry
-     identical weight, so it read as just another list item. It gets the dot
-     already lit and the underline already part-filled, then completes on hover. */
-  .pausePanel #resumeBtn::before {
+  /* Resume is the action you want 90% of the time. It opens with the dot already lit and
+     the underline part-filled, then completes on hover like any other row. */
+  .pauseScreen #resumeBtn::before {
     background: var(--accent);
     box-shadow: 0 0 12px var(--glow-color);
   }
-  .pausePanel #resumeBtn::after { right: 55%; }
-  .pausePanel #resumeBtn:hover::after,
-  .pausePanel #resumeBtn:focus-visible::after { right: 20%; }
-  /* Buttons hidden for online matches must not leave a gap in the stack. */
-  .pauseBrief__actions button.gameBtn.hidden { display: none !important; }
-  .pausePanel #pauseStatsBox {
+  .pauseScreen #resumeBtn::after { right: 55%; }
+  .pauseScreen #resumeBtn:hover::after,
+  .pauseScreen #resumeBtn:focus-visible::after { right: 20%; }
+  .pauseScreen #pauseStatsBox {
     margin: 22px 0 0;
     min-width: 0;
     text-align: left;
   }
-  @media (max-width: 720px), (max-height: 620px) {
-    .pausePanel { padding: 26px 28px; }
-    .pauseBrief { flex-direction: column; gap: 22px; }
-    .pauseBrief__actions { flex: 0 0 auto; border-right: none; padding-right: 0; }
-    .pausePanel .pauseTitle { font-size: 32px; margin-top: 14px; }
-    .pauseRule { margin: 12px 0 16px; }
-    .pauseScore { margin-bottom: 16px; }
-    .pauseScore__pts { font-size: 32px; }
-    .pauseMeta { margin-top: 0; }
-    .pauseMeta__row { padding: 7px 0; }
-    .pauseBrief__actions button.gameBtn { padding: 9px 0 12px; }
-    .pauseHint { padding-top: 14px; }
-  }
+  /* NO breakpoints here, deliberately. The stage is a fixed 1300x730 logical box that is
+     scale-transformed to fit the window (see updateStageSize/adjustScale), so this layout
+     never actually runs out of room — at a 900x600 window the whole stage renders at 0.69
+     and everything shrinks together. Media queries evaluate against the VIEWPORT, not the
+     stage, so a max-height rule here fired on small windows and shrank the type a second
+     time on top of the scale. It also broke the one thing this screen is for: the title
+     screen carries no breakpoints of its own, so the two menus disagreed on type size at
+     exactly the window sizes where they should have matched. */
 
 
 
@@ -3682,46 +3672,49 @@
       </div>
     </div>
 
-    <div id="pauseOverlay" class="overlay hidden">
-      <div class="panel pausePanel">
-        <div class="pauseBrief">
-          <!-- Left: the action list, in the same place the main menu puts its own, so pausing
-               doesn't move the thing you came here to click. Right: the match itself. -->
-          <div class="pauseBrief__actions">
-            <div class="brandMark"><span class="brandMark__dot">●</span>&nbsp;FAULT</div>
-            <h2 class="pauseTitle">Paused</h2>
-            <div class="pauseRule"></div>
-            <button class="gameBtn" id="resumeBtn">Resume</button>
-            <button class="gameBtn secondary" id="pauseRestartBtn">Restart Match</button>
-            <button class="gameBtn secondary" id="pauseStatsBtn">Match Stats</button>
-            <button class="gameBtn secondary" id="pauseChangeCharBtn">Change Characters</button>
-            <button class="gameBtn secondary" id="pauseSettingsBtn">Settings</button>
-            <button class="gameBtn secondary" id="mainMenuBtn">Main Menu</button>
-            <p class="pauseHint">Esc to resume</p>
-          </div>
+    <!-- No panel. Same composition as the title screen: a left menu column floating over the
+         court, which here is the frozen frame behind the scrim. The action list sits exactly
+         where the main menu's own list sits, so pausing barely moves anything. -->
+    <div id="pauseOverlay" class="overlay pauseScreen hidden">
+      <div class="pauseScreen__menu">
+        <div class="brandMark"><span class="brandMark__dot">●</span>&nbsp;FAULT</div>
+        <h2 class="pauseTitle">Paused</h2>
+        <div class="pauseRule"></div>
+        <div class="textMenu pauseMenuList">
+          <button class="menuTextLink" id="resumeBtn">Resume</button>
+          <button class="menuTextLink" id="pauseRestartBtn">Restart Match</button>
+          <button class="menuTextLink" id="pauseStatsBtn">Match Stats</button>
+          <button class="menuTextLink" id="pauseChangeCharBtn">Change Characters</button>
+          <button class="menuTextLink" id="pauseSettingsBtn">Settings</button>
+          <button class="menuTextLink" id="mainMenuBtn">Main Menu</button>
+        </div>
+        <p class="pauseHint">Esc to resume</p>
+      </div>
 
-          <div class="pauseBrief__data">
-            <div class="fx-section-title">Match</div>
-            <div class="pauseScore">
-              <div class="pauseScore__side">
-                <div class="pauseScore__name" id="pauseScoreNameL">&mdash;</div>
-                <div class="pauseScore__pts" id="pauseScorePtsL">0</div>
-              </div>
-              <div class="pauseScore__sep" aria-hidden="true"></div>
-              <div class="pauseScore__side pauseScore__side--right">
-                <div class="pauseScore__name" id="pauseScoreNameR">&mdash;</div>
-                <div class="pauseScore__pts" id="pauseScorePtsR">0</div>
-              </div>
+      <!-- Centred in whatever space is left to the right of the menu, top-anchored level with
+           the brand mark. Fixed width so the meta rows stay an aligned table under a centred
+           scoreboard rather than a ragged centred list. -->
+      <div class="pauseScreen__data">
+        <div class="pauseData">
+          <div class="fx-section-title">Match</div>
+          <div class="pauseScore">
+            <div class="pauseScore__side">
+              <div class="pauseScore__name" id="pauseScoreNameL">&mdash;</div>
+              <div class="pauseScore__pts" id="pauseScorePtsL">0</div>
             </div>
-            <dl class="pauseMeta">
-              <div class="pauseMeta__row"><dt>Mode</dt><dd id="pauseMetaMode">&mdash;</dd></div>
-              <div class="pauseMeta__row"><dt>Arena</dt><dd id="pauseMetaArena">&mdash;</dd></div>
-              <div class="pauseMeta__row"><dt>Rallies</dt><dd id="pauseMetaRallies">&mdash;</dd></div>
-            </dl>
-            <!-- Match Stats expands into this column rather than under the whole panel -->
-            <div id="pauseStatsBox" class="settingsStatsBox" style="display: none;">
-              <!-- Filled dynamically -->
+            <div class="pauseScore__sep" aria-hidden="true"></div>
+            <div class="pauseScore__side">
+              <div class="pauseScore__name" id="pauseScoreNameR">&mdash;</div>
+              <div class="pauseScore__pts" id="pauseScorePtsR">0</div>
             </div>
+          </div>
+          <dl class="pauseMeta">
+            <div class="pauseMeta__row"><dt>Mode</dt><dd id="pauseMetaMode">&mdash;</dd></div>
+            <div class="pauseMeta__row"><dt>Arena</dt><dd id="pauseMetaArena">&mdash;</dd></div>
+            <div class="pauseMeta__row"><dt>Rallies</dt><dd id="pauseMetaRallies">&mdash;</dd></div>
+          </dl>
+          <div id="pauseStatsBox" class="settingsStatsBox" style="display: none;">
+            <!-- Filled dynamically -->
           </div>
         </div>
       </div>
