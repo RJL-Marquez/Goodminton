@@ -18967,6 +18967,9 @@
   const SKID_DUR = 0.24;
   const LAND_SQUASH_DUR = 0.10;      // ~6 frames at 60fps
   const PRE_SERVE_RITUAL = 0.40;     // grip-adjust / settle window after taking the service line
+  // How long the turn-away is held after the chase itself ends. Long enough to cover the
+  // arrival and the stroke, so the rotation back to front is its own beat rather than a snap.
+  const VIEW_TURN_GRACE = 0.55;
 
   function tickLocomotion(p){
     const now = performance.now()/1000;
@@ -19092,27 +19095,40 @@
     //      rather than backpedal, and the turn-and-turn-back is the whole appeal.
     //   2. Losing the point. A slumped back at 6px reads far better than a frown does.
     //
-    // Everything cinematic forces the front view: a swing, a charge, any transform, and the
-    // scripted ult sequences all own the silhouette and must never be shown from behind.
-    let wantBack = false;
+    // The rule is simply WHERE THEY ARE GOING: chasing toward the back of their own court —
+    // away from the net — they turn and look where they're running, the way a real player
+    // covers the rear corner instead of backpedalling. Nothing about the shuttle's position
+    // enters into it.
+    //
+    // A GRACE window then holds the turn through the arrival and the stroke, so the hit
+    // happens while still facing away (see the compact back-view swing in drawPlayer) and the
+    // rotation back to front is its own deliberate beat afterwards rather than a snap the
+    // instant their feet stop.
     const cinematic = !!(p.transform || p.jordanTempestActive || p.shermanMandateActive ||
                          (p.siuuuTimer > 0) || (p.bicycleKickTimer > 0) || (p.dianShaTimer > 0) ||
                          (p.absoluteZoneFlash > 0));
-    if (!cinematic && p.swingTimer <= 0 && !p.charging && !p.ultCharging) {
-      if (pointCelebrateSide && pointCelebrateSide !== p.side) {
-        wantBack = true;
-      } else if (state === 'rally' && p.onGround && (p.moveSigned || 0) < -0.55 && shuttle.active) {
-        // "Behind me" = further from the net than I am, and still on my own half.
-        const myCx = p.x + PLAYER_W/2;
-        const behindMe = (p.side === 'left') ? (shuttle.x < myCx) : (shuttle.x > myCx);
-        const myHalf   = (p.side === 'left') ? (shuttle.x < NET_X) : (shuttle.x > NET_X);
-        wantBack = behindMe && myHalf;
-      }
+    const retreating = state === 'rally' && p.onGround && (p.moveSigned || 0) < -0.5;
+    const advancing  = (p.moveSigned || 0) > 0.35;
+    const turned     = (p.viewTurn || 0) > 0.5;
+
+    if (p.viewGrace === undefined) p.viewGrace = 0;
+    if (cinematic) {
+      p.viewGrace = 0;                       // scripted sequences own the silhouette outright
+    } else if (retreating) {
+      p.viewGrace = VIEW_TURN_GRACE;         // refreshed every frame they're still chasing back
+    } else if (turned && (p.swingTimer > 0 || p.charging || p.ultCharging)) {
+      p.viewGrace = VIEW_TURN_GRACE;         // playing the shot from the back — stay turned for it
+    } else if (advancing) {
+      p.viewGrace = 0;                       // pushing back up to the net cancels the hold early
+    } else {
+      p.viewGrace = Math.max(0, p.viewGrace - dt);
     }
-    // Asymmetric ramp = hysteresis. 0.10s in (≈6 frames, so the turn plays as distinct poses
-    // rather than a pop) and a slower 0.20s out, so a momentary dip in the trigger — a stutter
-    // step, the shuttle crossing back over — cannot flip the view back and forth.
-    const turn = (p.viewTurn || 0) + (wantBack ? dt / 0.10 : -dt / 0.20);
+
+    const holdBack = !cinematic && (retreating || p.viewGrace > 0);
+    // 0.13s into the turn and a slower 0.30s back out of it, so the rotation home reads as a
+    // real move through the 3/4 frame instead of a pop. The asymmetry doubles as hysteresis:
+    // a stutter step can't flip the view back and forth.
+    const turn = (p.viewTurn || 0) + (holdBack ? dt / 0.13 : -dt / 0.30);
     p.viewTurn = Math.max(0, Math.min(1, turn));
     p.view = (p.viewTurn > 0.66) ? 'back' : ((p.viewTurn > 0.33) ? 'threequarter' : 'front');
   }
@@ -19145,6 +19161,7 @@
     const isSwinging = p.swingTimer > 0;
     const isCharging = p.charging;
     const isAirborne = !p.onGround;
+    const isBackFacing = (p.viewTurn || 0) > 0.5;
 
     // --- BADMINTON SWING & SERVE REDESIGN (PREPARATION -> CONTACT -> FOLLOW-THROUGH) ---
     if (ch.id === 'cristiano' && (isSwinging || isCharging)) {
@@ -19233,6 +19250,56 @@
         torsoYOffset = Math.round(0.3 * pulse);
         legFront = 0.2 + legPhase * 0.6; legBack = -0.2 - legPhase * 0.6;
         armBack = 0.85 - legPhase * 0.3;  // shuttle cradled out front, ready to toss
+      }
+    } else if (isBackFacing && (isSwinging || isCharging)) {
+      // BACK-FACING STROKE — the Axelsen rear-court shot. Caught out behind, you do NOT get to
+      // play the full front-on swing: the body is already turned, so it's all forearm and
+      // wrist. Deliberately COMPACT — no big wind-up, no weight transfer, no torso rotation.
+      // The restraint is the read; a full swing here would look like the animation simply
+      // ignored which way the player is facing.
+      //
+      // The racket arm is drawn behind the torso in this view (see buildPixFigure), so the arm
+      // is carried high and out on the -x side, where it clears the 7px body and the racket
+      // stays visible through the whole stroke.
+      if (isSwinging) {
+        const t = Math.min(1, Math.max(0, 1 - p.swingTimer / SWING_DURATION));
+        if (t < 0.42) {
+          const p1 = t / 0.42;
+          const p1Acc = p1 * p1;
+          armFront = -0.5 + (-2.05 - (-0.5)) * p1Acc;   // up and behind, quickly
+          elbowBendFront = -1.15 + 1.0 * p1Acc;          // tucked elbow unfolds
+          wristAngFront = -0.85 * (1 - p1Acc) + 0.25 * p1Acc; // cocked wrist snaps through
+          torsoYOffset = Math.round(1 - p1);
+          hairSway = -1.2 * p1;
+          armBack = -0.35 - 0.25 * p1;
+          legFront = 0.30 * p1Acc;                       // small step into it, nothing more
+          legBack = -0.45 * p1Acc;
+        } else {
+          const p2 = (t - 0.42) / 0.58;
+          const p2Ease = 1 - Math.pow(1 - p2, 3);
+          // Recovery folds the arm IN, it does not reach out. An extending follow-through put
+          // the racket further from the body at the END of the stroke than at the start, which
+          // is the opposite of compact — the whole point of this branch.
+          armFront = -2.05 + 0.85 * p2Ease;              // arm comes down toward ready
+          elbowBendFront = -0.15 + 0.65 * p2Ease;        // forearm folds across the body
+          wristAngFront = 0.35 * (1 - p2Ease);
+          hairSway = -1.2 * (1 - p2Ease);
+          armBack = -0.6 + 0.25 * p2Ease;
+          legFront = 0.30 * (1 - p2Ease);
+          legBack = -0.45 * (1 - p2Ease);
+          if (t >= 0.40 && t <= 0.50) impactGlow = true;
+        }
+      } else {
+        // Loading a back-facing shot: racket tucked low and close, weight settling. Small,
+        // because whatever comes out of it is going to be small.
+        const frac = Math.min(1, (nowSec - p.chargeStart) / chargeTimeFor(p.character));
+        armFront = -0.5 - 0.5 * frac;
+        elbowBendFront = -0.6 - 0.5 * frac;
+        wristAngFront = -0.5 - 0.35 * frac;
+        torsoYOffset = Math.round(1 + frac);
+        armBack = -0.35 + 0.2 * frac;
+        legFront = -0.25 * frac + legPhase * 0.6 * (1 - 0.4 * frac);
+        legBack = 0.35 * frac - legPhase * 0.6 * (1 - 0.4 * frac);
       }
     } else if (isAirborne) {
       // 3. AIR HIT / OVERHEAD SMASH ANIMATION
@@ -19366,7 +19433,10 @@
     // the character's most readable prop — would disappear completely. Swinging the arm out as
     // the turn progresses keeps it clear of the silhouette, and it happens to be what players
     // actually do carrying the racket into the back corner.
-    if ((p.viewTurn || 0) > 0) armFront -= 0.9 * p.viewTurn;
+    //
+    // Skipped while playing a shot: the back-facing stroke above already places the arm, and
+    // adding the carry on top would drag it past the pose it was choreographed to hit.
+    if ((p.viewTurn || 0) > 0 && !(isSwinging || isCharging)) armFront -= 0.9 * p.viewTurn;
 
     // AMEN: a held reverent prayer stance for the whole transform — unconditional, so it is
     // never interrupted by the normal swing/charge arm animation on every auto-return. The
