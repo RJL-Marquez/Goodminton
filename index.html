@@ -1602,7 +1602,9 @@
     max-height: 100%;
   }
   .pauseData { width: min(300px, 100%); }
-  .pauseData .fx-section-title { margin-bottom: 14px; }
+  /* Centred so it sits directly over the scoreboard's divider — the two sides are equal
+     flex, so the hairline is dead centre of the block and the label caps it. */
+  .pauseData .fx-section-title { margin-bottom: 14px; text-align: center; }
   /* Both blocks drift up on entry. The old .panel entrance no longer applies — there is
      no panel — so the two columns carry it themselves, the data a beat behind the menu. */
   .overlay:not(.hidden) .pauseScreen__menu { animation: pauseColumnIn 0.42s cubic-bezier(0.16, 1, 0.3, 1) both; }
@@ -1691,13 +1693,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .pauseHint {
-    margin: 26px 0 0;
-    font-size: 10px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: var(--ink-dim);
   }
   /* Resume is the action you want 90% of the time. It opens with the dot already lit and
      the underline part-filled, then completes on hover like any other row. */
@@ -3688,7 +3683,6 @@
           <button class="menuTextLink" id="pauseSettingsBtn">Settings</button>
           <button class="menuTextLink" id="mainMenuBtn">Main Menu</button>
         </div>
-        <p class="pauseHint">Esc to resume</p>
       </div>
 
       <!-- Centred in whatever space is left to the right of the menu, top-anchored level with
