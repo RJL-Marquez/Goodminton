@@ -1577,20 +1577,26 @@
      Left column states what you are returning to, right column what you can do
      about it, split by a hairline. Collapses to a single stack when the panel
      can't hold two columns (narrow windows, phones in portrait). */
-  .pausePanel { padding: 30px 34px; gap: 0; text-align: left; }
+  /* Sized to its content rather than inheriting .panel's `width: 90%` up to a 900px cap.
+     Stretched to the cap, the label/value pairs in the meta block ended up marooned at
+     opposite ends of the column and the button underlines ran on forever, which read as
+     sparse rather than spacious. Hugging the content keeps the pairs legible as pairs. */
+  .pausePanel { padding: 40px 46px; gap: 0; text-align: left; width: auto; max-width: min(90%, 660px); }
   .pauseBrief {
     display: flex;
     align-items: stretch;
-    gap: 30px;
+    gap: 46px;
   }
   .pauseBrief__id {
-    flex: 1 1 210px;
+    flex: 1 1 230px;
     min-width: 0;
     border-right: 1px solid var(--border);
-    padding-right: 30px;
+    padding-right: 46px;
+    display: flex;
+    flex-direction: column;
   }
   .pauseBrief__actions {
-    flex: 1 1 230px;
+    flex: 1 1 250px;
     min-width: 0;
     display: flex;
     flex-direction: column;
@@ -1601,7 +1607,7 @@
     line-height: 0.95;
     letter-spacing: 1px;
     text-transform: uppercase;
-    margin: 14px 0 0;
+    margin: 22px 0 0;
     color: var(--ink);
   }
   .pauseRule {
@@ -1609,19 +1615,21 @@
     height: 3px;
     border-radius: 2px;
     background: var(--accent);
-    margin: 10px 0 18px;
+    margin: 16px 0 30px;
   }
-  .pauseMeta { margin: 0; }
+  /* The meta block bottom-aligns with the last action row, so the two columns end
+     together instead of the left one stopping short and leaving the divider hanging. */
+  .pauseMeta { margin: auto 0 0; }
   .pauseMeta__row {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    gap: 14px;
-    padding: 6px 0;
+    gap: 18px;
+    padding: 11px 0;
     border-bottom: 1px solid var(--bg-3);
-    font-size: 12px;
+    font-size: 12.5px;
   }
-  .pauseMeta__row:last-child { border-bottom: none; }
+  .pauseMeta__row:last-child { border-bottom: none; padding-bottom: 0; }
   .pauseMeta dt {
     color: var(--ink-dim);
     letter-spacing: 1.5px;
@@ -1637,13 +1645,24 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* The score is the one line you actually look at — given a size step over the
+     rest of the block so the meta reads as one lead value plus its context. */
+  .pauseMeta__row--lead { padding-top: 0; }
+  .pauseMeta__row--lead dd { font-size: 15px; font-weight: 700; }
   .pauseHint {
-    margin: 16px 0 0;
+    margin: auto 0 0;      /* pinned to the bottom of the actions column */
+    padding-top: 24px;
     font-size: 10px;
     letter-spacing: 2px;
     text-transform: uppercase;
     color: var(--ink-dim);
   }
+  /* Row rhythm. The base .gameBtn padding (8/12) is tuned for the main menu, where
+     the stack is the only thing on screen; inside the brief it read as clumped.
+     The first row keeps a flush top so RESUME's baseline still lines up with the
+     FAULT mark across the divider. */
+  .pauseBrief__actions button.gameBtn { padding: 14px 0 16px; }
+  .pauseBrief__actions button.gameBtn:first-child { padding-top: 0; }
   /* Resume is the action you want 90% of the time — every row used to carry
      identical weight, so it read as just another list item. It gets the dot
      already lit and the underline already part-filled, then completes on hover. */
@@ -1661,11 +1680,16 @@
     min-width: 0;
     text-align: left;
   }
-  @media (max-width: 720px), (max-height: 520px) {
-    .pauseBrief { flex-direction: column; gap: 18px; }
+  @media (max-width: 720px), (max-height: 620px) {
+    .pausePanel { padding: 26px 28px; }
+    .pauseBrief { flex-direction: column; gap: 22px; }
     .pauseBrief__id { border-right: none; padding-right: 0; }
-    .pausePanel .pauseTitle { font-size: 32px; }
-    .pauseRule { margin-bottom: 12px; }
+    .pausePanel .pauseTitle { font-size: 32px; margin-top: 14px; }
+    .pauseRule { margin: 12px 0 16px; }
+    .pauseMeta { margin-top: 0; }
+    .pauseMeta__row { padding: 7px 0; }
+    .pauseBrief__actions button.gameBtn { padding: 9px 0 12px; }
+    .pauseHint { padding-top: 14px; }
   }
 
 
@@ -3627,7 +3651,7 @@
             <h2 class="pauseTitle">Paused</h2>
             <div class="pauseRule"></div>
             <dl class="pauseMeta">
-              <div class="pauseMeta__row"><dt>Score</dt><dd id="pauseMetaScore">&mdash;</dd></div>
+              <div class="pauseMeta__row pauseMeta__row--lead"><dt>Score</dt><dd id="pauseMetaScore">&mdash;</dd></div>
               <div class="pauseMeta__row"><dt>Mode</dt><dd id="pauseMetaMode">&mdash;</dd></div>
               <div class="pauseMeta__row"><dt>Arena</dt><dd id="pauseMetaArena">&mdash;</dd></div>
               <div class="pauseMeta__row"><dt>Rallies</dt><dd id="pauseMetaRallies">&mdash;</dd></div>
