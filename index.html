@@ -1581,26 +1581,34 @@
      Stretched to the cap, the label/value pairs in the meta block ended up marooned at
      opposite ends of the column and the button underlines ran on forever, which read as
      sparse rather than spacious. Hugging the content keeps the pairs legible as pairs. */
-  .pausePanel { padding: 40px 46px; gap: 0; text-align: left; width: auto; max-width: min(90%, 660px); }
+  .pausePanel { padding: 40px 46px; gap: 0; text-align: left; width: auto; max-width: min(94%, 730px); }
   .pauseBrief {
     display: flex;
     align-items: stretch;
     gap: 46px;
   }
-  .pauseBrief__id {
-    flex: 1 1 230px;
-    min-width: 0;
+  /* Actions lead on the LEFT, matching where the main menu puts its own list, so pausing
+     never moves the thing you opened the menu to click. The divider hangs off this column. */
+  /* Sized to its own content rather than a fixed basis. The rows are white-space: nowrap, so
+     a basis narrower than the longest label ("Change Characters", 280px including the dot and
+     its gap) doesn't clip the label — it squeezes the DATA column instead, which is how the
+     scoreboard ended up 99px wide. Letting the stack set its own width keeps that honest even
+     if a label is renamed later. */
+  .pauseBrief__actions {
+    flex: 0 0 auto;
     border-right: 1px solid var(--border);
     padding-right: 46px;
     display: flex;
     flex-direction: column;
   }
-  .pauseBrief__actions {
-    flex: 1 1 250px;
-    min-width: 0;
+  .pauseBrief__data {
+    flex: 1 1 auto;
+    min-width: 234px;    /* the scoreboard's own floor — the longest character names, either
+                            side of the rule, without ellipsis */
     display: flex;
     flex-direction: column;
   }
+  .pauseBrief__data .fx-section-title { margin-bottom: 14px; }
   .pausePanel .pauseTitle {
     font-family: 'Archivo Black', 'Space Grotesk', sans-serif;
     font-size: clamp(34px, 4vw, 44px);
@@ -1617,8 +1625,42 @@
     background: var(--accent);
     margin: 16px 0 30px;
   }
+  /* Head-to-head scoreboard. The trailing side dims, so who is ahead is legible at a
+     glance without reading the numbers. */
+  .pauseScore {
+    display: flex;
+    align-items: flex-end;
+    gap: 18px;
+    margin-bottom: 26px;
+  }
+  .pauseScore__side { flex: 1 1 0; min-width: 0; }
+  .pauseScore__side--right { text-align: right; }
+  .pauseScore__sep {
+    flex: 0 0 1px;
+    align-self: stretch;
+    background: var(--border);
+  }
+  .pauseScore__name {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pauseScore__pts {
+    font-family: 'Archivo Black', 'Space Grotesk', sans-serif;
+    font-size: 40px;
+    line-height: 1;
+    margin-top: 6px;
+    color: var(--ink);
+  }
+  .pauseScore__pts.is-trailing { color: var(--ink-dim); }
+  .pauseScore__pts.is-leading { color: var(--accent); }
   /* The meta block bottom-aligns with the last action row, so the two columns end
-     together instead of the left one stopping short and leaving the divider hanging. */
+     together instead of one stopping short and leaving the divider hanging. */
   .pauseMeta { margin: auto 0 0; }
   .pauseMeta__row {
     display: flex;
@@ -1645,10 +1687,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* The score is the one line you actually look at — given a size step over the
-     rest of the block so the meta reads as one lead value plus its context. */
-  .pauseMeta__row--lead { padding-top: 0; }
-  .pauseMeta__row--lead dd { font-size: 15px; font-weight: 700; }
   .pauseHint {
     margin: auto 0 0;      /* pinned to the bottom of the actions column */
     padding-top: 24px;
@@ -1683,9 +1721,11 @@
   @media (max-width: 720px), (max-height: 620px) {
     .pausePanel { padding: 26px 28px; }
     .pauseBrief { flex-direction: column; gap: 22px; }
-    .pauseBrief__id { border-right: none; padding-right: 0; }
+    .pauseBrief__actions { flex: 0 0 auto; border-right: none; padding-right: 0; }
     .pausePanel .pauseTitle { font-size: 32px; margin-top: 14px; }
     .pauseRule { margin: 12px 0 16px; }
+    .pauseScore { margin-bottom: 16px; }
+    .pauseScore__pts { font-size: 32px; }
     .pauseMeta { margin-top: 0; }
     .pauseMeta__row { padding: 7px 0; }
     .pauseBrief__actions button.gameBtn { padding: 9px 0 12px; }
@@ -3645,19 +3685,12 @@
     <div id="pauseOverlay" class="overlay hidden">
       <div class="panel pausePanel">
         <div class="pauseBrief">
-          <!-- Left: who/where/what you are returning to. Right: what you can do about it. -->
-          <div class="pauseBrief__id">
+          <!-- Left: the action list, in the same place the main menu puts its own, so pausing
+               doesn't move the thing you came here to click. Right: the match itself. -->
+          <div class="pauseBrief__actions">
             <div class="brandMark"><span class="brandMark__dot">●</span>&nbsp;FAULT</div>
             <h2 class="pauseTitle">Paused</h2>
             <div class="pauseRule"></div>
-            <dl class="pauseMeta">
-              <div class="pauseMeta__row pauseMeta__row--lead"><dt>Score</dt><dd id="pauseMetaScore">&mdash;</dd></div>
-              <div class="pauseMeta__row"><dt>Mode</dt><dd id="pauseMetaMode">&mdash;</dd></div>
-              <div class="pauseMeta__row"><dt>Arena</dt><dd id="pauseMetaArena">&mdash;</dd></div>
-              <div class="pauseMeta__row"><dt>Rallies</dt><dd id="pauseMetaRallies">&mdash;</dd></div>
-            </dl>
-          </div>
-          <div class="pauseBrief__actions">
             <button class="gameBtn" id="resumeBtn">Resume</button>
             <button class="gameBtn secondary" id="pauseRestartBtn">Restart Match</button>
             <button class="gameBtn secondary" id="pauseStatsBtn">Match Stats</button>
@@ -3666,11 +3699,30 @@
             <button class="gameBtn secondary" id="mainMenuBtn">Main Menu</button>
             <p class="pauseHint">Esc to resume</p>
           </div>
-        </div>
 
-        <!-- Live In-Game Match Stats Box — spans the full panel under both columns -->
-        <div id="pauseStatsBox" class="settingsStatsBox" style="display: none;">
-          <!-- Filled dynamically -->
+          <div class="pauseBrief__data">
+            <div class="fx-section-title">Match</div>
+            <div class="pauseScore">
+              <div class="pauseScore__side">
+                <div class="pauseScore__name" id="pauseScoreNameL">&mdash;</div>
+                <div class="pauseScore__pts" id="pauseScorePtsL">0</div>
+              </div>
+              <div class="pauseScore__sep" aria-hidden="true"></div>
+              <div class="pauseScore__side pauseScore__side--right">
+                <div class="pauseScore__name" id="pauseScoreNameR">&mdash;</div>
+                <div class="pauseScore__pts" id="pauseScorePtsR">0</div>
+              </div>
+            </div>
+            <dl class="pauseMeta">
+              <div class="pauseMeta__row"><dt>Mode</dt><dd id="pauseMetaMode">&mdash;</dd></div>
+              <div class="pauseMeta__row"><dt>Arena</dt><dd id="pauseMetaArena">&mdash;</dd></div>
+              <div class="pauseMeta__row"><dt>Rallies</dt><dd id="pauseMetaRallies">&mdash;</dd></div>
+            </dl>
+            <!-- Match Stats expands into this column rather than under the whole panel -->
+            <div id="pauseStatsBox" class="settingsStatsBox" style="display: none;">
+              <!-- Filled dynamically -->
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -12000,7 +12052,21 @@
     const nameOf = function(p){
       return (p && p.character && p.character.name) ? p.character.name : (p === left ? 'Left' : 'Right');
     };
-    set('pauseMetaScore', nameOf(left) + ' ' + (left.score || 0) + ' — ' + (right.score || 0) + ' ' + nameOf(right));
+    const lScore = left.score || 0, rScore = right.score || 0;
+    set('pauseScoreNameL', nameOf(left));
+    set('pauseScoreNameR', nameOf(right));
+    set('pauseScorePtsL', String(lScore));
+    set('pauseScorePtsR', String(rScore));
+    // Who's ahead should be readable without parsing the digits: the leader takes the accent,
+    // the trailing side dims out. Level pegging leaves both in plain ink.
+    const mark = function(id, cls){
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.remove('is-leading', 'is-trailing');
+      if (cls) el.classList.add(cls);
+    };
+    mark('pauseScorePtsL', lScore === rScore ? null : (lScore > rScore ? 'is-leading' : 'is-trailing'));
+    mark('pauseScorePtsR', lScore === rScore ? null : (rScore > lScore ? 'is-leading' : 'is-trailing'));
 
     let modeLabel;
     if (onlineMatch) modeLabel = 'Online';
