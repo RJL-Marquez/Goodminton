@@ -535,6 +535,15 @@
     pointer-events: none !important;
     visibility: hidden !important;
   }
+  /* The pause backdrop is a frozen frame (rendering stops on pause — see loop()), so it can
+     take a much heavier blur than the shared overlay default without turning to mush from
+     frame-to-frame shimmer. Pushed further down and desaturated so the panel's blush accent
+     is the only saturated thing on screen. */
+  #pauseOverlay {
+    background: rgba(8, 10, 18, 0.78);
+    backdrop-filter: blur(18px) saturate(0.55) brightness(0.62);
+    -webkit-backdrop-filter: blur(18px) saturate(0.55) brightness(0.62);
+  }
 
   .overlay:not(.hidden) .panel {
     animation: panelEntrance 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
@@ -1562,6 +1571,101 @@
   .pausePanel button.gameBtn, .gameOverPanel button.gameBtn {
     width: 100%;
     white-space: nowrap;
+  }
+
+  /* --- Pause menu: two-column match brief ---------------------------------
+     Left column states what you are returning to, right column what you can do
+     about it, split by a hairline. Collapses to a single stack when the panel
+     can't hold two columns (narrow windows, phones in portrait). */
+  .pausePanel { padding: 30px 34px; gap: 0; text-align: left; }
+  .pauseBrief {
+    display: flex;
+    align-items: stretch;
+    gap: 30px;
+  }
+  .pauseBrief__id {
+    flex: 1 1 210px;
+    min-width: 0;
+    border-right: 1px solid var(--border);
+    padding-right: 30px;
+  }
+  .pauseBrief__actions {
+    flex: 1 1 230px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .pausePanel .pauseTitle {
+    font-family: 'Archivo Black', 'Space Grotesk', sans-serif;
+    font-size: clamp(34px, 4vw, 44px);
+    line-height: 0.95;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin: 14px 0 0;
+    color: var(--ink);
+  }
+  .pauseRule {
+    width: 46px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--accent);
+    margin: 10px 0 18px;
+  }
+  .pauseMeta { margin: 0; }
+  .pauseMeta__row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 14px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--bg-3);
+    font-size: 12px;
+  }
+  .pauseMeta__row:last-child { border-bottom: none; }
+  .pauseMeta dt {
+    color: var(--ink-dim);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+  .pauseMeta dd {
+    margin: 0;
+    color: var(--ink);
+    font-weight: 600;
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pauseHint {
+    margin: 16px 0 0;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+  /* Resume is the action you want 90% of the time — every row used to carry
+     identical weight, so it read as just another list item. It gets the dot
+     already lit and the underline already part-filled, then completes on hover. */
+  .pausePanel #resumeBtn::before {
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--glow-color);
+  }
+  .pausePanel #resumeBtn::after { right: 55%; }
+  .pausePanel #resumeBtn:hover::after,
+  .pausePanel #resumeBtn:focus-visible::after { right: 20%; }
+  /* Buttons hidden for online matches must not leave a gap in the stack. */
+  .pauseBrief__actions button.gameBtn.hidden { display: none !important; }
+  .pausePanel #pauseStatsBox {
+    margin: 22px 0 0;
+    min-width: 0;
+    text-align: left;
+  }
+  @media (max-width: 720px), (max-height: 520px) {
+    .pauseBrief { flex-direction: column; gap: 18px; }
+    .pauseBrief__id { border-right: none; padding-right: 0; }
+    .pausePanel .pauseTitle { font-size: 32px; }
+    .pauseRule { margin-bottom: 12px; }
   }
 
 
@@ -2852,6 +2956,16 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     backdrop-filter: blur(8px);
   }
+  /* Drawn rather than typed: the ⏸ emoji rendered as a different glyph on every platform
+     (and in full colour on some), which is exactly the inconsistency the rest of the UI
+     avoids. Two bars inherit currentColor and stay crisp at any density. */
+  .pauseGlyph {
+    display: block;
+    width: 14px;
+    height: 15px;
+    border-left: 4px solid currentColor;
+    border-right: 4px solid currentColor;
+  }
   .touchCornerBtn * {
     pointer-events: none;
     -webkit-user-select: none !important;
@@ -3506,21 +3620,34 @@
 
     <div id="pauseOverlay" class="overlay hidden">
       <div class="panel pausePanel">
-        <div class="brandMark"><span class="brandMark__dot">●</span>&nbsp;FAULT</div>
-        <h2>⏸ Game Paused</h2>
-        <p class="subtle" style="margin-top:-6px; margin-bottom: 8px;">Press Esc to resume</p>
-
-        <!-- Live In-Game Match Stats Box -->
-        <div id="pauseStatsBox" class="settingsStatsBox" style="display: none; margin: 8px 0 16px 0; min-width: 300px;">
-          <!-- Filled dynamically -->
+        <div class="pauseBrief">
+          <!-- Left: who/where/what you are returning to. Right: what you can do about it. -->
+          <div class="pauseBrief__id">
+            <div class="brandMark"><span class="brandMark__dot">●</span>&nbsp;FAULT</div>
+            <h2 class="pauseTitle">Paused</h2>
+            <div class="pauseRule"></div>
+            <dl class="pauseMeta">
+              <div class="pauseMeta__row"><dt>Score</dt><dd id="pauseMetaScore">&mdash;</dd></div>
+              <div class="pauseMeta__row"><dt>Mode</dt><dd id="pauseMetaMode">&mdash;</dd></div>
+              <div class="pauseMeta__row"><dt>Arena</dt><dd id="pauseMetaArena">&mdash;</dd></div>
+              <div class="pauseMeta__row"><dt>Rallies</dt><dd id="pauseMetaRallies">&mdash;</dd></div>
+            </dl>
+          </div>
+          <div class="pauseBrief__actions">
+            <button class="gameBtn" id="resumeBtn">Resume</button>
+            <button class="gameBtn secondary" id="pauseRestartBtn">Restart Match</button>
+            <button class="gameBtn secondary" id="pauseStatsBtn">Match Stats</button>
+            <button class="gameBtn secondary" id="pauseChangeCharBtn">Change Characters</button>
+            <button class="gameBtn secondary" id="pauseSettingsBtn">Settings</button>
+            <button class="gameBtn secondary" id="mainMenuBtn">Main Menu</button>
+            <p class="pauseHint">Esc to resume</p>
+          </div>
         </div>
 
-        <button class="gameBtn" id="resumeBtn">Resume</button>
-        <button class="gameBtn secondary" id="pauseRestartBtn">↻ Restart Match</button>
-        <button class="gameBtn secondary" id="pauseStatsBtn">📊 Match Stats</button>
-        <button class="gameBtn secondary" id="pauseChangeCharBtn">👤 Change Characters</button>
-        <button class="gameBtn secondary" id="pauseSettingsBtn">⚙ Settings</button>
-        <button class="gameBtn secondary" id="mainMenuBtn">⌂ Return to Main Menu</button>
+        <!-- Live In-Game Match Stats Box — spans the full panel under both columns -->
+        <div id="pauseStatsBox" class="settingsStatsBox" style="display: none;">
+          <!-- Filled dynamically -->
+        </div>
       </div>
     </div>
   </div>
@@ -3563,7 +3690,7 @@
     </button>
   </div>
 </div>
-<button id="touchPauseBtn" class="touchCornerBtn" aria-label="Pause">⏸</button>
+<button id="touchPauseBtn" class="touchCornerBtn" aria-label="Pause"><span class="pauseGlyph" aria-hidden="true"></span></button>
 <button id="touchFullscreenBtn" class="touchCornerBtn" aria-label="Toggle fullscreen">⛶</button>
 
 <!-- iPhone/iPod Safari has no Fullscreen API for regular pages at all (WebKit only
@@ -4404,6 +4531,7 @@
   let aiDifficulty = 'medium';
   let aiDebugEnabled = false; // F3 toggles the on-canvas AI debug overlay (AI modes only)
   let paused = false;
+  let pausedFrameDrawn = false;   // see loop() — the paused backdrop is a still, drawn once
 
   // ---------- Phase 6: online multiplayer match state ----------
   // Non-null from beginOnlineMatch() through the end of the online session —
@@ -11837,6 +11965,31 @@
   let pauseSettingsOpen = false;
   let settingsReturnTarget = 'mainMenu'; // 'mainMenu' | 'pause'
 
+  // Fills the pause menu's left column — what match you are returning to. Read fresh every
+  // time the menu opens rather than kept live, since the frame behind it is frozen anyway
+  // and none of these can change while the game is paused.
+  function updatePauseBrief(){
+    const set = function(id, text){
+      const el = document.getElementById(id);
+      if (el) el.textContent = text;
+    };
+    const nameOf = function(p){
+      return (p && p.character && p.character.name) ? p.character.name : (p === left ? 'Left' : 'Right');
+    };
+    set('pauseMetaScore', nameOf(left) + ' ' + (left.score || 0) + ' — ' + (right.score || 0) + ' ' + nameOf(right));
+
+    let modeLabel;
+    if (onlineMatch) modeLabel = 'Online';
+    else if (mode === 'ai') modeLabel = 'vs AI · ' + aiDifficulty;
+    else if (mode === 'aivai') modeLabel = 'AI vs AI · ' + aiDifficulty;
+    else modeLabel = '2 Player';
+    set('pauseMetaMode', modeLabel.replace(/·\s*(\w)/, function(m, c){ return '· ' + c.toUpperCase(); }));
+
+    const bg = BACKGROUNDS.find(function(b){ return b.id === selectedBackgroundId; }) || BACKGROUNDS[0];
+    set('pauseMetaArena', bg ? bg.name : '—');
+    set('pauseMetaRallies', String(ralliesPlayed || 0));
+  }
+
   function togglePause(){
     if(pauseSettingsOpen){
       // Esc while viewing Settings-from-pause backs out to the pause menu
@@ -11854,6 +12007,7 @@
       if (pauseStatsBox) {
         pauseStatsBox.style.display = 'none';
       }
+      updatePauseBrief();
     }
 
     // Restarting or re-picking characters only makes sense for a purely local match —
@@ -12078,6 +12232,9 @@
   function refitScreen(){
     updateStageSize();
     adjustScale();
+    // Resizing reallocates the canvas backing store, which blanks it. While paused nothing
+    // is repainting it, so without this the frozen backdrop would be wiped to empty.
+    invalidatePausedFrame();
   }
 
   window.addEventListener('resize', refitScreen);
@@ -13218,6 +13375,9 @@
       const th = btn.getAttribute('data-theme');
       document.documentElement.setAttribute('data-theme', th);
       selectedBackgroundId = th; // Synchronize court background with settings
+      // Settings can be opened from the pause menu, where rendering is stopped and the
+      // backdrop is a still — repaint it once so the new arena is what you see behind it.
+      invalidatePausedFrame();
       document.querySelectorAll('.themeSwatch').forEach(function(b){ b.classList.remove('active'); });
       btn.classList.add('active');
     });
@@ -14895,9 +15055,29 @@
       }
     }
 
-    draw();
+    // Paused means PAUSED — the frame behind the menu is a still, not a frozen simulation
+    // that is still quietly animating. `paused` only gates the sim above; draw() used to keep
+    // running regardless, and plenty of the rendering is driven straight off performance.now()
+    // rather than off sim state: the idle breathing bob, blinks, momentum aura pulses, the
+    // crowd, the charge shiver. The players stood still while their chests kept moving.
+    //
+    // One final frame is drawn on the way in so the still is current, then rendering stops
+    // altogether until something invalidates it (see invalidatePausedFrame). The canvas keeps
+    // its last contents, so the pause overlay's backdrop-filter has a genuine frozen image to
+    // blur — and a paused game costs nothing to render.
+    if (!paused) {
+      draw();
+      pausedFrameDrawn = false;
+    } else if (!pausedFrameDrawn) {
+      draw();
+      pausedFrameDrawn = true;
+    }
     requestAnimationFrame(loop);
   }
+  // Anything that changes what the frozen frame SHOULD look like while paused (a resize
+  // reallocates and blanks the canvas; a theme or arena change repaints it) has to ask for
+  // one more frame, or the backdrop is left stale or empty.
+  function invalidatePausedFrame(){ pausedFrameDrawn = false; }
 
   // ---------- humanoid rendering ----------
   function roundRectPath(c, x, y, w, h, r){
