@@ -15834,6 +15834,14 @@
   // the court, between the score strip and the playing area
   // small themed flourish across the very top of the arena, sitting in the strip of
   // background freed up now that the fan stand has been pulled down closer to the court
+  // Which themes' top-banner art is a pure REPEATING pattern, and at what x-period — the only
+  // ones renderCourtEnv can safely widen for the BG_ART_MARGIN overscan. Themes absent from
+  // this map anchor a hero element to a fraction of the width they're given ('sunset' hangs its
+  // sun at w*0.5, 'beach' its moon at w*0.1, 'arena' its beams at w*0.18/0.5/0.82), so handing
+  // them a wider `w` would slide that element instead of extending anything. `night` is listed
+  // at period 1 because its stars are modulo-scattered (no true period) and simply reshuffle.
+  const BANNER_TILE_PERIOD = { classic: 42, forest: 64, night: 1 };
+
   function drawTopBanner(c, bg, w, bandH){
     if(bandH <= 4) return;
     c.save();
@@ -16144,9 +16152,53 @@
     ctx.restore();
   }
 
+  // How far every court-aligned background/domain layer overscans past the visible canvas on
+  // every edge, in the same full-res px units as W/H. Without this overscan the background's own
+  // edge gets pulled into frame by the camera, exposing raw (undrawn) canvas as dead black.
+  //
+  // Sized against the WORST CASE, which is the point-celebration camera (see drawGame):
+  //   targetCamX = (p.x + PLAYER_W/2 - W/2) * 0.5  →  ±306 with a player pinned at a side line
+  //   + screenshake translate (shakeMag up to 30)
+  //   and camZoom is still lerping THROUGH 1.0 while camX is already large, which is the pinch:
+  //   worst needed world x = W/2*(1 + 1/zoom) + camX + shake  =  650*2 + 306 + 30  ≈  1636
+  // → ~336px past the right edge. 440 clears that with headroom for future camera work.
+  // Bump this one knob if a new camera move ever pans further.
+  const BG_ART_MARGIN = 440;
+  // Dedicated low-res buffer for WORLD-SPACE, court-aligned backdrops only (the static court env
+  // and the Sherman/Jordan/Amara domain-full draws) — sized with BG_ART_MARGIN baked in so they
+  // can overscan the screen. Deliberately kept SEPARATE from domPixelCtx()/_domCanvas above,
+  // which several full-screen cinematic overlays (Jordan face closeup, Sherman cine, the Pixel
+  // Shatter ult splash) also share and size-match against via `_domCanvas.width/height` — growing
+  // that shared buffer would have silently thrown off their own full-frame math.
+  let _domCanvasBg = null, _domCtxBg = null;
+  function domPixelCtxBg(){
+    const U = COURT_PIXEL_UNIT, M = BG_ART_MARGIN;
+    const bw = Math.ceil((W + 2*M) / U), bh = Math.ceil((H + 2*M) / U);
+    if(!_domCanvasBg || _domCanvasBg.width !== bw || _domCanvasBg.height !== bh){
+      _domCanvasBg = document.createElement('canvas');
+      _domCanvasBg.width = bw; _domCanvasBg.height = bh;
+      _domCtxBg = _domCanvasBg.getContext('2d');
+    }
+    _domCtxBg.setTransform(1, 0, 0, 1, 0, 0);
+    _domCtxBg.clearRect(0, 0, bw, bh);
+    _domCtxBg.setTransform(1/U, 0, 0, 1/U, M/U, M/U); // full-res world coords, shifted so (0,0) lands M in from the buffer's edge
+    _domCtxBg.imageSmoothingEnabled = false;
+    return _domCtxBg;
+  }
+  function blitDomBufferBg(maskPath){
+    const M = BG_ART_MARGIN;
+    ctx.save();
+    if(maskPath){ ctx.beginPath(); maskPath(ctx); ctx.clip(); }
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(_domCanvasBg, 0, 0, _domCanvasBg.width, _domCanvasBg.height, -M, -M, W + 2*M, H + 2*M);
+    ctx.imageSmoothingEnabled = true;
+    ctx.restore();
+  }
+
   let _envCanvas = null, _envCtx = null, _envKey = null;
   function ensureEnvCanvas(w, h){
-    const bw = Math.ceil(w / COURT_PIXEL_UNIT), bh = Math.ceil(h / COURT_PIXEL_UNIT);
+    const M = BG_ART_MARGIN;
+    const bw = Math.ceil((w + 2*M) / COURT_PIXEL_UNIT), bh = Math.ceil((h + 2*M) / COURT_PIXEL_UNIT);
     if(_envCanvas && _envCanvas.width === bw && _envCanvas.height === bh) return;
     _envCanvas = document.createElement('canvas');
     _envCanvas.width = bw; _envCanvas.height = bh;
@@ -16156,19 +16208,45 @@
   function renderCourtEnv(bg, courtBounce){
     ensureEnvCanvas(W, H);
     const ec = _envCtx;
-    ec.setTransform(1/COURT_PIXEL_UNIT, 0, 0, 1/COURT_PIXEL_UNIT, 0, 0); // downsample; existing code uses full-res coords unchanged
-    ec.clearRect(0, 0, W, H);
+    const M = BG_ART_MARGIN;
+    // downsample, shifted so world (0,0) lands M in from the buffer's edge — everything below
+    // keeps using its existing full-res world coordinates unchanged.
+    ec.setTransform(1/COURT_PIXEL_UNIT, 0, 0, 1/COURT_PIXEL_UNIT, M/COURT_PIXEL_UNIT, M/COURT_PIXEL_UNIT);
+    ec.clearRect(-M, -M, W + 2*M, H + 2*M);
     const skyGrad = ec.createLinearGradient(0, 0, 0, FANS_BOTTOM + 60);
     skyGrad.addColorStop(0, bg.sky[0]);
     skyGrad.addColorStop(1, bg.sky[1] || bg.sky[0]);
     ec.fillStyle = skyGrad;
-    ec.fillRect(0, 0, W, H);
-    drawTopBanner(ec, bg, W, FANS_TOP);
-    drawFansStand(ec, bg, 0, FANS_TOP, W, FANS_BOTTOM - FANS_TOP);
+    // sky first, full overscanned rect — ground fill below overwrites the lower band, same as before
+    ec.fillRect(-M, -M, W + 2*M, H + 2*M);
+    // Top banner: its art is per-theme, and most themes place a hero element at a fraction of
+    // the width they're handed (a sun at w*0.5, a moon at w*0.1). Handing those a wider `w`
+    // would SLIDE that element, so only the themes whose banner is a pure repeating pattern get
+    // widened — the rest keep their original 0..W framing and let the sky carry the margin.
+    const bannerPeriod = BANNER_TILE_PERIOD[bg.id];
+    if (bannerPeriod) {
+      // Pad out to a whole number of pattern periods so the repeat stays exactly IN PHASE with
+      // what the un-extended call drew — the on-screen banner is pixel-identical, it just keeps
+      // going past both edges instead of stopping dead (classic's bunting string in particular
+      // used to end in mid-air at x=W).
+      const pad = Math.ceil(M / bannerPeriod) * bannerPeriod;
+      ec.save();
+      ec.translate(-pad, 0);
+      drawTopBanner(ec, bg, W + 2*pad, FANS_TOP);
+      ec.restore();
+    } else {
+      drawTopBanner(ec, bg, W, FANS_TOP);
+    }
+    // Fan stand: purely loop-driven over x..x+w (panel, seat ticks, pixel crowd), so handing it
+    // the overscanned span just builds more stadium — the crowd genuinely continues off-frame
+    // instead of stopping at a hard edge.
+    drawFansStand(ec, bg, -M, FANS_TOP, W + 2*M, FANS_BOTTOM - FANS_TOP);
     ec.fillStyle = bg.ground;
-    ec.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+    ec.fillRect(-M, GROUND_Y, W + 2*M, H + 2*M - GROUND_Y);
+    // The bleacher floor is the COURT ITSELF (COURT_LEFT..COURT_RIGHT) — deliberately NOT
+    // extended, so the playing surface stays exactly the size it has always been.
     drawBleacherFloor(ec, bg, COURT_LEFT, COURT_TOP, COURT_RIGHT - COURT_LEFT, GROUND_Y - COURT_TOP, {rows:6, bounce:courtBounce, pattern: bg.floorPattern});
-    if(bg.decor) bg.decor(ec, W, H, FANS_BOTTOM); // scenery pixelates with the rest
+    if(bg.decor) bg.decor(ec, W, H, FANS_BOTTOM); // scenery pixelates with the rest — stays at its original spot, unstretched
     ec.setTransform(1, 0, 0, 1, 0, 0);
   }
 
@@ -16492,8 +16570,9 @@
     if (rev <= 0.001) return;
     const now = performance.now() * 0.001;
     const U = COURT_PIXEL_UNIT;
+    const M = BG_ART_MARGIN;
     const q = function(v){ return Math.round(v / U) * U; };
-    const g = domPixelCtx();
+    const g = domPixelCtxBg();
 
     // Stamp anchor: the seal comes down over the caster, or centre court if we have no player.
     const stampX = p ? (p.x + PLAYER_W / 2) : (W / 2);
@@ -16501,11 +16580,15 @@
     const baseY = GROUND_Y - 6;
 
     // ---- 1. Sky: smoke-black overhead grading into ember-red at the horizon ---------------
+    // Extended past the visible frame by BG_ART_MARGIN on every edge so screen shake / camera
+    // pan never pulls raw canvas into view (see BG_ART_MARGIN).
     const skyBands = ['#0a0708', '#120c0c', '#1b1010', '#2a1410', '#3d1a10', '#57210f'];
     const bandH = GROUND_Y / skyBands.length;
+    g.fillStyle = skyBands[0];
+    g.fillRect(-M, -M, W + 2*M, M); // top overscan strip — flat continuation of the topmost band
     for (let b = 0; b < skyBands.length; b++) {
       g.fillStyle = skyBands[b];
-      g.fillRect(0, q(b * bandH), W, Math.ceil(bandH) + U);
+      g.fillRect(-M, q(b * bandH), W + 2*M, Math.ceil(bandH) + U);
     }
 
     // ---- 1b. Posterized cloud masses ------------------------------------------------------
@@ -16717,11 +16800,11 @@
     // behind a tennis club. This is a translucent warm-ash wash, deliberately not opaque: the
     // court lines, the net and the players must stay perfectly readable through it.
     g.fillStyle = 'rgba(46, 20, 12, 0.72)';
-    g.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+    g.fillRect(-M, GROUND_Y, W + 2*M, H + M - GROUND_Y);
     // Ash drift banding across the floor
     for (let ay2 = GROUND_Y; ay2 < H; ay2 += q(14)) {
       g.fillStyle = 'rgba(20, 9, 7, 0.16)';
-      g.fillRect(0, ay2, W, q(6));
+      g.fillRect(-M, ay2, W + 2*M, q(6));
     }
     // Molten cracks running through the ground, brightest near the horizon
     g.save();
@@ -16817,10 +16900,10 @@
 
     // ---- 6. Blit, masked by the fire front while the transition is still sweeping ----------
     if (rev < 0.999) {
-      blitDomBuffer(function(c){ shermanFirePath(c, stampX, stampY, rev); });
+      blitDomBufferBg(function(c){ shermanFirePath(c, stampX, stampY, rev); });
       drawShermanSealStampFx(stampX, stampY, rev);
     } else {
-      blitDomBuffer(null);
+      blitDomBufferBg(null);
     }
   }
 
@@ -16881,9 +16964,9 @@
   }
 
   function drawBlueprintDomainFull(p) {
-    const cx = W / 2, now = performance.now() * 0.001;
+    const cx = W / 2, now = performance.now() * 0.001, M = BG_ART_MARGIN;
     ctx.save();
-    ctx.fillStyle = '#030712'; ctx.fillRect(0, 0, W, GROUND_Y);
+    ctx.fillStyle = '#030712'; ctx.fillRect(-M, -M, W + 2*M, GROUND_Y + M);
 
     ctx.strokeStyle = 'rgba(6, 182, 212, 0.35)'; ctx.lineWidth = 1.5;
     for (let x = 0; x < W; x += 40) {
@@ -16907,21 +16990,25 @@
   function drawTempestDomainFull(p) {
     const now = performance.now() * 0.001;
     const U = COURT_PIXEL_UNIT;
+    const M = BG_ART_MARGIN;
     const q = function(v){ return Math.round(v / U) * U; }; // snap to the pixel grid
-    const g = domPixelCtx();
+    const g = domPixelCtxBg();
     g.save();
 
-    // Monochrome storm sky — hard posterized bands (no smooth gradient)
+    // Monochrome storm sky — hard posterized bands (no smooth gradient). Extended past the
+    // visible frame by BG_ART_MARGIN so shake/pan never exposes raw canvas at the edges.
     const skyBands = ['#070707', '#0f0f0f', '#131313', '#0d0d0d', '#101010'];
     const bandH = GROUND_Y / skyBands.length;
+    g.fillStyle = skyBands[0];
+    g.fillRect(-M, -M, W + 2*M, M); // top overscan strip
     for (let b = 0; b < skyBands.length; b++) {
       g.fillStyle = skyBands[b];
-      g.fillRect(0, q(b * bandH), W, Math.ceil(bandH) + U);
+      g.fillRect(-M, q(b * bandH), W + 2*M, Math.ceil(bandH) + U);
     }
 
     // Dark ground
     g.fillStyle = '#141414';
-    g.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+    g.fillRect(-M, GROUND_Y, W + 2*M, H + M - GROUND_Y);
 
     // Storm clouds drifting — blocky stacked rectangles instead of ellipses
     for (let i = 0; i < 7; i++) {
@@ -17107,9 +17194,9 @@
     // Blit the pixelated storm onto the main canvas. When a reveal wipe is active the caller
     // handles the mask; here (fully-open domain) we blit the whole screen.
     if (p && (p.jordanCircleRadius || 0) > 0 && (p.jordanCircleRadius || 0) < 1) {
-      blitDomBuffer(function(c){ tempestFrontPath(c, p, p.jordanCircleRadius); });
+      blitDomBufferBg(function(c){ tempestFrontPath(c, p, p.jordanCircleRadius); });
     } else {
-      blitDomBuffer(null);
+      blitDomBufferBg(null);
     }
   }
 
@@ -17137,11 +17224,11 @@
   }
 
   function drawBernabeuDomainFull(p) {
-    const cx = W / 2, now = performance.now() * 0.001;
+    const cx = W / 2, now = performance.now() * 0.001, M = BG_ART_MARGIN;
     ctx.save();
     const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
     skyGrad.addColorStop(0, '#020617'); skyGrad.addColorStop(0.7, '#1e293b'); skyGrad.addColorStop(1, '#0f172a');
-    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
+    ctx.fillStyle = skyGrad; ctx.fillRect(-M, -M, W + 2*M, GROUND_Y + M);
 
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)'; ctx.lineWidth = 20;
@@ -17158,9 +17245,9 @@
   }
 
   function drawRedlineDomainFull(p) {
-    const cx = W / 2, now = performance.now() * 0.001;
+    const cx = W / 2, now = performance.now() * 0.001, M = BG_ART_MARGIN;
     ctx.save();
-    ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, W, GROUND_Y);
+    ctx.fillStyle = '#0f172a'; ctx.fillRect(-M, -M, W + 2*M, GROUND_Y + M);
 
     ctx.strokeStyle = 'rgba(244, 63, 94, 0.6)'; ctx.lineWidth = 3;
     for (let i = 0; i < 15; i++) {
@@ -17171,11 +17258,11 @@
   }
 
   function drawDragonPalaceDomainFull(p) {
-    const cx = W / 2, now = performance.now() * 0.001;
+    const cx = W / 2, now = performance.now() * 0.001, M = BG_ART_MARGIN;
     ctx.save();
     const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
     skyGrad.addColorStop(0, '#450a0a'); skyGrad.addColorStop(1, '#991b1b');
-    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
+    ctx.fillStyle = skyGrad; ctx.fillRect(-M, -M, W + 2*M, GROUND_Y + M);
 
     ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 28px serif'; ctx.textAlign = 'center';
     ctx.fillText('林丹 🐉 丹砂', cx, 70);
@@ -17183,11 +17270,11 @@
   }
 
   function drawTangoDomainFull(p) {
-    const cx = W / 2, now = performance.now() * 0.001;
+    const cx = W / 2, now = performance.now() * 0.001, M = BG_ART_MARGIN;
     ctx.save();
     const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
     skyGrad.addColorStop(0, '#451a03'); skyGrad.addColorStop(1, '#b45309');
-    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
+    ctx.fillStyle = skyGrad; ctx.fillRect(-M, -M, W + 2*M, GROUND_Y + M);
 
     if (p) {
       const pcx = p.x + PLAYER_W / 2;
@@ -17201,11 +17288,11 @@
   }
 
   function drawColosseumDomainFull(p) {
-    const cx = W / 2, now = performance.now() * 0.001;
+    const cx = W / 2, now = performance.now() * 0.001, M = BG_ART_MARGIN;
     ctx.save();
     const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
     skyGrad.addColorStop(0, '#1c1917'); skyGrad.addColorStop(1, '#78350f');
-    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
+    ctx.fillStyle = skyGrad; ctx.fillRect(-M, -M, W + 2*M, GROUND_Y + M);
 
     ctx.fillStyle = '#44403c';
     for (let i = 0; i < 6; i++) {
@@ -17215,11 +17302,11 @@
   }
 
   function drawBambooDomainFull(p) {
-    const cx = W / 2, now = performance.now() * 0.001;
+    const cx = W / 2, now = performance.now() * 0.001, M = BG_ART_MARGIN;
     ctx.save();
     const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
     skyGrad.addColorStop(0, '#022c22'); skyGrad.addColorStop(1, '#0f766e');
-    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
+    ctx.fillStyle = skyGrad; ctx.fillRect(-M, -M, W + 2*M, GROUND_Y + M);
 
     ctx.fillStyle = '#065f46';
     for (let i = 0; i < 12; i++) {
@@ -17229,28 +17316,29 @@
   }
 
   function drawStarlightDomainFull(p) {
-    const cx = W / 2, now = performance.now() * 0.001;
+    const cx = W / 2, now = performance.now() * 0.001, M = BG_ART_MARGIN;
     ctx.save();
     const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
     skyGrad.addColorStop(0, '#311042'); skyGrad.addColorStop(1, '#831843');
-    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
+    ctx.fillStyle = skyGrad; ctx.fillRect(-M, -M, W + 2*M, GROUND_Y + M);
 
     ctx.fillStyle = '#f472b6'; ctx.beginPath(); ctx.arc(cx, 40, 30, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
 
   function drawMonochromeDomainFull(p) {
+    const M = BG_ART_MARGIN;
     ctx.save();
-    ctx.fillStyle = '#000000'; ctx.fillRect(0, 0, W, GROUND_Y);
+    ctx.fillStyle = '#000000'; ctx.fillRect(-M, -M, W + 2*M, GROUND_Y + M);
     ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(W, GROUND_Y); ctx.stroke();
     ctx.restore();
   }
 
   function drawVoidShadowDomainFull(p) {
-    const cx = W / 2, now = performance.now() * 0.001;
+    const cx = W / 2, now = performance.now() * 0.001, M = BG_ART_MARGIN;
     ctx.save();
-    ctx.fillStyle = '#020617'; ctx.fillRect(0, 0, W, GROUND_Y);
+    ctx.fillStyle = '#020617'; ctx.fillRect(-M, -M, W + 2*M, GROUND_Y + M);
     ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2;
     if (Math.random() < 0.2) {
       const lx = Math.random() * W;
@@ -17260,20 +17348,20 @@
   }
 
   function drawPastelPondDomainFull(p) {
-    const cx = W / 2, now = performance.now() * 0.001;
+    const cx = W / 2, now = performance.now() * 0.001, M = BG_ART_MARGIN;
     ctx.save();
     const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
     skyGrad.addColorStop(0, '#fbcfe8'); skyGrad.addColorStop(1, '#c084fc');
-    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
+    ctx.fillStyle = skyGrad; ctx.fillRect(-M, -M, W + 2*M, GROUND_Y + M);
     ctx.restore();
   }
 
   function drawAbyssalAnchorDomainFull(p) {
-    const cx = W / 2, now = performance.now() * 0.001;
+    const cx = W / 2, now = performance.now() * 0.001, M = BG_ART_MARGIN;
     ctx.save();
     const skyGrad = ctx.createLinearGradient(cx, 0, cx, GROUND_Y);
     skyGrad.addColorStop(0, '#030712'); skyGrad.addColorStop(1, '#0284c7');
-    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GROUND_Y);
+    ctx.fillStyle = skyGrad; ctx.fillRect(-M, -M, W + 2*M, GROUND_Y + M);
     ctx.restore();
   }
 
@@ -17289,8 +17377,9 @@
   function drawEgyptianDomainPixel(p, opts){
     const now = performance.now() * 0.001;
     const U = COURT_PIXEL_UNIT;
+    const M = BG_ART_MARGIN;
     const q = function(v){ return Math.round(v / U) * U; };
-    const g = domPixelCtx();
+    const g = domPixelCtxBg();
     g.save();
     // Solar Judgment biases the whole sanctum toward amber/gold; Puppeteer keeps the
     // cyan-dominant dusk. One palette switch rather than a duplicated draw function.
@@ -17339,10 +17428,11 @@
       ['#7a1f6e', 0.60], ['#b6355a', 0.72], ['#e0652b', 0.83],
       ['#f5a623', 0.93], ['#f7cf67', 1.00]
     ];
+    rect(-M, -M, W + 2*M, M, bands[0][0]); // top overscan strip
     let prevY = 0;
     for (let b = 0; b < bands.length; b++){
       const y1 = q(GROUND_Y * bands[b][1]);
-      rect(0, prevY, W, y1 - prevY, bands[b][0]);
+      rect(-M, prevY, W + 2*M, y1 - prevY, bands[b][0]);
       prevY = y1;
     }
 
@@ -17448,8 +17538,8 @@
     });
 
     // 11) Near dune + sand ground floor
-    rect(0, GROUND_Y - 20, W, 20, '#e0842b');
-    rect(0, GROUND_Y, W, H - GROUND_Y, '#c96f22');
+    rect(-M, GROUND_Y - 20, W + 2*M, 20, '#e0842b');
+    rect(-M, GROUND_Y, W + 2*M, H + M - GROUND_Y, '#c96f22');
 
     // 12) Twin oases (pools + pixel palms) — sun-scorched copper under Solar Judgment
     [q(COURT_LEFT + 120), q(COURT_RIGHT - 120)].forEach(function(oxp, i){
@@ -17483,9 +17573,9 @@
     ctx.save();
     if (fade < 0.999) ctx.globalAlpha = fade;
     if (rev !== undefined && rev < 0.999){
-      blitDomBuffer(function(c){ amaraRevealPath(c, p, rev); });
+      blitDomBufferBg(function(c){ amaraRevealPath(c, p, rev); });
     } else {
-      blitDomBuffer(null);
+      blitDomBufferBg(null);
     }
     ctx.restore();
   }
@@ -18296,7 +18386,7 @@
     if(key !== _envKey){ renderCourtEnv(bg, courtBounce); _envKey = key; }
 
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(_envCanvas, 0, 0, _envCanvas.width, _envCanvas.height, 0, 0, W, H);
+    ctx.drawImage(_envCanvas, 0, 0, _envCanvas.width, _envCanvas.height, -BG_ART_MARGIN, -BG_ART_MARGIN, W + 2*BG_ART_MARGIN, H + 2*BG_ART_MARGIN);
     ctx.imageSmoothingEnabled = true; // restore for players/UI drawn afterward
 
     let domainPlayer = null;
@@ -22249,7 +22339,9 @@
     if (shermanCourtDarkness > 0.005) {
       ctx.save();
       ctx.fillStyle = `rgba(5, 5, 14, ${shermanCourtDarkness.toFixed(3)})`;
-      ctx.fillRect(0, 0, W, GROUND_Y + 40);
+      // World-space wash — overscanned like the backdrop under it (see BG_ART_MARGIN), otherwise
+      // a camera pan reveals a hard seam where the night wash stops and the bright court resumes.
+      ctx.fillRect(-BG_ART_MARGIN, -BG_ART_MARGIN, W + 2*BG_ART_MARGIN, GROUND_Y + 40 + BG_ART_MARGIN);
 
       // Imperial night sky — a field of twinkling stars fading in with the darkness, so the
       // court reads as heaven's own night rather than a flat dimmer over the daylight scene
@@ -22311,7 +22403,7 @@
       if (lf > 0.88) {
         ctx.save();
         ctx.fillStyle = 'rgba(91, 155, 255, 0.06)';
-        ctx.fillRect(0, 0, W, H);
+        ctx.fillRect(-BG_ART_MARGIN, -BG_ART_MARGIN, W + 2*BG_ART_MARGIN, H + 2*BG_ART_MARGIN);
         ctx.restore();
       }
     }
@@ -22320,7 +22412,7 @@
     if(activeZoneP){
       ctx.save();
       ctx.fillStyle = 'rgba(8, 10, 20, 0.42)';
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(-BG_ART_MARGIN, -BG_ART_MARGIN, W + 2*BG_ART_MARGIN, H + 2*BG_ART_MARGIN);
       const px = activeZoneP.x + PLAYER_W/2, py = activeZoneP.y + PLAYER_H/2;
       const spotGrad = ctx.createRadialGradient(px, py, 10, px, py, 220);
       spotGrad.addColorStop(0, 'rgba(110, 243, 255, 0.28)');
