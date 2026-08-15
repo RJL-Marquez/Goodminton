@@ -18924,6 +18924,36 @@
   const TURN_ENGAGE_BEHIND  = HIT_REACH_X * 1.25;  // ~90px — clearly beyond a stretched reach
   const TURN_RELEASE_BEHIND = HIT_REACH_X * 0.5;   // ~36px — clearly back inside it again
 
+  // ---------------------------------------------------------------------------
+  //  SWING → CHARGE HANDOVER
+  // ---------------------------------------------------------------------------
+  // Re-holding the button the instant you hit — anticipating the return — is the normal way
+  // to play, and it leaves the swing follow-through and the charge wind-up both live at once,
+  // competing for the racket arm.
+  //
+  // Straight priority cannot resolve it, and getting it wrong is what made the wind-up look
+  // broken. The pose chain used to read `if (isSwinging) ... else if (isCharging) ...`, so the
+  // swing won outright: the wind-up was invisible for the first SWING_DURATION of every charge,
+  // and for any hold SHORTER than that it never appeared at all. Whether you saw it came down
+  // to how soon after your own hit you re-held, which is exactly why it seemed to show up only
+  // sometimes. (The hit meter is drawn straight off p.charging and never had this problem,
+  // so the meter filled while the arm did something unrelated.)
+  //
+  // Handing the arm to the charge immediately is just as wrong the other way — it truncates
+  // the strike, so the racket never visibly completes the shot it is in the middle of playing.
+  //
+  // So the swing keeps the arm through CONTACT (impact lands at t≈0.32–0.46 depending on the
+  // branch), and past SWING_YIELD_T the wind-up cross-fades in over the follow-through's tail.
+  const SWING_YIELD_T = 0.5;
+  function _mix(a, b, w){ return a + (b - a) * w; }
+  // 0 = the swing still owns the arm, 1 = the charge wind-up owns it outright.
+  function chargeTakeoverWeight(p, isSwinging, isCharging){
+    if (!isCharging) return 0;
+    if (!isSwinging) return 1;
+    const t = Math.min(1, Math.max(0, 1 - p.swingTimer / SWING_DURATION));
+    return Math.min(1, Math.max(0, (t - SWING_YIELD_T) / (1 - SWING_YIELD_T)));
+  }
+
   function tickLocomotion(p){
     const now = performance.now()/1000;
     // First frame (or after a long stall / tab restore) gets a nominal step rather than a
@@ -19171,15 +19201,17 @@
           legFront = -0.4 + 2.2 * arc; legBack = -0.5 - 0.3 * arc;
           armFront = 0.5 - 0.8 * arc; armBack = -0.5 + 0.8 * arc;
         }
-      } else if (isCharging) {
+      }
+      // Cristiano's own wind-up gets the same handover as everyone else's — it had the
+      // identical `else if` and so the identical "sometimes the arm doesn't move" bug.
+      const cristianoTakeover = chargeTakeoverWeight(p, isSwinging, isCharging);
+      if (cristianoTakeover > 0) {
         const frac = Math.min(1, (nowSec - p.chargeStart) / chargeTimeFor(p.character));
-        if (frac >= 0.5) {
-          legFront = -0.5 * frac; legBack = 0.4 * frac;
-          armFront = -1.0 * frac; armBack = -0.8 * frac;
-        } else {
-          legFront = -1.2 * frac; legBack = 0.5 * frac;
-          armFront = 0.4 * frac; armBack = -0.4 * frac;
-        }
+        const hi = frac >= 0.5;
+        legFront = _mix(legFront, (hi ? -0.5 : -1.2) * frac, cristianoTakeover);
+        legBack  = _mix(legBack,  (hi ?  0.4 :  0.5) * frac, cristianoTakeover);
+        armFront = _mix(armFront, (hi ? -1.0 :  0.4) * frac, cristianoTakeover);
+        armBack  = _mix(armBack,  (hi ? -0.8 : -0.4) * frac, cristianoTakeover);
       }
     } else if (p.swingKind === 'serve' || (isServer && isSwinging)) {
       // 1. SERVING SWING (PREPARATION -> ACCEL -> IMPACT -> FOLLOW-THROUGH)
@@ -19283,17 +19315,20 @@
           legBack = -0.45 * (1 - p2Ease);
           if (t >= 0.40 && t <= 0.50) impactGlow = true;
         }
-      } else {
-        // Loading the backhand: racket tucked low and close across the body, weight settling.
-        // Small, because whatever comes out of it is going to be small.
+      }
+      // Loading the backhand: racket tucked low and close across the body, weight settling.
+      // Small, because whatever comes out of it is going to be small. Mixed in over a running
+      // follow-through, same handover as the other two branches.
+      const backTakeover = chargeTakeoverWeight(p, isSwinging, isCharging);
+      if (backTakeover > 0) {
         const frac = Math.min(1, (nowSec - p.chargeStart) / chargeTimeFor(p.character));
-        armFront = -0.5 - 0.5 * frac;
-        elbowBendFront = -0.6 - 0.5 * frac;
-        wristAngFront = -0.5 - 0.35 * frac;
-        torsoYOffset = Math.round(1 + frac);
-        armBack = -0.35 + 0.2 * frac;
-        legFront = -0.25 * frac + legPhase * 0.6 * (1 - 0.4 * frac);
-        legBack = 0.35 * frac - legPhase * 0.6 * (1 - 0.4 * frac);
+        armFront = _mix(armFront, -0.5 - 0.5 * frac, backTakeover);
+        elbowBendFront = _mix(elbowBendFront, -0.6 - 0.5 * frac, backTakeover);
+        wristAngFront = _mix(wristAngFront, -0.5 - 0.35 * frac, backTakeover);
+        torsoYOffset = Math.round(_mix(torsoYOffset, 1 + frac, backTakeover));
+        armBack = _mix(armBack, -0.35 + 0.2 * frac, backTakeover);
+        legFront = _mix(legFront, -0.25 * frac + legPhase * 0.6 * (1 - 0.4 * frac), backTakeover);
+        legBack  = _mix(legBack,   0.35 * frac - legPhase * 0.6 * (1 - 0.4 * frac), backTakeover);
       }
     } else if (isAirborne) {
       // 3. AIR HIT / OVERHEAD SMASH ANIMATION
@@ -19322,19 +19357,24 @@
           legFront = -0.2; legBack = 0.1;
           if (t >= 0.32 && t <= 0.42) impactGlow = true;
         }
-      } else if (isCharging) {
-        const frac = Math.min(1, (nowSec - p.chargeStart) / chargeTimeFor(p.character));
-        armFront = -1.8 - 0.6 * frac;
-        elbowBendFront = -0.7 - 0.5 * frac;
-        wristAngFront = -0.5 - 0.4 * frac;
-        torsoXOffset = -1 - 1.5 * frac;
-        torsoYOffset = -1;
-        hairSway = 1.5 * frac;
-        armBack = 0.8 * frac;
-        legFront = -0.8; legBack = 0.6;
-      } else {
+      } else if (!isCharging) {
         legFront = -0.6; legBack = 0.35;
         armFront = -0.5; armBack = -0.4;
+      }
+      // Same handover as on the ground: an air charge started while the previous swing is
+      // still playing out mixes in over the follow-through rather than being suppressed by it.
+      const airTakeover = chargeTakeoverWeight(p, isSwinging, isCharging);
+      if (airTakeover > 0) {
+        const frac = Math.min(1, (nowSec - p.chargeStart) / chargeTimeFor(p.character));
+        armFront = _mix(armFront, -1.8 - 0.6 * frac, airTakeover);
+        elbowBendFront = _mix(elbowBendFront, -0.7 - 0.5 * frac, airTakeover);
+        wristAngFront = _mix(wristAngFront, -0.5 - 0.4 * frac, airTakeover);
+        torsoXOffset = Math.round(_mix(torsoXOffset, -1 - 1.5 * frac, airTakeover));
+        torsoYOffset = Math.round(_mix(torsoYOffset, -1, airTakeover));
+        hairSway = _mix(hairSway, 1.5 * frac, airTakeover);
+        armBack = _mix(armBack, 0.8 * frac, airTakeover);
+        legFront = _mix(legFront, -0.8, airTakeover);
+        legBack  = _mix(legBack,   0.6, airTakeover);
       }
     } else {
       // 2. GROUND HIT ANIMATION (REGULAR / DINK / CLEAR)
@@ -19370,26 +19410,32 @@
           legBack = -0.3 * (1 - p2Ease);
           if (t >= 0.35 && t <= 0.43) impactGlow = true;
         }
-      } else if (isCharging) {
+      }
+      // Charge wind-up. Mixed IN rather than chained behind an `else`, so re-holding the
+      // button mid-follow-through still shows it (see chargeTakeoverWeight). With no swing
+      // running the weight is 1 and this is a straight assignment, exactly as before.
+      const groundTakeover = chargeTakeoverWeight(p, isSwinging, isCharging);
+      if (groundTakeover > 0) {
         const frac = Math.min(1, (nowSec - p.chargeStart) / chargeTimeFor(p.character));
-        armFront = -0.3 + (1.8 - (-0.3)) * frac;
-        elbowBendFront = -0.8 * frac;
-        wristAngFront = -0.7 * frac;
-        torsoXOffset = -1 - 1.5 * frac;
-        torsoYOffset = Math.round(1 + 1.5 * frac);
+        let cTorsoX = -1 - 1.5 * frac;
         if (frac > 0.8) {
           // Deterministic strain shiver. A Math.random() jitter here resampled the torso's
           // sub-pixel position every single frame, which (before _mkpxOn snapped its writes)
           // made the body flicker between two half-transparent columns. Driving it off a fast
           // sine keeps the "about to burst" read while landing on a repeatable phase.
-          torsoXOffset += Math.sin(nowSec * 46) * 0.5;
+          cTorsoX += Math.sin(nowSec * 46) * 0.5;
         }
-        hairSway = 1.0 * frac;
-        armBack = -0.4 + 0.6 * frac;
+        armFront = _mix(armFront, -0.3 + (1.8 - (-0.3)) * frac, groundTakeover);
+        elbowBendFront = _mix(elbowBendFront, -0.8 * frac, groundTakeover);
+        wristAngFront = _mix(wristAngFront, -0.7 * frac, groundTakeover);
+        torsoXOffset = Math.round(_mix(torsoXOffset, cTorsoX, groundTakeover));
+        torsoYOffset = Math.round(_mix(torsoYOffset, 1 + 1.5 * frac, groundTakeover));
+        hairSway = _mix(hairSway, 1.0 * frac, groundTakeover);
+        armBack = _mix(armBack, -0.4 + 0.6 * frac, groundTakeover);
         // Same additive treatment as the serve stance: the loaded crouch is blended onto the
         // walk rather than replacing it, so charging while repositioning no longer moonwalks.
-        legFront = -0.4 * frac + legPhase * 0.6 * (1 - 0.4 * frac);
-        legBack  =  0.5 * frac - legPhase * 0.6 * (1 - 0.4 * frac);
+        legFront = _mix(legFront, -0.4 * frac + legPhase * 0.6 * (1 - 0.4 * frac), groundTakeover);
+        legBack  = _mix(legBack,   0.5 * frac - legPhase * 0.6 * (1 - 0.4 * frac), groundTakeover);
       }
     }
 
