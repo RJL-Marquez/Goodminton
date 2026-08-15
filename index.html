@@ -15295,7 +15295,16 @@
   const BUF_W=30, BUF_H=40, OX=9, OY=8, ANCHOR_X=16, ANCHOR_Y=33;
   const _pixBuf=document.createElement('canvas'); _pixBuf.width=BUF_W; _pixBuf.height=BUF_H;
   const _pixCtx=_pixBuf.getContext('2d');
-  function _mkpxOn(ctx,W,H,pal){ return function(gx,gy,key){ var col=(key&&key[0]==='#')?key:pal[key]; if(!col)return; if(gx<0||gy<0||gx>=W||gy>=H)return; ctx.fillStyle=col; ctx.fillRect(gx,gy,1,1); }; }
+  // Every art-pixel write SNAPS to the integer grid. This is not cosmetic: the buffer is a
+  // 1:1 art-pixel canvas, so fillRect at a fractional x splits one "pixel" across two columns
+  // and the rasterizer antialiases BOTH at partial alpha — the court then shows straight
+  // through the sprite. Callers routinely pass fractions: ang.torsoXOffset is a float in
+  // every charge/swing branch (e.g. -1 - 1.5*frac), and it feeds the torso/head/hair/face
+  // maps through _pxmap/_pxrect. The limbs never showed the bug because _pxlimb/_pxleg
+  // already Math.round their own segment centres — which is exactly why the symptom read as
+  // "solid arms and legs, ghosted body and head" while holding a charge.
+  // Rounding here (rather than at each call site) also covers every future caller.
+  function _mkpxOn(ctx,W,H,pal){ return function(gx,gy,key){ var col=(key&&key[0]==='#')?key:pal[key]; if(!col)return; gx=Math.round(gx); gy=Math.round(gy); if(gx<0||gy<0||gx>=W||gy>=H)return; ctx.fillStyle=col; ctx.fillRect(gx,gy,1,1); }; }
   function _mkpx(pal){ return _mkpxOn(_pixCtx,BUF_W,BUF_H,pal); }
   // portrait head-and-shoulders buffer (select screen / VS / thumbnails)
   const PBUF_W=16, PBUF_H=18;
@@ -15341,12 +15350,31 @@
     long:[' HHHHHH ','HHHHHHHH','HHHHHHHH','H      H'],
     curtain:[' HHHHHH ','HHHHHHHH','HHHHHHHH','HH    HH']
   };
-  function drawPixHair(px,hx,hy,ch,hairSway){
+  // Back of the skull. No hairline, no sideburn gap — the head is hair all the way down to a
+  // shaded nape. This carries the whole turn-away read: an absent face on its own looks like a
+  // rendering bug, a full hair mass immediately looks like a person facing away.
+  const HAIR_BACK=[' HHHHHH ','HHHHHHHH','HHHHHHHH','HHHHHHHH','HHHHHHHH','HHHHHHHH','HHhhhhHH',' hhhhhh '];
+  function drawPixHair(px,hx,hy,ch,hairSway,view){
     var hxS = hx;
     var st=ch.hairStyle||'short';
+    if(view==='back'){
+      _pxmap(px,hxS,hy-1,HAIR_BACK,{H:'H',h:'h'});
+      // Tails, buns and braids move to the CENTRE of the silhouette instead of hanging off the
+      // -x edge — a ponytail dead-centre is the single clearest "turned around" cue available
+      // at this resolution, so the styles that have one get to be the hero of the pose.
+      if(st==='bun'){ _pxrect(px,hxS+3,hy-2,2,2,'H'); _pxrect(px,hxS+3,hy-1,2,1,'h'); }
+      else if(st==='ponytail'){ _pxrect(px,hxS+3,hy+4,2,6,'H'); _pxrect(px,hxS+3,hy+10,2,1,'h'); }
+      else if(st==='braids'){ _pxrect(px,hxS+1,hy+5,2,5,'H'); _pxrect(px,hxS+5,hy+5,2,5,'H'); }
+      else if(st==='long'){ _pxrect(px,hxS,hy+5,8,5,'H'); _pxrect(px,hxS,hy+10,8,1,'h'); }
+      else if(st==='curtain'){ _pxrect(px,hxS,hy+5,8,3,'H'); _pxrect(px,hxS,hy+8,8,1,'h'); }
+      return;
+    }
     // drawn from hy-1: the extra row sits above the skull as hair volume, the
     // same trick drawPixCap already uses for the peaked cap's crown
     _pxmap(px,hxS,hy-1,HAIR_TOP[st]||HAIR_TOP.short,{H:'H'});
+    // Mid-turn: the head has rotated far enough to expose an extra column of the back of the
+    // skull on the trailing edge, which is what stops the 3/4 frame reading as a plain front.
+    if(view==='threequarter') _pxrect(px,hxS-1,hy,1,4,'H');
     if(st==='bun'){ _pxrect(px,hxS+3,hy-2,2,2,'H'); _pxrect(px,hxS+3,hy-1,2,1,'h'); }
     else if(st==='ponytail'){ _pxrect(px,hxS-2,hy+1,2,5,'H'); px(hxS-2,hy+5,'h'); }   // tail off the back (-x)
     else if(st==='braids'){ _pxrect(px,hxS-1,hy+2,2,5,'H'); _pxrect(px,hxS+7,hy+2,2,5,'H'); }
@@ -15355,27 +15383,40 @@
   }
   // Stiff peaked/military cap — retro-pixel, blocky silhouette, no photoreal shading.
   // Drawn in place of hair (front = +x, matching drawPixFace/racket convention).
-  function drawPixCap(px,hx,hy,ch){
+  function drawPixCap(px,hx,hy,ch,view){
     var C=ch.cap, B=ch.capBrim||_shade(C,-0.4), G=ch.capBadge||'#e8c257';
     _pxmap(px,hx,hy-1,[' CCCCCC ','CCCCCCCC','CCCCCCCC'],{C:C});   // crown, one row taller than normal hair
+    if(view==='back'){
+      // From behind: no badge, no visor. Just the crown, the sizing strap across the back of
+      // the band, and hair showing beneath it.
+      _pxrect(px,hx+1,hy+2,6,1,B);
+      _pxrect(px,hx+3,hy+2,2,1,C);
+      _pxrect(px,hx,hy+3,8,3,'H');
+      _pxrect(px,hx,hy+6,8,1,'h');
+      return;
+    }
     px(hx+3,hy,G); px(hx+4,hy,G);                                  // gold cockade/badge on the band
     _pxrect(px,hx+1,hy+2,7,1,B);                                   // stiff visor
     px(hx+7,hy+2,B); px(hx+8,hy+2,B);                              // brim juts out over the face (+x/front)
   }
   // --- reactive faces — facing +x. `glasses` (hex) draws gray specs over the eyes. ---
   const _INK='#0b0d14',_EYEW='#f6f9ff',_MRED='#7a1f22',_TEETH='#f6f9ff',_SWEAT='#5ec7ff',_GLASS='#dfe7f4';
-  function drawPixFace(px,fx,fy,expr,t,glasses){
+  // `turned` (the mid-turn 3/4 frame) drops the trailing eye and its brow: at 8px wide,
+  // losing one eye is the strongest available cue that the head has rotated away, and it
+  // costs nothing but a guard on the far-side helpers.
+  function drawPixFace(px,fx,fy,expr,t,glasses,turned){
     var P=function(x,y,c){px(fx+x,fy+y,c);};
     var eL=2,eR=5,ey=3;
+    var _hideL=!!turned, _skip=function(x){return _hideL&&x===eL;};
     var blink=(expr==='idle'||expr==='focused'||expr==='nonchalant')&&(Math.floor(t*1.1)%4===0)&&((t*1.1)%1<0.11);
-    function openEye(x,tall){P(x,ey,_EYEW);P(x+1,ey,_EYEW);P(x,ey+1,_INK);P(x+1,ey+1,_INK);if(tall){P(x,ey-1,_EYEW);P(x+1,ey-1,_EYEW);}}
-    function lineEye(x){P(x,ey+1,_INK);P(x+1,ey+1,_INK);}
-    function happyEye(x){P(x,ey+1,_INK);P(x+1,ey,_INK);}
-    function sadEye(x){P(x,ey+1,_INK);P(x+1,ey+1,_INK);P(x,ey,_INK);}
-    function lidEye(x){P(x,ey,_INK);P(x+1,ey,_INK);P(x+1,ey+1,_INK);}      // heavy-lidded, side pupil
-    function browAngry(){P(eL,ey-1,_INK);P(eL+1,ey,_INK);P(eR+1,ey-1,_INK);P(eR,ey,_INK);}
-    function browUp(){P(eL,ey-2,_INK);P(eL+1,ey-2,_INK);P(eR,ey-2,_INK);P(eR+1,ey-2,_INK);}
-    function browSad(){P(eL,ey,_INK);P(eL+1,ey-1,_INK);P(eR,ey-1,_INK);P(eR+1,ey,_INK);}
+    function openEye(x,tall){if(_skip(x))return;P(x,ey,_EYEW);P(x+1,ey,_EYEW);P(x,ey+1,_INK);P(x+1,ey+1,_INK);if(tall){P(x,ey-1,_EYEW);P(x+1,ey-1,_EYEW);}}
+    function lineEye(x){if(_skip(x))return;P(x,ey+1,_INK);P(x+1,ey+1,_INK);}
+    function happyEye(x){if(_skip(x))return;P(x,ey+1,_INK);P(x+1,ey,_INK);}
+    function sadEye(x){if(_skip(x))return;P(x,ey+1,_INK);P(x+1,ey+1,_INK);P(x,ey,_INK);}
+    function lidEye(x){if(_skip(x))return;P(x,ey,_INK);P(x+1,ey,_INK);P(x+1,ey+1,_INK);}      // heavy-lidded, side pupil
+    function browAngry(){if(!_hideL){P(eL,ey-1,_INK);P(eL+1,ey,_INK);}P(eR+1,ey-1,_INK);P(eR,ey,_INK);}
+    function browUp(){if(!_hideL){P(eL,ey-2,_INK);P(eL+1,ey-2,_INK);}P(eR,ey-2,_INK);P(eR+1,ey-2,_INK);}
+    function browSad(){if(!_hideL){P(eL,ey,_INK);P(eL+1,ey-1,_INK);}P(eR,ey-1,_INK);P(eR+1,ey,_INK);}
     var mx=2,my=6;
     function mFlat(){P(mx+1,my,_INK);P(mx+2,my,_INK);}
     function mSmug(){P(mx+1,my,_INK);P(mx+2,my,_INK);P(mx+3,my+1,_INK);}  // faint one-sided smirk
@@ -15414,11 +15455,15 @@
     // glasses (gray specs) over the eye band
     if(glasses){
       var g=glasses;
-      P(2,ey,_GLASS);P(3,ey,_GLASS);P(2,ey+1,_GLASS);P(3,ey+1,_GLASS);   // left lens glass
+      if(!_hideL){
+        P(2,ey,_GLASS);P(3,ey,_GLASS);P(2,ey+1,_GLASS);P(3,ey+1,_GLASS); // left lens glass
+        P(3,ey+1,_INK);                                                  // pupil behind glass
+        P(1,ey,g);P(1,ey+1,g);P(2,ey-1,g);P(3,ey-1,g);                   // left rim + top rim
+      }
       P(5,ey,_GLASS);P(6,ey,_GLASS);P(5,ey+1,_GLASS);P(6,ey+1,_GLASS);   // right lens glass
-      P(3,ey+1,_INK);P(6,ey+1,_INK);                                     // pupils behind glass
-      P(1,ey,g);P(1,ey+1,g);P(4,ey,g);P(7,ey,g);P(7,ey+1,g);            // rims + temple
-      P(2,ey-1,g);P(3,ey-1,g);P(5,ey-1,g);P(6,ey-1,g);                  // top rims + bridge
+      P(6,ey+1,_INK);                                                    // pupil behind glass
+      P(4,ey,g);P(7,ey,g);P(7,ey+1,g);                                   // bridge + temple
+      P(5,ey-1,g);P(6,ey-1,g);                                           // top rim
     }
   }
   function drawPixRacket(px,x,y,ang,ch,isFurry){
@@ -15462,14 +15507,72 @@
   function buildPixFigure(ch, ang, expr, t){
     _pixCtx.clearRect(0,0,BUF_W,BUF_H);
     var pal=pixPalette(ch), px=_mkpx(pal);
-    var bob=(ang.air||ang.onGround===false)?0:Math.round(Math.sin(t*3)*0.5);
+    // Body bob. At rest this is a slow breath; while running it is driven by the STRIDE, at
+    // twice the leg frequency — the body sits lowest at maximum leg split (legs spread = the
+    // hips are closer to the ground) and rises through the passing position. It used to be a
+    // fixed 3 rad/s sine regardless of what the legs were doing, so the bounce and the
+    // footfalls drifted in and out of phase. Crossfaded by moveFrac, then rounded once.
+    var _mf=Math.max(0,Math.min(1,ang.moveFrac||0));
+    var _breath=Math.sin(t*3)*0.5;
+    var _stride=(1-Math.cos(2*(ang.stridePhase||0)))*0.5;   // 0..1, peaks at max split
+    var bob=(ang.air||ang.onGround===false)?0:Math.round(_breath*(1-_mf)+_stride*_mf);
     var yo=bob + (ang.torsoYOffset || 0);
     var xo=(ang.torsoXOffset || 0);
     var hipX=OX+7+xo, hipY=OY+17+yo, shX=OX+7+xo, shY=OY+8+yo;
     var hasJkt=!!ch.jacket, slv=hasJkt?'J':null, slvB=hasJkt?'j':null, slvLen=hasJkt?3:0;
-    // back leg (shorts + bare shin + shoe) + back arm
+
+    // --- view axis: 'front' (default) | 'threequarter' | 'back' --------------------------
+    // Quantized on purpose — pixel art wants discrete views, not a continuous lerp. The
+    // caller ramps a 0..1 turn and buckets it (see tickLocomotion), so a turn plays as a
+    // handful of distinct frames rather than a smear.
+    var _view = ang.view || 'front';
+    var _back = (_view === 'back');
+
+    // Both arms are hoisted into closures so the DRAW ORDER can be swapped. Facing away
+    // reverses which arm is nearer the camera: the racket arm goes behind the torso and the
+    // free arm comes in front. The racket still reads fine occluded, because the limb extends
+    // well past the 7px-wide torso — which is also the correct occlusion.
+    var _drawBackArm = function(){
+      _pxlimb(px,shX-1,shY+2,ang.armBack,7,2,'k',null,slvB,slvLen);
+    };
+    var _drawRacketArm = function(){
+      // 2-segment jointed limb with elbow bending & wrist flex
+      var ax=shX+1, ay=shY+2;
+      var upperAng = ang.armFront;
+      var elbowBend = ang.elbowBendFront || 0;
+      var wristAng = ang.wristAngFront || 0;
+      var L1 = 4, L2 = 4;
+      var foreAng = upperAng + elbowBend;
+      var rackAng = foreAng + wristAng;
+
+      // Upper arm
+      _pxlimb(px, ax, ay, upperAng, L1, 2, 'K', null, slv, Math.min(slvLen, L1));
+
+      // Elbow joint position
+      var elX = ax + Math.sin(upperAng) * L1;
+      var elY = ay + Math.cos(upperAng) * L1;
+
+      // Forearm
+      var remSlv = Math.max(0, slvLen - L1);
+      _pxlimb(px, Math.round(elX), Math.round(elY), foreAng, L2, 2, 'K', null, slv, remSlv);
+
+      // Hand position & racket
+      var rx = Math.round(elX + Math.sin(foreAng) * L2);
+      var ry = Math.round(elY + Math.cos(foreAng) * L2);
+      drawPixRacket(px, rx, ry, rackAng, ch, ang.furry);
+
+      if (ang.impactGlow) {
+        // 1-frame pixel impact spark at contact point
+        px(rx, ry - 1, '#ffffff');
+        px(rx - 1, ry, '#ffffff');
+        px(rx + 1, ry, '#ffffff');
+        px(rx, ry + 1, '#ffeb3b');
+      }
+    };
+
+    // back leg (shorts + bare shin + shoe) + whichever arm is the FAR one for this view
     _pxleg(px,hipX-1,hipY,ang.legBack,8,3,'p','k','E');
-    _pxlimb(px,shX-1,shY+2,ang.armBack,7,2,'k',null,slvB,slvLen);
+    if(_back) _drawRacketArm(); else _drawBackArm();
     // Fursona Unleashed — big fluffy ginger cat tail sweeping off the back hip (behind torso)
     if(ang.furry){
       var _tx=hipX-1, _ty=hipY-2;
@@ -15503,7 +15606,7 @@
     // head: skin -> hair (or cap) -> nose -> face
     var hx=OX+3+xo, hy=(shY-8);
     _pxmap(px,hx,hy,HEAD_SKIN,pal);
-    if(ch.cap) drawPixCap(px,hx,hy,ch); else drawPixHair(px,hx,hy,ch,ang.hairSway);
+    if(ch.cap) drawPixCap(px,hx,hy,ch,_view); else drawPixHair(px,hx,hy,ch,ang.hairSway,_view);
     if(ch.isCleopatra){
       // Beautiful golden diadem/crown with central red gem
       px(hx+1, hy, '#fbbf24');
@@ -15518,10 +15621,11 @@
       px(hx+3, hy+7, '#fbbf24');
       px(hx+4, hy+7, '#fbbf24');
     }
-    if(ch.longNose){ px(hx+8,hy+4,'K');px(hx+9,hy+4,'K');px(hx+9,hy+5,'k'); }
-    if(!ch.pixSilhouette) drawPixFace(px,hx+1,hy,expr,t,ch.glasses); // pure silhouette: no eyes/brows/mouth baked into the sprite — only the overlay glow-eyes read
+    // Nose, face and glow-eyes are all front-of-head features — none of them exist from behind.
+    if(ch.longNose && !_back){ px(hx+8,hy+4,'K');px(hx+9,hy+4,'K');px(hx+9,hy+5,'k'); }
+    if(!ch.pixSilhouette && !_back) drawPixFace(px,hx+1,hy,expr,t,ch.glasses,_view==='threequarter'); // pure silhouette: no eyes/brows/mouth baked into the sprite — only the overlay glow-eyes read
     // Jordan's transformation glow
-    if(ang.eyeGlow > 0){
+    if(ang.eyeGlow > 0 && !_back){
       // Eye geometry, in sprite units: the head map is 8 wide starting at hx, and the two eyes
       // sit at hx+3 and hx+6. That leaves very little room for a halo — the original 5px radius
       // (and the 2.4px first attempt) both spanned the ENTIRE skull once the two overlapped,
@@ -15573,47 +15677,20 @@
       _pixCtx.fillRect(_gfx+_geR+1, _gfy+_gey, 1, 1);
       _pixCtx.restore();
     }
-    // Fursona Unleashed — ginger cat ears, whiskers + a pink nose over the head
+    // Fursona Unleashed — ginger cat ears, whiskers + a pink nose over the head.
+    // Ears survive the turn (they sit on top of the skull); whiskers and nose do not.
     if(ang.furry){
       px(hx+1,hy-2,'#e08a3c'); px(hx+2,hy-1,'#e08a3c');   // left ear
       px(hx+6,hy-2,'#e08a3c'); px(hx+5,hy-1,'#e08a3c');   // right ear
       px(hx+1,hy-1,'#f2a6b8'); px(hx+6,hy-1,'#f2a6b8');   // pink inner ears
-      px(hx+8,hy+4,'#f6f9ff'); px(hx+9,hy+5,'#f6f9ff');   // whiskers (front cheek)
-      px(hx-1,hy+4,'#f6f9ff'); px(hx-2,hy+5,'#f6f9ff');   // whiskers (back cheek)
-      px(hx+4,hy+5,'#f2a6b8');                            // pink nose
+      if(!_back){
+        px(hx+8,hy+4,'#f6f9ff'); px(hx+9,hy+5,'#f6f9ff');   // whiskers (front cheek)
+        px(hx-1,hy+4,'#f6f9ff'); px(hx-2,hy+5,'#f6f9ff');   // whiskers (back cheek)
+        px(hx+4,hy+5,'#f2a6b8');                            // pink nose
+      }
     }
-    // front (racket) arm on top — 2-segment jointed limb with elbow bending & wrist flex
-    var ax=shX+1, ay=shY+2;
-    var upperAng = ang.armFront;
-    var elbowBend = ang.elbowBendFront || 0;
-    var wristAng = ang.wristAngFront || 0;
-    var L1 = 4, L2 = 4;
-    var foreAng = upperAng + elbowBend;
-    var rackAng = foreAng + wristAng;
-
-    // Upper arm
-    _pxlimb(px, ax, ay, upperAng, L1, 2, 'K', null, slv, Math.min(slvLen, L1));
-
-    // Elbow joint position
-    var elX = ax + Math.sin(upperAng) * L1;
-    var elY = ay + Math.cos(upperAng) * L1;
-
-    // Forearm
-    var remSlv = Math.max(0, slvLen - L1);
-    _pxlimb(px, Math.round(elX), Math.round(elY), foreAng, L2, 2, 'K', null, slv, remSlv);
-
-    // Hand position & racket
-    var rx = Math.round(elX + Math.sin(foreAng) * L2);
-    var ry = Math.round(elY + Math.cos(foreAng) * L2);
-    drawPixRacket(px, rx, ry, rackAng, ch, ang.furry);
-
-    if (ang.impactGlow) {
-      // 1-frame pixel impact spark at contact point
-      px(rx, ry - 1, '#ffffff');
-      px(rx - 1, ry, '#ffffff');
-      px(rx + 1, ry, '#ffffff');
-      px(rx, ry + 1, '#ffeb3b');
-    }
+    // whichever arm is the NEAR one for this view, on top of everything
+    if(_back) _drawBackArm(); else _drawRacketArm();
     return _pixBuf;
   }
   // Head-and-shoulders portrait into the portrait buffer (bigger face, no limbs).
@@ -18734,7 +18811,11 @@
       particles.push({
         // Spawn from the torso/legs (below the head) and rise gently, so the additive charge
         // sparks no longer pile up over the face and wash the hair/head to near-transparent.
-        x: cx + (Math.random() - 0.5) * 44,
+        // Biased OUTWARD as well: particles draw after the players (see drawGame), and the
+        // body is only PLAYER_W wide, so a spawn centred on cx put every spark directly on
+        // top of the sprite. Pushing them past the silhouette edge frames the character
+        // instead of covering it.
+        x: cx + (Math.random() < 0.5 ? -1 : 1) * (PLAYER_W * 0.5 + Math.random() * 20),
         y: p.y + PLAYER_H * (0.45 + Math.random() * 0.5),
         vx: Math.cos(ang) * spd * 0.45,
         vy: -Math.abs(Math.sin(ang) * spd) - 40,
@@ -18754,10 +18835,14 @@
     const glowRad = 58 + 6 * pulse;
     const auraAlpha = 0.75 + 0.25 * pulse;
 
-    // Radial aura sphere
+    // Radial aura sphere — a HALO, not a fill. The first stop starts dark and only ramps up
+    // past 0.35 so the glow peaks OUTSIDE the silhouette. A gradient that was brightest at the
+    // centre dumped ~58px of additive light behind a ~40px sprite, and even drawn under the
+    // body that much bloom eats the edge contrast and makes the character read washed-out.
     const g = ctx.createRadialGradient(cx, p.y + PLAYER_H*0.45, 4, cx, p.y + PLAYER_H*0.45, glowRad);
-    g.addColorStop(0, ultCol);
-    g.addColorStop(0.55, ultCol + 'bb');
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(0.35, ultCol + '55');
+    g.addColorStop(0.62, ultCol + 'bb');
     g.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = g;
     ctx.globalAlpha = auraAlpha;
@@ -18859,18 +18944,199 @@
     ctx.restore();
   }
 
+  // ===========================================================================
+  //  LOCOMOTION — stride phase, skid stops, landing squash
+  // ===========================================================================
+  // The walk used to be one line: `Math.sin(nowSec*10) * moveFrac`. That runs the cycle at a
+  // FIXED 10 rad/s no matter how fast the player is actually moving — moveFrac only scaled the
+  // amplitude — so at half speed you got small FAST steps instead of slow ones, which is the
+  // classic ice-skating read. Accumulating the phase from distance travelled instead locks the
+  // feet to the ground: half the speed is half the cadence, and dashes get a faster cycle free.
+  //
+  // Everything here is derived from the sprite's ACTUAL displacement rather than p.vx, so it
+  // behaves identically for locally simulated players, AI, the attract-mode menu rally and
+  // snapshot-interpolated online opponents — none of which agree on a velocity field.
+
+  // Radians of stride phase per world-pixel travelled. Tuned so top speed (MOVE_SPEED = 300)
+  // lands at ~12.6 rad/s — i.e. ~2 cycles/sec, ~4 footfalls/sec, about the cadence the old
+  // fixed 10 rad/s had. The point is not the top-speed number, it's that every speed below it
+  // now scales down proportionally instead of holding cadence and shrinking the steps.
+  const STRIDE_RATE = 0.042;
+  const SKID_DECEL_TRIGGER = 2600;   // px/s² of deceleration that reads as a deliberate hard stop
+  const SKID_ENTRY_SPEED   = MOVE_SPEED * 0.55; // must have actually been moving to skid
+  const SKID_DUR = 0.24;
+  const LAND_SQUASH_DUR = 0.10;      // ~6 frames at 60fps
+  const PRE_SERVE_RITUAL = 0.40;     // grip-adjust / settle window after taking the service line
+
+  function tickLocomotion(p){
+    const now = performance.now()/1000;
+    // First frame (or after a long stall / tab restore) gets a nominal step rather than a
+    // divide-by-tiny, and the clamp keeps a hitching frame from teleporting the stride phase.
+    const dt = Math.min(0.05, Math.max(0.0005, now - (p._locT !== undefined ? p._locT : now - 0.016)));
+    p._locT = now;
+
+    const prevX = (p._locX !== undefined) ? p._locX : p.x;
+    p._locX = p.x;
+    // A TELEPORT is not motion. Point resets reposition both players, and online snapshot
+    // corrections can yank one across the court in a single frame — either would otherwise
+    // register as an enormous velocity followed by an enormous deceleration, firing a bogus
+    // skid (and a spray of dust) the instant play resumes. Anything past a plausible
+    // one-frame dash distance is discarded outright rather than clamped.
+    const rawDx = p.x - prevX;
+    const teleported = Math.abs(rawDx) > DASH_SPEED * dt * 2 + 8;
+    const dx = teleported ? 0 : rawDx;
+    const speed = Math.abs(dx) / dt;
+    const prevSpeed = teleported ? 0 : (p._locSpeed || 0);
+    p._locSpeed = speed;
+
+    // Sprite-local travel direction: +1 is "toward the way this character faces".
+    const facingSign = (p.side === 'left') ? 1 : -1;
+
+    // --- stride phase ------------------------------------------------------
+    if (p.stridePhase === undefined) p.stridePhase = 0;
+    const prevPhase = p.stridePhase;
+    p.stridePhase += dx * facingSign * STRIDE_RATE;
+    // Amplitude and lean are eased rather than taken raw: a per-frame position delta is noisy
+    // (clamping at the service-box edge, online interpolation) and an unsmoothed value makes
+    // the leg amplitude and the torso lean twitch. The skid check below uses the RAW speed, so
+    // this smoothing never delays the stop detection.
+    const ease = Math.min(1, 12 * dt);
+    const rawFrac = Math.min(1, speed / MOVE_SPEED);
+    const rawSigned = Math.max(-1, Math.min(1, (dx * facingSign / dt) / MOVE_SPEED));
+    p.moveFrac = (p.moveFrac || 0) + (rawFrac - (p.moveFrac || 0)) * ease;
+    p.moveSigned = (p.moveSigned || 0) + (rawSigned - (p.moveSigned || 0)) * ease;
+
+    // --- foot plant --------------------------------------------------------
+    // Contact happens at MAXIMUM leg split (|sin(phase)| = 1), not at the passing position —
+    // that's heel strike on one foot and toe-off on the other. Max split is where cos(phase)
+    // crosses zero, so that sign flip is the footfall.
+    if (p.onGround && p.moveFrac > 0.35 && Math.cos(prevPhase) * Math.cos(p.stridePhase) < 0) {
+      const footX = p.x + PLAYER_W/2 - Math.sign(dx) * 6;
+      for (let d = 0; d < 2; d++) {
+        particles.push({
+          x: footX + (Math.random() - 0.5) * 8,
+          y: GROUND_Y - 1,
+          vx: -Math.sign(dx) * (16 + Math.random() * 26),
+          vy: -(8 + Math.random() * 18),
+          color: Math.random() < 0.5 ? 'rgba(226,232,240,0.55)' : 'rgba(148,163,184,0.5)',
+          size: Math.random() * 1.8 + 1,
+          alpha: 0.45 * p.moveFrac,
+          decay: 2.6,
+          gravity: 120
+        });
+      }
+    }
+
+    // --- skid stop ---------------------------------------------------------
+    // The single biggest "game feel" read in badminton: arriving at the shuttle and PLANTING.
+    if (p.skidTimer === undefined) p.skidTimer = 0;
+    p.skidTimer = Math.max(0, p.skidTimer - dt);
+    const decel = (prevSpeed - speed) / dt;
+    if (p.onGround && p.skidTimer <= 0 && prevSpeed > SKID_ENTRY_SPEED && decel > SKID_DECEL_TRIGGER) {
+      p.skidTimer = SKID_DUR;
+      // Direction of the motion being ARRESTED, in sprite-local terms — the stop pose plants
+      // whichever leg is leading and leans the torso the other way.
+      p.skidDir = (p._locSkidSign || 1) * facingSign;
+      const shoeX = p.x + PLAYER_W/2 + (p._locSkidSign || 1) * 8;
+      for (let d = 0; d < 7; d++) {
+        particles.push({
+          x: shoeX + (Math.random() - 0.5) * 10,
+          y: GROUND_Y - 2,
+          vx: (p._locSkidSign || 1) * (30 + Math.random() * 70),
+          vy: -(14 + Math.random() * 30),
+          color: Math.random() < 0.45 ? 'rgba(248,250,252,0.7)' : 'rgba(148,163,184,0.6)',
+          size: Math.random() * 2.4 + 1.2,
+          alpha: 0.6,
+          decay: 2.2,
+          gravity: 150
+        });
+      }
+    }
+    // Remembered separately from dx, because on the frame the skid is DETECTED the player has
+    // already stopped (dx ≈ 0) and the travel direction would otherwise be lost.
+    if (Math.abs(dx) > 0.01) p._locSkidSign = Math.sign(dx);
+
+    // --- landing squash ----------------------------------------------------
+    if (p.landTimer === undefined) p.landTimer = 0;
+    p.landTimer = Math.max(0, p.landTimer - dt);
+    if (p.onGround && p._wasOnGround === false) {
+      p.landTimer = LAND_SQUASH_DUR;
+      for (let d = 0; d < 6; d++) {
+        particles.push({
+          x: p.x + PLAYER_W/2 + (Math.random() - 0.5) * 26,
+          y: GROUND_Y - 2,
+          vx: (Math.random() - 0.5) * 110,
+          vy: -(10 + Math.random() * 22),
+          color: 'rgba(203,213,225,0.6)',
+          size: Math.random() * 2.2 + 1.2,
+          alpha: 0.55,
+          decay: 2.4,
+          gravity: 140
+        });
+      }
+    }
+    p._wasOnGround = p.onGround;
+
+    // --- serve stance clock ------------------------------------------------
+    // Stamped on the transition INTO the serve stance so the pre-serve ritual (grip adjust,
+    // then settle) can run off elapsed time instead of restarting every frame.
+    const inServeStance = (state === 'serve') && (servingSide === p.side);
+    if (inServeStance && !p._wasServeStance) p.serveStanceStart = now;
+    p._wasServeStance = inServeStance;
+
+    // --- turn-away view ----------------------------------------------------
+    // Both players face the net, so turning your back needs a real reason. Two earn it:
+    //
+    //   1. The deep rear-court chase. Retreating hard toward your own baseline after a clear
+    //      that has already got behind you — real players turn and RUN to the back corner
+    //      rather than backpedal, and the turn-and-turn-back is the whole appeal.
+    //   2. Losing the point. A slumped back at 6px reads far better than a frown does.
+    //
+    // Everything cinematic forces the front view: a swing, a charge, any transform, and the
+    // scripted ult sequences all own the silhouette and must never be shown from behind.
+    let wantBack = false;
+    const cinematic = !!(p.transform || p.jordanTempestActive || p.shermanMandateActive ||
+                         (p.siuuuTimer > 0) || (p.bicycleKickTimer > 0) || (p.dianShaTimer > 0) ||
+                         (p.absoluteZoneFlash > 0));
+    if (!cinematic && p.swingTimer <= 0 && !p.charging && !p.ultCharging) {
+      if (pointCelebrateSide && pointCelebrateSide !== p.side) {
+        wantBack = true;
+      } else if (state === 'rally' && p.onGround && (p.moveSigned || 0) < -0.55 && shuttle.active) {
+        // "Behind me" = further from the net than I am, and still on my own half.
+        const myCx = p.x + PLAYER_W/2;
+        const behindMe = (p.side === 'left') ? (shuttle.x < myCx) : (shuttle.x > myCx);
+        const myHalf   = (p.side === 'left') ? (shuttle.x < NET_X) : (shuttle.x > NET_X);
+        wantBack = behindMe && myHalf;
+      }
+    }
+    // Asymmetric ramp = hysteresis. 0.10s in (≈6 frames, so the turn plays as distinct poses
+    // rather than a pop) and a slower 0.20s out, so a momentary dip in the trigger — a stutter
+    // step, the shuttle crossing back over — cannot flip the view back and forth.
+    const turn = (p.viewTurn || 0) + (wantBack ? dt / 0.10 : -dt / 0.20);
+    p.viewTurn = Math.max(0, Math.min(1, turn));
+    p.view = (p.viewTurn > 0.66) ? 'back' : ((p.viewTurn > 0.33) ? 'threequarter' : 'front');
+  }
+
   function drawPlayer(p){
     const ch = p.character || CHARACTERS[0];
     const nowSec = performance.now()/1000;
-    const moveFrac = Math.min(1, Math.abs(p.vx||0)/MOVE_SPEED);
-    const legPhase = Math.sin(nowSec*10) * moveFrac;
+    tickLocomotion(p);
+    const moveFrac = p.moveFrac || 0;
+    // Distance-driven, so the cadence tracks the actual speed (see tickLocomotion).
+    const legPhase = Math.sin(p.stridePhase || 0) * moveFrac;
 
     let legFront = legPhase*0.6, legBack = -legPhase*0.6;
     let armBack = -0.5 - legPhase*0.4;
-    let armFront = -0.3;
+    // The racket arm counter-swings against the back arm at ~40% amplitude. It used to be a
+    // flat constant, so the figure ran with one arm pumping and the other welded in place.
+    // Kept small on purpose: enough to read as running, not enough to fight the ready pose.
+    let armFront = -0.3 + legPhase*0.16;
     let elbowBendFront = 0;
     let wristAngFront = 0;
-    let torsoXOffset = 0;
+    // Run lean — the torso tips into the direction of travel. Pre-rounded so it can never
+    // reintroduce the fractional-offset antialiasing that _mkpxOn now guards against; the
+    // branches below that own torsoXOffset simply overwrite it.
+    let torsoXOffset = Math.round((p.moveSigned || 0) * 1.5);
     let torsoYOffset = 0;
     let hairSway = 0;
     let impactGlow = false;
@@ -18913,10 +19179,15 @@
         armFront = 1.5 - (1.5 - (-1.2)) * p1Acc;
         elbowBendFront = -0.6 * (1 - p1);
         wristAngFront = -0.7 * (1 - p1Acc) + 0.3 * p1Acc;
-        torsoXOffset = 1 + 2 * p1Acc;
+        // Weight transfer: back foot (-1) through to front foot (+2) across the wind-up,
+        // rather than a pure arm motion with a static body. Rounded — it feeds the torso maps.
+        torsoXOffset = Math.round(-1 + 3 * p1Acc);
         torsoYOffset = Math.round(1 - 1 * p1);
         hairSway = -1.5 * p1;
-        armBack = -0.5 - 0.6 * p1;
+        // The toss. The non-racket hand starts held out in front cradling the shuttle and
+        // releases as the racket arrives — previously it just swung further behind, so nothing
+        // on screen ever accounted for where the shuttle came from.
+        armBack = 0.85 - 1.25 * p1Acc;
         legFront = 0.2 - 0.4 * p1;
         legBack = -0.2 + 0.4 * p1;
       } else {
@@ -18925,31 +19196,43 @@
         armFront = -1.2 - (-2.1 - (-1.2)) * p2Ease;
         wristAngFront = 0.5 * (1 - p2Ease);
         elbowBendFront = 0.5 * p2Ease;
-        torsoXOffset = 3 * (1 - p2Ease);
+        torsoXOffset = Math.round(2 * (1 - p2Ease));
         torsoYOffset = 0;
         hairSway = -1.5 * (1 - p2Ease);
-        armBack = -1.1 + 0.6 * p2Ease;
+        armBack = -0.4 - 0.1 * p2Ease; // toss hand drops away and settles
         if (t >= 0.38 && t <= 0.46) impactGlow = true;
       }
     } else if (isServer && !isSwinging) {
       // SERVING PREPARATION (ON THE SERVE LINE BEFORE / DURING SERVE CHARGE)
+      //
+      // The stance is BLENDED ONTO the walk, never substituted for it. These two branches used
+      // to hard-assign legFront/legBack to constants, so a server repositioning along the
+      // baseline slid with frozen legs. Adding the stride on top means the stance holds when
+      // they're planted and the walk emerges the moment they move.
       if (isCharging) {
         const frac = Math.min(1, (nowSec - p.chargeStart) / chargeTimeFor(p.character));
         armFront = 1.3 + 0.4 * frac;
         elbowBendFront = -0.5 - 0.4 * frac;
         wristAngFront = -0.6 - 0.3 * frac;
-        torsoXOffset = -1 * frac;
+        torsoXOffset = Math.round(-1 * frac);
         torsoYOffset = Math.round(1 + 1 * frac);
-        legFront = 0.3; legBack = -0.3;
-        armBack = -0.6;
+        legFront = 0.3 + legPhase * 0.6; legBack = -0.3 - legPhase * 0.6;
+        armBack = 0.9 - legPhase * 0.3;   // shuttle cradled out front, ready to toss
       } else {
-        const pulse = Math.sin(nowSec * 4);
-        armFront = 1.2 + 0.05 * pulse;
+        // Compound breath instead of a single 4 rad/s sine — the old pure tone read as a
+        // metronome. The slow second term drifts the peaks so the idle never quite repeats.
+        const pulse = Math.sin(nowSec * 4) + 0.3 * Math.sin(nowSec * 1.3);
+        // Pre-serve ritual: for the first PRE_SERVE_RITUAL seconds after taking the line he
+        // adjusts his grip (a small wrist wiggle) and settles, rather than snapping straight
+        // into a held pose the instant the state flips.
+        const settle = Math.min(1, (nowSec - (p.serveStanceStart || nowSec)) / PRE_SERVE_RITUAL);
+        const fidget = (1 - settle) * Math.sin(nowSec * 17) * 0.35;
+        armFront = 1.2 + 0.05 * pulse + fidget * 0.5;
         elbowBendFront = -0.4;
-        wristAngFront = -0.5;
+        wristAngFront = -0.5 + fidget;
         torsoYOffset = Math.round(0.3 * pulse);
-        legFront = 0.2; legBack = -0.2;
-        armBack = -0.5;
+        legFront = 0.2 + legPhase * 0.6; legBack = -0.2 - legPhase * 0.6;
+        armBack = 0.85 - legPhase * 0.3;  // shuttle cradled out front, ready to toss
       }
     } else if (isAirborne) {
       // 3. AIR HIT / OVERHEAD SMASH ANIMATION
@@ -19034,14 +19317,56 @@
         torsoXOffset = -1 - 1.5 * frac;
         torsoYOffset = Math.round(1 + 1.5 * frac);
         if (frac > 0.8) {
-          torsoXOffset += (Math.random() - 0.5) * 0.4;
+          // Deterministic strain shiver. A Math.random() jitter here resampled the torso's
+          // sub-pixel position every single frame, which (before _mkpxOn snapped its writes)
+          // made the body flicker between two half-transparent columns. Driving it off a fast
+          // sine keeps the "about to burst" read while landing on a repeatable phase.
+          torsoXOffset += Math.sin(nowSec * 46) * 0.5;
         }
         hairSway = 1.0 * frac;
         armBack = -0.4 + 0.6 * frac;
-        legFront = -0.4 * frac;
-        legBack = 0.5 * frac;
+        // Same additive treatment as the serve stance: the loaded crouch is blended onto the
+        // walk rather than replacing it, so charging while repositioning no longer moonwalks.
+        legFront = -0.4 * frac + legPhase * 0.6 * (1 - 0.4 * frac);
+        legBack  =  0.5 * frac - legPhase * 0.6 * (1 - 0.4 * frac);
       }
     }
+
+    // --- SKID STOP -----------------------------------------------------------------------
+    // Arriving at the shuttle and PLANTING is the signature badminton read, and nothing in the
+    // pose set expressed it — the figure just went from running to standing in one frame.
+    // Layered on top of whatever branch ran above so it survives a charge; suppressed during a
+    // swing, where the swing's own footwork owns the legs.
+    if ((p.skidTimer || 0) > 0 && !isSwinging) {
+      const sk = (p.skidTimer / SKID_DUR);        // 1 -> 0
+      const skEase = sk * sk;                     // bites hard, releases fast
+      const d = p.skidDir || 1;
+      legFront += 0.95 * d * skEase;              // leading leg thrown out to brake
+      legBack  -= 0.45 * d * skEase;              // trailing leg drags
+      torsoXOffset = Math.round(torsoXOffset - 2 * d * skEase); // weight rocks back
+      armBack  -= 0.5 * d * skEase;               // arms fly out for balance
+      armFront += 0.3 * d * skEase;
+    }
+
+    // --- LANDING SQUASH ------------------------------------------------------------------
+    // A short compress-and-release on ground contact. Without it the character snapped from
+    // the air pose straight to idle, which is what made every jump smash feel weightless.
+    if ((p.landTimer || 0) > 0) {
+      const lu = 1 - (p.landTimer / LAND_SQUASH_DUR);   // 0 -> 1 through the squash
+      const squash = Math.sin(lu * Math.PI);            // in and back out
+      torsoYOffset += Math.round(2 * squash);           // hips drop
+      legFront += 0.30 * squash;                        // knees absorb, feet stay planted
+      legBack  -= 0.30 * squash;
+      armBack  += 0.35 * squash;
+    }
+
+    // --- TURN-AWAY ARM CARRY -------------------------------------------------------------
+    // Facing away puts the racket arm BEHIND the torso (see buildPixFigure's draw-order swap).
+    // At the run cycle's tucked angle the hand sits inside the 7px-wide body, so the racket —
+    // the character's most readable prop — would disappear completely. Swinging the arm out as
+    // the turn progresses keeps it clear of the silhouette, and it happens to be what players
+    // actually do carrying the racket into the back corner.
+    if ((p.viewTurn || 0) > 0) armFront -= 0.9 * p.viewTurn;
 
     // AMEN: a held reverent prayer stance for the whole transform — unconditional, so it is
     // never interrupted by the normal swing/charge arm animation on every auto-return. The
@@ -19179,7 +19504,7 @@
           // black void body
           ctx.save();
           ctx.globalAlpha = g.alpha * 0.8;
-          drawHumanoid(ctx, gx, gy, heightVisualScale(ch), voidCh, {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, expr:'focused'}, g.facing);
+          drawHumanoid(ctx, gx, gy, heightVisualScale(ch), voidCh, {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, expr:'focused', view:p.view}, g.facing);
           ctx.restore();
           // torn pale-ash rim flicker along the leading edge
           ctx.save();
@@ -19194,7 +19519,7 @@
         } else {
           ctx.save();
           ctx.globalAlpha = g.alpha * 0.55;
-          drawHumanoid(ctx, g.x + PLAYER_W/2, g.y + PLAYER_H, heightVisualScale(ch), ch, {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, expr:'focused'}, g.facing);
+          drawHumanoid(ctx, g.x + PLAYER_W/2, g.y + PLAYER_H, heightVisualScale(ch), ch, {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, expr:'focused', view:p.view}, g.facing);
           ctx.restore();
         }
       }
@@ -19394,7 +19719,7 @@
       // body progressively fades from normal color to a pure black silhouette.
       const sil = Math.min(1, p.jordanSilhouette || 0);
       const eyeGlow = Math.min(1, p.jordanEyeGlow || 0);
-      const angData = {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, expr:pixExpr, onGround:p.onGround, eyeGlow:eyeGlow};
+      const angData = {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, expr:pixExpr, onGround:p.onGround, eyeGlow:eyeGlow, stridePhase:p.stridePhase, moveFrac:moveFrac, view:p.view};
       if (p.jordanTempestActive && sil > 0 && sil < 1) {
         // CONSUME beat: Jordan is consumed by darkness rising from bottom (feet) to top (head)
         ctx.save();
@@ -19485,7 +19810,7 @@
         ctx.restore();
       }
     } else {
-      drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), ch, {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, elbowBendFront:elbowBendFront, wristAngFront:wristAngFront, torsoXOffset:torsoXOffset, torsoYOffset:torsoYOffset, hairSway:hairSway, impactGlow:impactGlow, expr:pixExpr, onGround:p.onGround, furry:pixFurry}, facing);
+      drawHumanoid(ctx, cx, groundY, heightVisualScale(ch), ch, {legFront:legFront, legBack:legBack, armFront:armFront, armBack:armBack, elbowBendFront:elbowBendFront, wristAngFront:wristAngFront, torsoXOffset:torsoXOffset, torsoYOffset:torsoYOffset, hairSway:hairSway, impactGlow:impactGlow, expr:pixExpr, onGround:p.onGround, furry:pixFurry, stridePhase:p.stridePhase, moveFrac:moveFrac, view:p.view}, facing);
     }
     drawMomentumCrackle(p, cx); // electric crackle hugging the silhouette, over the body
     drawTransformIndicator(p, cx); // active transformation ultimate ring + timer (Part 6)
@@ -19503,7 +19828,9 @@
       const gaugeW = PLAYER_W + 16;
       const gaugeX = p.x - 8;
       const pulseY = Math.sin(nowSec * 16) * (ultPrimed ? 2.5 : 1.2);
-      const gaugeY = p.y - 18 + pulseY;
+      // Lifted from -18 to -26: at -18 the pill's own shadowBlur spilled down onto the hair
+      // and washed the top of the head out. -26 clears the sprite with the blur included.
+      const gaugeY = p.y - 26 + pulseY;
       
       ctx.save();
       
@@ -19530,7 +19857,7 @@
         ctx.fillStyle = fillGrad;
         if (ultPrimed) {
           ctx.shadowColor = pCol;
-          ctx.shadowBlur = 18;
+          ctx.shadowBlur = 10; // clamped from 18 — see gaugeY, the bloom was reaching the head
         } else if (frac >= 0.85) {
           ctx.shadowColor = '#ffce54';
           ctx.shadowBlur = 8;
