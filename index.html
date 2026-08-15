@@ -18918,6 +18918,11 @@
   // How long the turn-away is held after the chase itself ends. Long enough to cover the
   // arrival and the stroke, so the rotation back to front is its own beat rather than a snap.
   const VIEW_TURN_GRACE = 0.55;
+  // How far behind the player the shuttle has to get before turning around is warranted.
+  // Anchored to HIT_REACH_X (the real contact reach) rather than picked by eye: inside that
+  // distance the shot is still playable facing the net, so they backpedal for it instead.
+  const TURN_ENGAGE_BEHIND  = HIT_REACH_X * 1.25;  // ~90px — clearly beyond a stretched reach
+  const TURN_RELEASE_BEHIND = HIT_REACH_X * 0.5;   // ~36px — clearly back inside it again
 
   function tickLocomotion(p){
     const now = performance.now()/1000;
@@ -19050,21 +19055,37 @@
     if (inServeStance && !p._wasServeStance) p.serveStanceStart = now;
     p._wasServeStance = inServeStance;
 
-    // --- turn-around -------------------------------------------------------
-    // A left-side player naturally faces RIGHT, looking at their opponent. Chasing a shuttle
-    // toward their own baseline they turn and face LEFT — a plain horizontal mirror of the
-    // whole sprite, so the head, the walk cycle, the arms and the legs all point the way they
-    // are actually running. It is still a profile view; nobody turns their back to the camera.
+    // --- gaze, backpedal and turn-around -----------------------------------
+    // A left-side player naturally faces RIGHT, watching their opponent. They keep watching the
+    // shuttle, so moving backwards is NOT by itself a reason to turn: with the shuttle still in
+    // front of them they simply BACKPEDAL — squared to the net, eyes on the bird, shuffling
+    // back. They only turn and run when the shuttle has got behind them and has to be chased.
     //
-    // The rule is simply WHERE THEY ARE GOING. Nothing about the shuttle's position enters
-    // into it. A GRACE window then holds the turn through the arrival and the stroke, so the
-    // shot is played facing that way (as a backhand — see drawPlayer) and the pivot back to
-    // face the net is its own beat rather than a snap the instant their feet stop.
+    // The measure is physical rather than arbitrary. HIT_REACH_X is how far the player can
+    // actually reach to make contact, so a shuttle behind them but inside that reach is one
+    // they can still play facing forwards — backpedal. Only past it are they forced to turn.
+    // Two thresholds (engage far, release near) make it a Schmitt trigger on distance, so a
+    // shuttle hovering around the boundary can't strobe the facing.
+    const myCx = p.x + PLAYER_W/2;
+    const behindPx = (myCx - shuttle.x) * netSign;   // +ve = shuttle is behind them
+    const onMySide = !!shuttle.active &&
+                     ((p.side === 'left') ? shuttle.x < NET_X : shuttle.x > NET_X);
+    const behindGate = mirrored ? TURN_RELEASE_BEHIND : TURN_ENGAGE_BEHIND;
+    const mustChase = onMySide && behindPx > behindGate;
+
     const cinematic = !!(p.transform || p.jordanTempestActive || p.shermanMandateActive ||
                          (p.siuuuTimer > 0) || (p.bicycleKickTimer > 0) || (p.dianShaTimer > 0) ||
                          (p.absoluteZoneFlash > 0));
-    const retreating = state === 'rally' && p.onGround && (p.moveSigned || 0) < -0.5;
+    // Still requires them to actually be going back for it: a shuttle sailing behind a player
+    // who is standing still is one they have given up on, and they should not turn for it.
+    // The threshold is softer than before because `mustChase` now does the real gating.
+    const retreating = state === 'rally' && p.onGround && (p.moveSigned || 0) < -0.3 && mustChase;
     const advancing  = (p.moveSigned || 0) > 0.35;
+
+    // How much of a backward shuffle is going on — moving away from the net while still
+    // squared to it. Drives the shortened chassé stride and the low ready stance in drawPlayer.
+    p.backpedal = (!mirrored && (p.moveSigned || 0) < 0)
+      ? Math.min(1, -(p.moveSigned || 0) / 0.6) : 0;
 
     if (p.viewGrace === undefined) p.viewGrace = 0;
     if (cinematic) {
@@ -19104,8 +19125,14 @@
     const nowSec = performance.now()/1000;
     tickLocomotion(p);
     const moveFrac = p.moveFrac || 0;
+    // Backpedalling is not a running stride played backwards — it's a chassé: shorter, choppier
+    // steps with the feet staying closer together, because you cannot cross your legs going
+    // backwards without falling over. Shrinking the amplitude is what separates the two reads;
+    // the phase itself already runs in reverse, since stridePhase accumulates against facing.
+    const backpedal = p.backpedal || 0;
+    const strideAmp = 1 - 0.45 * backpedal;
     // Distance-driven, so the cadence tracks the actual speed (see tickLocomotion).
-    const legPhase = Math.sin(p.stridePhase || 0) * moveFrac;
+    const legPhase = Math.sin(p.stridePhase || 0) * moveFrac * strideAmp;
 
     let legFront = legPhase*0.6, legBack = -legPhase*0.6;
     let armBack = -0.5 - legPhase*0.4;
@@ -19380,6 +19407,16 @@
       torsoXOffset = Math.round(torsoXOffset - 2 * d * skEase); // weight rocks back
       armBack  -= 0.5 * d * skEase;               // arms fly out for balance
       armFront += 0.3 * d * skEase;
+    }
+
+    // --- BACKPEDAL STANCE ----------------------------------------------------------------
+    // Retreating with the shuttle still in front: they stay squared to the net, drop into an
+    // athletic ready position and keep the racket up. This is the pose that should cover most
+    // backward movement — turning around is the exception, not the default.
+    if (backpedal > 0 && !isSwinging && !isCharging) {
+      torsoYOffset += Math.round(backpedal);   // sink into the knees
+      armFront += 0.30 * backpedal;            // racket carried up and ready in front
+      armBack  += 0.20 * backpedal;
     }
 
     // --- LANDING SQUASH ------------------------------------------------------------------
