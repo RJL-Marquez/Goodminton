@@ -1649,6 +1649,22 @@
     align-self: stretch;
     background: var(--border);
   }
+  /* Pixel head-and-shoulders, same art the character-select thumbnails use. The column was
+     otherwise entirely type — this is what stops it reading as a spreadsheet. */
+  .pauseScore__art {
+    display: block;
+    width: 66px;
+    height: 66px;
+    margin: 0 auto 8px;
+    image-rendering: pixelated;
+  }
+  .pauseScore__nameRow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+  }
   .pauseScore__name {
     font-size: 11px;
     font-weight: 700;
@@ -1659,6 +1675,18 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* Who serves next. Hidden rather than absent so the name never shifts when it moves. */
+  .pauseScore__serve {
+    flex: 0 0 auto;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--glow-color);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  .pauseScore__serve.is-serving { opacity: 1; }
   .pauseScore__pts {
     font-family: 'Archivo Black', 'Space Grotesk', sans-serif;
     font-size: 40px;
@@ -1668,6 +1696,59 @@
   }
   .pauseScore__pts.is-trailing { color: var(--ink-dim); }
   .pauseScore__pts.is-leading { color: var(--accent); }
+  /* One point from the match. The single most important thing about a score line. */
+  .pauseFlag {
+    align-self: center;
+    margin: 0 auto 20px;
+    width: max-content;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    padding: 4px 9px;
+  }
+  .pauseFlag[hidden] { display: none; }
+  /* Frozen copies of the HUD's momentum and stamina bars, one track per side. */
+  .pauseGauges { margin-bottom: 22px; }
+  .pauseGauge {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .pauseGauge:last-child { margin-bottom: 0; }
+  .pauseGauge__label {
+    flex: 0 0 62px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+  .pauseGauge__track {
+    flex: 1 1 0;
+    height: 5px;
+    border-radius: 3px;
+    background: var(--bg-3);
+    overflow: hidden;
+  }
+  .pauseGauge__fill {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: 3px;
+    background: var(--primary);
+  }
+  /* Matches the HUD's own colour language: each side keeps its player colour, a full
+     momentum meter goes accent (an ultimate is available), and stamina under the 25%
+     dash-lock threshold goes amber. */
+  .pauseGauge__fill.is-left  { background: var(--left-color); }
+  .pauseGauge__fill.is-right { background: var(--right-color); }
+  .pauseGauge__fill.is-full  { background: var(--accent); box-shadow: 0 0 8px var(--glow-color); }
+  .pauseGauge__fill.is-low   { background: #d1a06a; }
   .pauseMeta { margin: 0; }
   .pauseMeta__row {
     display: flex;
@@ -3693,19 +3774,46 @@
           <div class="fx-section-title">Match</div>
           <div class="pauseScore">
             <div class="pauseScore__side">
-              <div class="pauseScore__name" id="pauseScoreNameL">&mdash;</div>
+              <canvas class="pauseScore__art" id="pauseArtL" width="132" height="132"></canvas>
+              <div class="pauseScore__nameRow">
+                <span class="pauseScore__name" id="pauseScoreNameL">&mdash;</span>
+                <span class="pauseScore__serve" id="pauseServeL" title="Serving"></span>
+              </div>
               <div class="pauseScore__pts" id="pauseScorePtsL">0</div>
             </div>
             <div class="pauseScore__sep" aria-hidden="true"></div>
             <div class="pauseScore__side">
-              <div class="pauseScore__name" id="pauseScoreNameR">&mdash;</div>
+              <canvas class="pauseScore__art" id="pauseArtR" width="132" height="132"></canvas>
+              <div class="pauseScore__nameRow">
+                <span class="pauseScore__name" id="pauseScoreNameR">&mdash;</span>
+                <span class="pauseScore__serve" id="pauseServeR" title="Serving"></span>
+              </div>
               <div class="pauseScore__pts" id="pauseScorePtsR">0</div>
             </div>
           </div>
+
+          <div class="pauseFlag" id="pauseMatchPoint" hidden>Match Point</div>
+
+          <!-- The two HUD gauges, frozen at the pause moment: what state you are walking
+               back into, which is the one thing you cannot read off a still frame. -->
+          <div class="pauseGauges">
+            <div class="pauseGauge">
+              <span class="pauseGauge__label">Momentum</span>
+              <span class="pauseGauge__track"><span class="pauseGauge__fill" id="pauseMomL"></span></span>
+              <span class="pauseGauge__track"><span class="pauseGauge__fill" id="pauseMomR"></span></span>
+            </div>
+            <div class="pauseGauge">
+              <span class="pauseGauge__label">Stamina</span>
+              <span class="pauseGauge__track"><span class="pauseGauge__fill" id="pauseStaL"></span></span>
+              <span class="pauseGauge__track"><span class="pauseGauge__fill" id="pauseStaR"></span></span>
+            </div>
+          </div>
+
           <dl class="pauseMeta">
             <div class="pauseMeta__row"><dt>Mode</dt><dd id="pauseMetaMode">&mdash;</dd></div>
             <div class="pauseMeta__row"><dt>Arena</dt><dd id="pauseMetaArena">&mdash;</dd></div>
             <div class="pauseMeta__row"><dt>Rallies</dt><dd id="pauseMetaRallies">&mdash;</dd></div>
+            <div class="pauseMeta__row"><dt>Longest</dt><dd id="pauseMetaLongest">&mdash;</dd></div>
           </dl>
           <div id="pauseStatsBox" class="settingsStatsBox" style="display: none;">
             <!-- Filled dynamically -->
@@ -12065,6 +12173,62 @@
     const bg = BACKGROUNDS.find(function(b){ return b.id === selectedBackgroundId; }) || BACKGROUNDS[0];
     set('pauseMetaArena', bg ? bg.name : '—');
     set('pauseMetaRallies', String(ralliesPlayed || 0));
+    const longest = (typeof matchRecap !== 'undefined' && matchRecap) ? (matchRecap.longestRally || 0) : 0;
+    set('pauseMetaLongest', longest > 0 ? (longest + (longest === 1 ? ' shot' : ' shots')) : '—');
+
+    // --- who serves next -----------------------------------------------------------------
+    const serveDot = function(id, on){
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle('is-serving', !!on);
+    };
+    // Only meaningful while a serve is actually pending; mid-rally there is no next server yet.
+    const serving = (state === 'serve') ? servingSide : null;
+    serveDot('pauseServeL', serving === 'left');
+    serveDot('pauseServeR', serving === 'right');
+
+    // --- match point ---------------------------------------------------------------------
+    const flag = document.getElementById('pauseMatchPoint');
+    if (flag) {
+      const atMatchPoint = (lScore >= WIN_SCORE - 1) || (rScore >= WIN_SCORE - 1);
+      flag.hidden = !atMatchPoint;
+    }
+
+    // --- frozen HUD gauges ---------------------------------------------------------------
+    const MOM_MAX = (GameConstants && GameConstants.MOMENTUM) ? GameConstants.MOMENTUM.MAX : 100;
+    const LOW = (GameConstants && GameConstants.STAMINA) ? GameConstants.STAMINA.LOW_THRESHOLD : 0.25;
+    const gauge = function(id, frac, sideCls, opts){
+      const el = document.getElementById(id);
+      if (!el) return;
+      const f = Math.max(0, Math.min(1, frac || 0));
+      el.style.width = (f * 100).toFixed(1) + '%';
+      el.className = 'pauseGauge__fill ' + sideCls;
+      if (opts && opts.full && f >= 0.999) el.classList.add('is-full');
+      if (opts && opts.low && f <= LOW) el.classList.add('is-low');
+    };
+    const momOf = function(p){ return Math.max(0, Math.min(MOM_MAX, p.momentum || 0)) / MOM_MAX; };
+    const staOf = function(p){
+      const max = (typeof maxStaminaFor === 'function') ? maxStaminaFor(p) : 100;
+      const s = (p.stamina == null) ? max : p.stamina;
+      return max > 0 ? Math.max(0, Math.min(max, s)) / max : 0;
+    };
+    gauge('pauseMomL', momOf(left),  'is-left',  { full: true });
+    gauge('pauseMomR', momOf(right), 'is-right', { full: true });
+    gauge('pauseStaL', staOf(left),  'is-left',  { low: true });
+    gauge('pauseStaR', staOf(right), 'is-right', { low: true });
+
+    // --- portraits -----------------------------------------------------------------------
+    // Same pixel art the character-select thumbnails use. Facing inward, so the two look at
+    // each other across the divider.
+    const portrait = function(id, p, facing){
+      const cv = document.getElementById(id);
+      if (!cv || typeof drawDetailedPortrait !== 'function') return;
+      const c = cv.getContext('2d');
+      c.clearRect(0, 0, cv.width, cv.height);
+      if (!p || !p.character) return;
+      drawDetailedPortrait(c, p.character, false, cv.width, cv.height, facing, true);
+    };
+    portrait('pauseArtL', left, 1);
+    portrait('pauseArtR', right, -1);
   }
 
   function togglePause(){
