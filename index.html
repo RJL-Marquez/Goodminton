@@ -1598,7 +1598,11 @@
     min-width: 0;
     display: flex;
     justify-content: center;   /* centred in the space left of it, not pinned to the edge */
-    align-items: flex-start;   /* top-anchored, level with the brand mark */
+    /* .pauseScreen is align-items: flex-start, so without this the column would only be as
+       tall as its own content and centring inside it would be a no-op. Stretching it to the
+       full screen height is what gives `align-items: center` something to centre against. */
+    align-self: stretch;
+    align-items: center;       /* vertically centred against the screen, not the menu's top */
     max-height: 100%;
   }
   .pauseData { width: min(300px, 100%); }
@@ -1651,10 +1655,12 @@
   }
   /* Pixel head-and-shoulders, same art the character-select thumbnails use. The column was
      otherwise entirely type — this is what stops it reading as a spreadsheet. */
+  /* 16:21, matching the buffer's own aspect so nothing is letterboxed or cropped. The
+     backing store is an exact 8x of the buffer, so every art-pixel stays square. */
   .pauseScore__art {
     display: block;
-    width: 66px;
-    height: 66px;
+    width: 64px;
+    height: 84px;
     margin: 0 auto 8px;
     image-rendering: pixelated;
   }
@@ -3774,7 +3780,7 @@
           <div class="fx-section-title">Match</div>
           <div class="pauseScore">
             <div class="pauseScore__side">
-              <canvas class="pauseScore__art" id="pauseArtL" width="132" height="132"></canvas>
+              <canvas class="pauseScore__art" id="pauseArtL" width="128" height="168"></canvas>
               <div class="pauseScore__nameRow">
                 <span class="pauseScore__name" id="pauseScoreNameL">&mdash;</span>
                 <span class="pauseScore__serve" id="pauseServeL" title="Serving"></span>
@@ -3783,7 +3789,7 @@
             </div>
             <div class="pauseScore__sep" aria-hidden="true"></div>
             <div class="pauseScore__side">
-              <canvas class="pauseScore__art" id="pauseArtR" width="132" height="132"></canvas>
+              <canvas class="pauseScore__art" id="pauseArtR" width="128" height="168"></canvas>
               <div class="pauseScore__nameRow">
                 <span class="pauseScore__name" id="pauseScoreNameR">&mdash;</span>
                 <span class="pauseScore__serve" id="pauseServeR" title="Serving"></span>
@@ -3794,6 +3800,10 @@
 
           <div class="pauseFlag" id="pauseMatchPoint" hidden>Match Point</div>
 
+          <!-- Everything below the scoreboard is the LIVE view. Match Stats swaps this whole
+               block out for the tally table and back, so the portraits and score stay put
+               and only the lower half changes. -->
+          <div class="pauseData__live" id="pauseLiveBlock">
           <!-- The two HUD gauges, frozen at the pause moment: what state you are walking
                back into, which is the one thing you cannot read off a still frame. -->
           <div class="pauseGauges">
@@ -3815,6 +3825,7 @@
             <div class="pauseMeta__row"><dt>Rallies</dt><dd id="pauseMetaRallies">&mdash;</dd></div>
             <div class="pauseMeta__row"><dt>Longest</dt><dd id="pauseMetaLongest">&mdash;</dd></div>
           </dl>
+          </div>
           <div id="pauseStatsBox" class="settingsStatsBox" style="display: none;">
             <!-- Filled dynamically -->
           </div>
@@ -12217,15 +12228,27 @@
     gauge('pauseStaR', staOf(right), 'is-right', { low: true });
 
     // --- portraits -----------------------------------------------------------------------
-    // Same pixel art the character-select thumbnails use. Facing inward, so the two look at
-    // each other across the divider.
+    // Same pixel art the character-select thumbnails use, facing inward so the two look at
+    // each other across the divider. Blitted here rather than through drawDetailedPortrait
+    // because its `bare` mode deliberately overshoots the box by 12% and bottom-anchors the
+    // result — fine on a card that means to crop, but here it sheared the top off tall hair.
+    // This fits the whole buffer instead, so a ponytail or a bun survives.
     const portrait = function(id, p, facing){
       const cv = document.getElementById(id);
-      if (!cv || typeof drawDetailedPortrait !== 'function') return;
+      if (!cv || typeof buildPixPortrait !== 'function') return;
       const c = cv.getContext('2d');
       c.clearRect(0, 0, cv.width, cv.height);
       if (!p || !p.character) return;
-      drawDetailedPortrait(c, p.character, false, cv.width, cv.height, facing, true);
+      const ch = p.character;
+      const expr = ch.portraitExpr || (ch.demeanor === 'nonchalant' ? 'nonchalant' : 'idle');
+      buildPixPortrait(ch, expr, 2.0);   // fixed t — a stable portrait, never caught mid-blink
+      const s = Math.min(cv.width / PBUF_W, cv.height / PBUF_H);
+      const dw = PBUF_W * s, dh = PBUF_H * s;
+      c.save();
+      c.imageSmoothingEnabled = false;
+      if (facing < 0) { c.translate(cv.width, 0); c.scale(-1, 1); }
+      c.drawImage(_portBuf, Math.round((cv.width - dw) / 2), Math.round(cv.height - dh), dw, dh);
+      c.restore();
     };
     portrait('pauseArtL', left, 1);
     portrait('pauseArtR', right, -1);
@@ -12244,10 +12267,7 @@
     document.getElementById('pauseOverlay').classList.toggle('hidden', !paused);
     
     if (paused) {
-      const pauseStatsBox = document.getElementById('pauseStatsBox');
-      if (pauseStatsBox) {
-        pauseStatsBox.style.display = 'none';
-      }
+      setPauseStatsView(false);   // always reopen on the live view, never mid-table
       updatePauseBrief();
     }
 
@@ -12341,16 +12361,22 @@
   document.getElementById('pauseSettingsBtn').addEventListener('click', openSettingsFromPause);
   document.getElementById('gameOverSettingsBtn').addEventListener('click', openSettingsFromGameOver);
   
+  // Match Stats swaps the lower half of the data column — gauges and match meta — for the
+  // tally table, rather than pushing the table on underneath it. The portraits and the score
+  // stay put either way, so the column never grows and the two views read as one panel
+  // changing its mind. The button lights its own dot (.is-active) while the table is up.
+  function setPauseStatsView(on){
+    const box = document.getElementById('pauseStatsBox');
+    const live = document.getElementById('pauseLiveBlock');
+    const btn = document.getElementById('pauseStatsBtn');
+    if (box) box.style.display = on ? 'block' : 'none';
+    if (live) live.style.display = on ? 'none' : '';
+    if (btn) btn.classList.toggle('is-active', !!on);
+    if (on) renderStatsToContainer('pauseStatsBox');
+  }
   document.getElementById('pauseStatsBtn').addEventListener('click', () => {
     const box = document.getElementById('pauseStatsBox');
-    if (box) {
-      if (box.style.display === 'none') {
-        box.style.display = 'block';
-        renderStatsToContainer('pauseStatsBox');
-      } else {
-        box.style.display = 'none';
-      }
-    }
+    setPauseStatsView(!box || box.style.display === 'none');
   });
 
   document.getElementById('gameOverStatsBtn').addEventListener('click', () => {
@@ -15728,7 +15754,12 @@
   function _mkpxOn(ctx,W,H,pal){ return function(gx,gy,key){ var col=(key&&key[0]==='#')?key:pal[key]; if(!col)return; gx=Math.round(gx); gy=Math.round(gy); if(gx<0||gy<0||gx>=W||gy>=H)return; ctx.fillStyle=col; ctx.fillRect(gx,gy,1,1); }; }
   function _mkpx(pal){ return _mkpxOn(_pixCtx,BUF_W,BUF_H,pal); }
   // portrait head-and-shoulders buffer (select screen / VS / thumbnails)
-  const PBUF_W=16, PBUF_H=18;
+  // 3 rows of headroom above the skull. Hair is drawn from hy-1 and buns from hy-2, so with the
+  // head at row 0 those rows fell outside the buffer and _mkpxOn's bounds check silently threw
+  // them away — every portrait in the game lost the top of its hair, and bun/ponytail styles
+  // lost their volume entirely. The head now starts at row 3 (see buildPixPortrait) and every
+  // style fits. Consumers derive their scale from PBUF_H, so they adapt on their own.
+  const PBUF_W=16, PBUF_H=21, PBUF_HEAD_Y=3;
   const _portBuf=document.createElement('canvas'); _portBuf.width=PBUF_W; _portBuf.height=PBUF_H;
   const _portCtx=_portBuf.getContext('2d');
   function _pxrect(px,x,y,w,h,k){ for(var j=0;j<h;j++)for(var i=0;i<w;i++)px(x+i,y+j,k); }
@@ -16060,20 +16091,24 @@
     _portCtx.clearRect(0,0,PBUF_W,PBUF_H);
     var pal=pixPalette(ch), px=_mkpxOn(_portCtx,PBUF_W,PBUF_H,pal);
     var SH=ch.jacket?'J':'S', sh=ch.jacket?'j':'s';
+    // Every row below is offset by PBUF_HEAD_Y so the composition is unchanged — it simply
+    // sits lower in a taller buffer, leaving room above the skull for hair that used to be
+    // clipped away.
+    var Y=PBUF_HEAD_Y;
     // shoulders / chest
-    _pxrect(px,4,10,8,1,SH);
-    _pxrect(px,2,11,12,7,SH);
-    _pxrect(px,2,11,1,7,sh); _pxrect(px,13,11,1,7,sh);   // side shading
-    px(6,10,'T'); px(9,10,'T');                            // collar hints
-    if(ch.jacket){ _pxrect(px,7,11,2,7,'S'); px(6,11,'j'); px(9,11,'j'); } // open placket + lapels
+    _pxrect(px,4,10+Y,8,1,SH);
+    _pxrect(px,2,11+Y,12,7,SH);
+    _pxrect(px,2,11+Y,1,7,sh); _pxrect(px,13,11+Y,1,7,sh);   // side shading
+    px(6,10+Y,'T'); px(9,10+Y,'T');                            // collar hints
+    if(ch.jacket){ _pxrect(px,7,11+Y,2,7,'S'); px(6,11+Y,'j'); px(9,11+Y,'j'); } // open placket + lapels
     if(ch.medals){
-      px(2,11,'#e8c257'); px(13,11,'#e8c257');                            // gold epaulette tips
-      px(5,14,'#e8c257'); px(10,14,'#e8c257'); px(6,15,'#e8c257'); px(9,15,'#e8c257'); // small medal cluster
+      px(2,11+Y,'#e8c257'); px(13,11+Y,'#e8c257');                            // gold epaulette tips
+      px(5,14+Y,'#e8c257'); px(10,14+Y,'#e8c257'); px(6,15+Y,'#e8c257'); px(9,15+Y,'#e8c257'); // small medal cluster
     }
     // neck
-    _pxrect(px,7,8,2,3,'K'); px(7,10,'k');
+    _pxrect(px,7,8+Y,2,3,'K'); px(7,10+Y,'k');
     // head + hair (or cap) + face
-    var hx=4, hy=0;
+    var hx=4, hy=Y;
     _pxmap(px,hx,hy,HEAD_SKIN,pal);
     if(ch.cap) drawPixCap(px,hx,hy,ch); else drawPixHair(px,hx,hy,ch);
     if(ch.longNose){ px(hx+8,hy+4,'K'); px(hx+9,hy+4,'K'); px(hx+9,hy+5,'k'); }
