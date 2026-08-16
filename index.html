@@ -392,7 +392,57 @@
     justify-content: center;
     overflow: hidden;
     transition: background 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+
+    /* ---- Touch guard, applied once at the root -------------------------
+       This is a GAME, not a document: nothing on screen is prose to be read
+       and copied, so nothing should be selectable by default. Previously
+       only the gameplay pad (#touchControls / .touchBtn / .touchCornerBtn)
+       opted out — but that pad is hidden on every menu, the pause screen and
+       game over, which left every menu button as plain selectable text.
+
+       It only misbehaved on some phones because the browsers disagree:
+       WebKit and Gecko put user-select:none on form controls in their UA
+       stylesheet, so iOS Safari and Firefox hid the bug; Blink does not, so
+       on Chrome for Android a long-press on a menu item raised the selection
+       handles and the system-blue highlight mid-rally.
+
+       Guarding the root instead of each surface means new UI is protected by
+       default and can't regress. The handful of things people genuinely need
+       to select or copy re-enable it explicitly just below. */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    /* 'manipulation' keeps panning/scrolling but drops double-tap-to-zoom.
+       This is what actually suppresses it on iOS — the viewport meta's
+       user-scalable=no has been ignored by Safari since iOS 10. */
+    touch-action: manipulation;
+    /* No pull-to-refresh or rubber-band overscroll during a rally. */
+    overscroll-behavior: none;
   }
+
+  /* The deliberate exceptions to the guard above. #waitingRoomCode is the
+     6-character lobby code a player has to copy or read out, and the two
+     online fields are real text inputs — making those unselectable would
+     trade one mobile papercut for a worse one. */
+  input,
+  textarea,
+  [contenteditable="true"],
+  #waitingRoomCode {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+  }
+
+  /* Backstop, not the fix: if a selection ever does slip through, it lands in
+     the game's own accent instead of the browser's system blue. Kept visible
+     rather than transparent so any remaining hole stays findable. */
+  ::selection      { background: var(--accent); color: var(--bg); }
+  ::-moz-selection { background: var(--accent); color: var(--bg); }
 
   /* #stage is the "monitor" the Resolution setting sizes — it carries the decorative
      gradient backdrop and is what actually grows/shrinks when a resolution preset is
@@ -3102,6 +3152,27 @@
     border-left: 4px solid currentColor;
     border-right: 4px solid currentColor;
   }
+  /* Paused → the same drawn element becomes a play triangle (a solid left
+     border with transparent top/bottom edges). Toggled by the .is-paused
+     class rather than by rewriting textContent, which used to blow the span
+     away and leave a literal '▶'/'⏸' character in the button — a selectable
+     text node, and the exact platform-dependent glyph this was drawn to avoid. */
+  .touchCornerBtn.is-paused .pauseGlyph {
+    width: 0;
+    height: 0;
+    border-left: 13px solid currentColor;
+    border-right: 0;
+    border-top: 8px solid transparent;
+    border-bottom: 8px solid transparent;
+  }
+
+  /* Fullscreen enter/exit, drawn for the same reason as the pause glyph —
+     '⛶' and '⤢' are text characters with wildly inconsistent platform
+     rendering. Both states ship in the markup; the class picks one. */
+  .fsGlyph { display: block; }
+  .fsGlyph--collapse { display: none; }
+  .touchCornerBtn.is-fullscreen .fsGlyph--expand { display: none; }
+  .touchCornerBtn.is-fullscreen .fsGlyph--collapse { display: block; }
   .touchCornerBtn * {
     pointer-events: none;
     -webkit-user-select: none !important;
@@ -3873,7 +3944,20 @@
   </div>
 </div>
 <button id="touchPauseBtn" class="touchCornerBtn" aria-label="Pause"><span class="pauseGlyph" aria-hidden="true"></span></button>
-<button id="touchFullscreenBtn" class="touchCornerBtn" aria-label="Toggle fullscreen">⛶</button>
+<button id="touchFullscreenBtn" class="touchCornerBtn" aria-label="Enter fullscreen">
+  <svg class="fsGlyph fsGlyph--expand" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <polyline points="9 3 3 3 3 9"></polyline>
+    <polyline points="15 3 21 3 21 9"></polyline>
+    <polyline points="9 21 3 21 3 15"></polyline>
+    <polyline points="15 21 21 21 21 15"></polyline>
+  </svg>
+  <svg class="fsGlyph fsGlyph--collapse" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <polyline points="3 9 9 9 9 3"></polyline>
+    <polyline points="21 9 15 9 15 3"></polyline>
+    <polyline points="3 15 9 15 9 21"></polyline>
+    <polyline points="21 15 15 15 15 21"></polyline>
+  </svg>
+</button>
 
 <!-- iPhone/iPod Safari has no Fullscreen API for regular pages at all (WebKit only
      supports it for <video>), so tapping fullscreen there can never truly go
@@ -9471,7 +9555,9 @@
     touchFullscreenBtn.addEventListener('click', toggleFullscreen);
     ['fullscreenchange','webkitfullscreenchange','mozfullscreenchange','MSFullscreenChange'].forEach(function(ev){
       document.addEventListener(ev, function(){
-        touchFullscreenBtn.textContent = fsElement() ? '⤢' : '⛶';
+        const isFs = !!fsElement();
+        touchFullscreenBtn.classList.toggle('is-fullscreen', isFs);
+        touchFullscreenBtn.setAttribute('aria-label', isFs ? 'Exit fullscreen' : 'Enter fullscreen');
       });
     });
   }
@@ -9479,7 +9565,7 @@
   if(touchPauseBtn){
     touchPauseBtn.addEventListener('click', function(){
       togglePause();
-      touchPauseBtn.textContent = paused ? '▶' : '⏸';
+      touchPauseBtn.classList.toggle('is-paused', paused);
       touchPauseBtn.setAttribute('aria-label', paused ? 'Resume' : 'Pause');
     });
   }
@@ -9508,7 +9594,7 @@
       const showPause = isTouchDevice &&
         (state === 'serve' || state === 'rally' || state === 'pointPause' || paused);
       touchPauseBtn.classList.toggle('visible', showPause);
-      touchPauseBtn.textContent = paused ? '▶' : '⏸';
+      touchPauseBtn.classList.toggle('is-paused', paused);
     }
   }
 
