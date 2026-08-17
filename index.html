@@ -9551,8 +9551,50 @@
     });
   }
 
+  // The two corner buttons were the last controls still bound to 'click', and a
+  // click is a poor fit for a thumb during a rally. It only fires if press and
+  // release land within the browser's movement threshold, so a jab that drifts
+  // ~18px silently does nothing; worse, a click never resolves at all while a
+  // second finger is already down on the pad, which during play is nearly always.
+  // Both failures read as "the pause button doesn't work".
+  //
+  // Binding on pointers instead, the same way the gameplay pad does: capture the
+  // pointer on down so drift can't retarget the release, act on up (rather than
+  // down) because entering fullscreen needs the user activation that pointerup
+  // reliably carries, and track the pointerId so a finger already on the pad is
+  // simply ignored rather than swallowing the press.
+  function bindCornerButton(el, onActivate){
+    if(!el) return;
+    let armedId = null;
+    el.addEventListener('pointerdown', function(e){
+      e.preventDefault();
+      if(armedId !== null) return;      // another finger already owns this button
+      armedId = e.pointerId;
+      try{ el.setPointerCapture(e.pointerId); }catch(err){}
+    });
+    el.addEventListener('pointerup', function(e){
+      if(e.pointerId !== armedId) return;
+      armedId = null;
+      e.preventDefault();
+      onActivate();
+    });
+    el.addEventListener('pointercancel', function(e){
+      if(e.pointerId === armedId) armedId = null;
+    });
+    // Deliberately NO click listener. A touch tap still emits a synthesized
+    // compat click afterwards, and it carries detail 0 exactly like a keyboard
+    // activation does — so there is no way to tell them apart, and listening for
+    // either one fires this button twice per tap (which cancels a toggle out
+    // entirely). Keyboard support is handled explicitly instead. Enter only:
+    // Space is the Player 1 hit binding and already has a global handler.
+    el.addEventListener('keydown', function(e){
+      if(e.key === 'Enter'){ e.preventDefault(); onActivate(); }
+    });
+    el.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+  }
+
   if(touchFullscreenBtn){
-    touchFullscreenBtn.addEventListener('click', toggleFullscreen);
+    bindCornerButton(touchFullscreenBtn, toggleFullscreen);
     ['fullscreenchange','webkitfullscreenchange','mozfullscreenchange','MSFullscreenChange'].forEach(function(ev){
       document.addEventListener(ev, function(){
         const isFs = !!fsElement();
@@ -9563,7 +9605,7 @@
   }
 
   if(touchPauseBtn){
-    touchPauseBtn.addEventListener('click', function(){
+    bindCornerButton(touchPauseBtn, function(){
       togglePause();
       touchPauseBtn.classList.toggle('is-paused', paused);
       touchPauseBtn.setAttribute('aria-label', paused ? 'Resume' : 'Pause');
